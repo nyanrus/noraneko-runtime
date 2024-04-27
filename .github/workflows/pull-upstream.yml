@@ -18,7 +18,7 @@ jobs:
       - name: copy upstream to this_repo
         run: |
           rsync -aq --progress upstream_release/ nyanrus_release --exclude .git --exclude .github
-          export FF_VERSION=${cat upstream_release/browser/config/version.txt}
+          export FF_VERSION=$(cat upstream_release/browser/config/version.txt)
       - name: push
         run: |
           cd nyanrus_release
