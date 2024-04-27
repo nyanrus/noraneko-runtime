@@ -11,6 +11,7 @@ jobs:
         with:
           path: "nyanrus_release"
           ref: gecko-release-source
+          fetch-depth: 0
       - name: clone upstream
         run: |
           git clone -b release --single-branch https://github.com/mozilla/gecko-dev --depth 1 upstream_release
