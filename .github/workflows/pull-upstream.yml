@@ -1,0 +1,28 @@
+name: Pull Upstream
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: "nyanrus_release"
+          ref: gecko-release-source
+      - name: clone upstream
+        run: |
+          git clone -b release --single-branch https://github.com/mozilla/gecko-dev --depth 1 upstream_release
+      - name: copy upstream to this_repo
+        run: |
+          rsync -av --progress upstream_release/ nyanrus_release --exclude .git --exclude .github
+          export FF_VERSION=${cat upstream_release/browser/config/version.txt}
+      - name: push
+        run: |
+          cd nyanrus_release
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m "sync upstream gecko-dev $FF_VERSION"
+          git push
