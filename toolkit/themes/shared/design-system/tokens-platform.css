@@ -1,0 +1,42 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://global/skin/design-system/tokens-shared.css");
+
+@layer tokens-foundation {
+  :root,
+  :host(.anonymous-content-host) {
+    /** Border **/
+    --border-interactive-color: color-mix(in srgb, currentColor 15%, var(--color-gray-60));
+
+    /** Button **/
+    --button-background-color: var(--button-bgcolor);
+    --button-background-color-hover: var(--button-hover-bgcolor);
+    --button-background-color-active: var(--button-active-bgcolor);
+    --button-text-color: var(--button-color);
+    --button-text-color-primary: var(--button-primary-color);
+
+    /** Color **/
+    --color-accent-primary: var(--button-primary-bgcolor, AccentColor);
+    --color-accent-primary-hover: var(--button-primary-hover-bgcolor);
+    --color-accent-primary-active: var(--button-primary-active-bgcolor);
+    --color-canvas: Canvas;
+
+    /** Font size **/
+    --font-size-root: unset;
+    --font-size-small: unset;
+    --font-size-large: unset;
+    --font-size-xlarge: unset;
+    --font-size-xxlarge: unset;
+
+    /** Link **/
+    --link-color: LinkText;
+    --link-color-hover: LinkText;
+    --link-color-active: ActiveText;
+    --link-color-visited: var(--link-color);
+
+    /** Text **/
+    --text-color: currentColor;
+  }
+}

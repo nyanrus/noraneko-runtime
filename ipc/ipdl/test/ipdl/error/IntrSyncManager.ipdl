@@ -1,0 +1,10 @@
+//error: protocol `IntrSyncManagee' requires more powerful send semantics than its manager `IntrSyncManager' provides
+
+include protocol IntrSyncManagee;
+
+[ChildProc=any]
+sync protocol IntrSyncManager {
+    manages IntrSyncManagee;
+parent:
+    async IntrSyncManagee();
+};

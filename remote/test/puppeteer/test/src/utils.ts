@@ -1,0 +1,171 @@
+/**
+ * @license
+ * Copyright 2017 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {rm} from 'fs/promises';
+import {tmpdir} from 'os';
+import path from 'path';
+
+import expect from 'expect';
+import type {Frame} from 'puppeteer-core/internal/api/Frame.js';
+import type {Page} from 'puppeteer-core/internal/api/Page.js';
+import type {EventEmitter} from 'puppeteer-core/internal/common/EventEmitter.js';
+import {Deferred} from 'puppeteer-core/internal/util/Deferred.js';
+
+import {compare} from './golden-utils.js';
+
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+
+declare module 'expect' {
+  interface Matchers<R> {
+    toBeGolden(pathOrBuffer: string | Buffer): R;
+  }
+}
+
+export const extendExpectWithToBeGolden = (
+  goldenDir: string,
+  outputDir: string
+): void => {
+  expect.extend({
+    toBeGolden: (testScreenshot: string | Buffer, goldenFilePath: string) => {
+      const result = compare(
+        goldenDir,
+        outputDir,
+        testScreenshot,
+        goldenFilePath
+      );
+
+      if (result.pass) {
+        return {
+          pass: true,
+          message: () => {
+            return '';
+          },
+        };
+      } else {
+        return {
+          pass: false,
+          message: () => {
+            return result.message;
+          },
+        };
+      }
+    },
+  });
+};
+
+export const projectRoot = (): string => {
+  return PROJECT_ROOT;
+};
+
+export const attachFrame = async (
+  pageOrFrame: Page | Frame,
+  frameId: string,
+  url: string
+): Promise<Frame | undefined> => {
+  using handle = await pageOrFrame.evaluateHandle(attachFrame, frameId, url);
+  return (await handle.asElement()?.contentFrame()) ?? undefined;
+
+  async function attachFrame(frameId: string, url: string) {
+    const frame = document.createElement('iframe');
+    frame.src = url;
+    frame.id = frameId;
+    document.body.appendChild(frame);
+    await new Promise(x => {
+      return (frame.onload = x);
+    });
+    return frame;
+  }
+};
+
+export const isFavicon = (request: {url: () => string | string[]}): boolean => {
+  return request.url().includes('favicon.ico');
+};
+
+export async function detachFrame(
+  pageOrFrame: Page | Frame,
+  frameId: string
+): Promise<void> {
+  await pageOrFrame.evaluate(detachFrame, frameId);
+
+  function detachFrame(frameId: string) {
+    const frame = document.getElementById(frameId) as HTMLIFrameElement;
+    frame.remove();
+  }
+}
+
+export async function navigateFrame(
+  pageOrFrame: Page | Frame,
+  frameId: string,
+  url: string
+): Promise<void> {
+  await pageOrFrame.evaluate(navigateFrame, frameId, url);
+
+  function navigateFrame(frameId: string, url: string) {
+    const frame = document.getElementById(frameId) as HTMLIFrameElement;
+    frame.src = url;
+    return new Promise(x => {
+      return (frame.onload = x);
+    });
+  }
+}
+
+export const dumpFrames = (frame: Frame, indentation?: string): string[] => {
+  indentation = indentation || '';
+  let description = frame.url().replace(/:\d{4,5}\//, ':<PORT>/');
+  if (frame.name()) {
+    description += ' (' + frame.name() + ')';
+  }
+  const result = [indentation + description];
+  for (const child of frame.childFrames()) {
+    result.push(...dumpFrames(child, '    ' + indentation));
+  }
+  return result;
+};
+
+export const waitEvent = async <T = any>(
+  emitter: EventEmitter<any>,
+  eventName: string,
+  predicate: (event: T) => boolean = () => {
+    return true;
+  }
+): Promise<T> => {
+  const deferred = Deferred.create<T>({
+    timeout: 5000,
+    message: `Waiting for ${eventName} event timed out.`,
+  });
+  const handler = (event: T) => {
+    if (!predicate(event)) {
+      return;
+    }
+    deferred.resolve(event);
+  };
+  emitter.on(eventName, handler);
+  try {
+    return await deferred.valueOrThrow();
+  } finally {
+    emitter.off(eventName, handler);
+  }
+};
+
+export interface FilePlaceholder {
+  filename: `${string}.webm`;
+  [Symbol.dispose](): void;
+}
+
+export function getUniqueVideoFilePlaceholder(): FilePlaceholder {
+  return {
+    filename: `${tmpdir()}/test-video-${Math.round(
+      Math.random() * 10000
+    )}.webm`,
+    [Symbol.dispose]() {
+      void rmIfExists(this.filename);
+    },
+  };
+}
+
+export function rmIfExists(file: string): Promise<void> {
+  return rm(file).catch(() => {});
+}
