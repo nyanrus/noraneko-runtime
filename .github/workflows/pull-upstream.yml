@@ -10,7 +10,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: "nyanrus_release"
-          ref: gecko-release-source
           fetch-depth: 0
       - name: clone upstream
         run: |
@@ -18,10 +17,10 @@ jobs:
       - name: copy upstream to this_repo
         run: |
           rsync -aq --progress upstream_release/ nyanrus_release --exclude .git --exclude .github
-          export FF_VERSION=$(cat upstream_release/browser/config/version.txt)
       - name: push
         run: |
           cd nyanrus_release
+          export FF_VERSION=$(cat browser/config/version.txt)
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add .
