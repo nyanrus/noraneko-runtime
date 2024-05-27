@@ -40,6 +40,9 @@ interface IDBFactory {
                  optional IDBOpenDBOptions options = {});
 
   [Throws]
+  Promise<sequence<IDBDatabaseInfo>> databases();
+
+  [Throws]
   short
   cmp(any first,
       any second);
@@ -61,4 +64,9 @@ interface IDBFactory {
   deleteForPrincipal(Principal principal,
                      DOMString name,
                      optional IDBOpenDBOptions options = {});
+};
+
+dictionary IDBDatabaseInfo {
+  DOMString name;
+  unsigned long long version;
 };

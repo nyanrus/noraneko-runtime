@@ -729,9 +729,6 @@ bool shell::enableSourcePragmas = true;
 bool shell::enableAsyncStacks = false;
 bool shell::enableAsyncStackCaptureDebuggeeOnly = false;
 bool shell::enableToSource = false;
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-bool shell::enableJSONParseWithSource = false;
-#endif
 bool shell::enableImportAttributes = false;
 bool shell::enableImportAttributesAssertSyntax = false;
 #ifdef JS_GC_ZEAL
@@ -1313,6 +1310,13 @@ static bool DrainJobQueue(JSContext* cx, unsigned argc, Value* vp) {
   if (GetShellContext(cx)->quitting) {
     JS_ReportErrorASCII(
         cx, "Mustn't drain the job queue when the shell is quitting");
+    return false;
+  }
+
+  if (cx->isEvaluatingModule != 0) {
+    JS_ReportErrorASCII(
+        cx,
+        "Can't drain the job queue when executing the top level of a module");
     return false;
   }
 
@@ -2428,6 +2432,20 @@ static bool ConvertTranscodeResultToJSException(JSContext* cx,
   }
 }
 
+static void SetQuitting(JSContext* cx, int32_t code) {
+  ShellContext* sc = GetShellContext(cx);
+  js::StopDrainingJobQueue(cx);
+  sc->exitCode = code;
+  sc->quitting = true;
+}
+
+static void UnsetQuitting(JSContext* cx) {
+  ShellContext* sc = GetShellContext(cx);
+  js::RestartDrainingJobQueue(cx);
+  sc->exitCode = 0;
+  sc->quitting = false;
+}
+
 static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -2716,6 +2734,11 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
                 ? JS_ExecuteScript(cx, script, args.rval())
                 : JS_ExecuteScript(cx, envChain, script, args.rval()))) {
         if (catchTermination && !JS_IsExceptionPending(cx)) {
+          ShellContext* sc = GetShellContext(cx);
+          if (sc->quitting) {
+            UnsetQuitting(cx);
+          }
+
           JSAutoRealm ar1(cx, callerGlobal);
           JSString* str = JS_NewStringCopyZ(cx, "terminated");
           if (!str) {
@@ -3165,8 +3188,6 @@ static bool PrintErr(JSContext* cx, unsigned argc, Value* vp) {
 static bool Help(JSContext* cx, unsigned argc, Value* vp);
 
 static bool Quit(JSContext* cx, unsigned argc, Value* vp) {
-  ShellContext* sc = GetShellContext(cx);
-
   // Print a message to stderr in differential testing to help jsfunfuzz
   // find uncatchable-exception bugs.
   if (js::SupportDifferentialTesting()) {
@@ -3189,9 +3210,7 @@ static bool Quit(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  js::StopDrainingJobQueue(cx);
-  sc->exitCode = code;
-  sc->quitting = true;
+  SetQuitting(cx, code);
   return false;
 }
 
@@ -4108,11 +4127,7 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(enableSharedMemory)
       .setCoopAndCoepEnabled(false)
-      .setToSourceEnabled(enableToSource)
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-      .setJSONParseWithSource(enableJSONParseWithSource)
-#endif
-      ;
+      .setToSourceEnabled(enableToSource);
 }
 
 [[nodiscard]] static bool CheckRealmOptions(JSContext* cx,
@@ -5448,7 +5463,7 @@ static bool ModuleLink(JSContext* cx, unsigned argc, Value* vp) {
 
   Rooted<ModuleObject*> module(cx,
                                object->as<ShellModuleObjectWrapper>().get());
-  if (!js::ModuleLink(cx, module)) {
+  if (!JS::ModuleLink(cx, module)) {
     return false;
   }
 
@@ -5477,7 +5492,7 @@ static bool ModuleEvaluate(JSContext* cx, unsigned argc, Value* vp) {
 
     Rooted<ModuleObject*> module(cx,
                                  object->as<ShellModuleObjectWrapper>().get());
-    if (!js::ModuleEvaluate(cx, module, args.rval())) {
+    if (!JS::ModuleEvaluate(cx, module, args.rval())) {
       return false;
     }
   }
@@ -5723,6 +5738,11 @@ static bool FrontendTest(JSContext* cx, unsigned argc, Value* vp,
       return false;
     }
     if (!js::ParseCompileOptions(cx, options, objOptions, nullptr)) {
+      return false;
+    }
+
+    if (goal == frontend::ParseGoal::Module && options.lineno == 0) {
+      JS_ReportErrorASCII(cx, "Module cannot be compiled with lineNumber == 0");
       return false;
     }
 
@@ -6143,8 +6163,7 @@ static bool OffThreadCompileModuleToStencil(JSContext* cx, unsigned argc,
       return false;
     }
 
-    if (options.lineno == 0) {
-      JS_ReportErrorASCII(cx, "Module cannot be compiled with lineNumber == 0");
+    if (!ValidateModuleCompileOptions(cx, options)) {
       return false;
     }
   }
@@ -6794,6 +6813,10 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
     creationOptions.setNewCompartmentAndZone();
   }
 
+  // Ensure the target compartment/zone is kept alive when sameCompartmentAs or
+  // sameZoneAs is used.
+  Rooted<JSObject*> compartmentRoot(cx);
+
   JS::AutoHoldPrincipals principals(cx);
 
   if (args.length() == 1 && args[0].isObject()) {
@@ -6811,15 +6834,16 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     if (v.isObject()) {
-      creationOptions.setNewCompartmentInExistingZone(
-          UncheckedUnwrap(&v.toObject()));
+      compartmentRoot = UncheckedUnwrap(&v.toObject());
+      creationOptions.setNewCompartmentInExistingZone(compartmentRoot);
     }
 
     if (!JS_GetProperty(cx, opts, "sameCompartmentAs", &v)) {
       return false;
     }
     if (v.isObject()) {
-      creationOptions.setExistingCompartment(UncheckedUnwrap(&v.toObject()));
+      compartmentRoot = UncheckedUnwrap(&v.toObject());
+      creationOptions.setExistingCompartment(compartmentRoot);
     }
 
     if (!JS_GetProperty(cx, opts, "newCompartment", &v)) {
@@ -12000,10 +12024,8 @@ bool InitOptionParser(OptionParser& op) {
                         "property of null or undefined") ||
       !op.addBoolOption('\0', "enable-iterator-helpers",
                         "Enable iterator helpers") ||
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
       !op.addBoolOption('\0', "enable-json-parse-with-source",
                         "Enable JSON.parse with source") ||
-#endif
       !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "disable-array-grouping",
                         "Disable Object.groupBy and Map.groupBy") ||
@@ -12019,6 +12041,8 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption(
           '\0', "enable-arraybuffer-resizable",
           "Enable resizable ArrayBuffers and growable SharedArrayBuffers") ||
+      !op.addBoolOption('\0', "enable-uint8array-base64",
+                        "Enable Uint8Array base64/hex methods") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
       !op.addBoolOption('\0', "enable-class-static-blocks",
@@ -12407,6 +12431,17 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-symbols-as-weakmap-keys")) {
     JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(true);
   }
+  if (op.getBoolOption("enable-uint8array-base64")) {
+    JS::Prefs::setAtStartup_experimental_uint8array_base64(true);
+  }
+#endif
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  JS::Prefs::setAtStartup_experimental_json_parse_with_source(
+      op.getBoolOption("enable-json-parse-with-source"));
+#else
+  if (op.getBoolOption("enable-json-parse-with-source")) {
+    fprintf(stderr, "JSON.parse with source is not enabled on this build.\n");
+  }
 #endif
 
   if (op.getBoolOption("disable-weak-refs")) {
@@ -12627,9 +12662,6 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
   enableAsyncStackCaptureDebuggeeOnly =
       op.getBoolOption("async-stacks-capture-debuggee-only");
   enableToSource = !op.getBoolOption("disable-tosource");
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-  enableJSONParseWithSource = op.getBoolOption("enable-json-parse-with-source");
-#endif
   enableImportAttributesAssertSyntax =
       op.getBoolOption("enable-import-assertions");
   enableImportAttributes = op.getBoolOption("enable-import-attributes") ||

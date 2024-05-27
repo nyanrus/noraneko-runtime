@@ -34,6 +34,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/FragmentDirective.h"
 #include "mozilla/dom/LocationBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "ReferrerInfo.h"
@@ -105,6 +106,9 @@ nsresult Location::GetURI(nsIURI** aURI, bool aGetInnermostURI) {
   }
 
   NS_ASSERTION(uri, "nsJARURI screwed up?");
+
+  // Remove the fragment directive from the url hash.
+  FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragment(uri);
   nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(uri);
   exposableURI.forget(aURI);
   return NS_OK;
@@ -547,26 +551,6 @@ void Location::Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
   RefPtr<nsDocShell> docShell(nsDocShell::Cast(GetDocShell()));
   if (!docShell) {
     return aRv.Throw(NS_ERROR_FAILURE);
-  }
-
-  if (StaticPrefs::dom_block_reload_from_resize_event_handler()) {
-    nsCOMPtr<nsPIDOMWindowOuter> window = docShell->GetWindow();
-    if (window && window->IsHandlingResizeEvent()) {
-      // location.reload() was called on a window that is handling a
-      // resize event. Sites do this since Netscape 4.x needed it, but
-      // we don't, and it's a horrible experience for nothing. In stead
-      // of reloading the page, just clear style data and reflow the
-      // page since some sites may use this trick to work around gecko
-      // reflow bugs, and this should have the same effect.
-      RefPtr<Document> doc = window->GetExtantDoc();
-
-      nsPresContext* pcx;
-      if (doc && (pcx = doc->GetPresContext())) {
-        pcx->RebuildAllStyleData(NS_STYLE_HINT_REFLOW,
-                                 RestyleHint::RestyleSubtree());
-      }
-      return;
-    }
   }
 
   RefPtr<BrowsingContext> bc = GetBrowsingContext();

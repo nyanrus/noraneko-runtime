@@ -1402,7 +1402,7 @@ nsresult HttpBaseChannel::DoApplyContentConversions(
 // channels cannot effectively be used in two contexts (specifically this one
 // and a peek context for sniffing)
 //
-class InterceptFailedOnStop : public nsIStreamListener {
+class InterceptFailedOnStop : public nsIThreadRetargetableStreamListener {
   virtual ~InterceptFailedOnStop() = default;
   nsCOMPtr<nsIStreamListener> mNext;
   HttpBaseChannel* mChannel;
@@ -1411,6 +1411,7 @@ class InterceptFailedOnStop : public nsIStreamListener {
   InterceptFailedOnStop(nsIStreamListener* arg, HttpBaseChannel* chan)
       : mNext(arg), mChannel(chan) {}
   NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override {
     return mNext->OnStartRequest(aRequest);
@@ -1432,7 +1433,37 @@ class InterceptFailedOnStop : public nsIStreamListener {
   }
 };
 
-NS_IMPL_ISUPPORTS(InterceptFailedOnStop, nsIStreamListener, nsIRequestObserver)
+NS_IMPL_ADDREF(InterceptFailedOnStop)
+NS_IMPL_RELEASE(InterceptFailedOnStop)
+
+NS_INTERFACE_MAP_BEGIN(InterceptFailedOnStop)
+  NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
+  NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
+  NS_INTERFACE_MAP_ENTRY(nsIThreadRetargetableStreamListener)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRequestObserver)
+NS_INTERFACE_MAP_END
+
+NS_IMETHODIMP
+InterceptFailedOnStop::CheckListenerChain() {
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mNext);
+  if (!listener) {
+    return NS_ERROR_NO_INTERFACE;
+  }
+
+  return listener->CheckListenerChain();
+}
+
+NS_IMETHODIMP
+InterceptFailedOnStop::OnDataFinished(nsresult aStatus) {
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mNext);
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
@@ -1508,6 +1539,8 @@ HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
           mode = 2;
         } else if (from.EqualsLiteral("br")) {
           mode = 3;
+        } else if (from.EqualsLiteral("zstd")) {
+          mode = 4;
         }
         Telemetry::Accumulate(Telemetry::HTTP_CONTENT_ENCODING, mode);
       }
@@ -1608,6 +1641,14 @@ HttpBaseChannel::nsContentEncodings::GetNext(nsACString& aNextEncoding) {
     encoding.BeginReading(start);
     if (CaseInsensitiveFindInReadable("br"_ns, start, end)) {
       aNextEncoding.AssignLiteral(APPLICATION_BROTLI);
+      haveType = true;
+    }
+  }
+
+  if (!haveType) {
+    encoding.BeginReading(start);
+    if (CaseInsensitiveFindInReadable("zstd"_ns, start, end)) {
+      aNextEncoding.AssignLiteral(APPLICATION_ZSTD);
       haveType = true;
     }
   }
@@ -2392,7 +2433,6 @@ HttpBaseChannel::GetDocumentURI(nsIURI** aDocumentURI) {
 NS_IMETHODIMP
 HttpBaseChannel::SetDocumentURI(nsIURI* aDocumentURI) {
   ENSURE_CALLED_BEFORE_CONNECT();
-
   mDocumentURI = aDocumentURI;
   return NS_OK;
 }
@@ -4973,7 +5013,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     httpInternal->SetLastRedirectFlags(redirectFlags);
 
     if (LoadRequireCORSPreflight()) {
-      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders, false);
+      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders, false, false);
     }
   }
 
@@ -5847,17 +5887,20 @@ void HttpBaseChannel::EnsureBrowserId() {
 
 void HttpBaseChannel::SetCorsPreflightParameters(
     const nsTArray<nsCString>& aUnsafeHeaders,
-    bool aShouldStripRequestBodyHeader) {
+    bool aShouldStripRequestBodyHeader, bool aShouldStripAuthHeader) {
   MOZ_RELEASE_ASSERT(!LoadRequestObserversCalled());
 
   StoreRequireCORSPreflight(true);
   mUnsafeHeaders = aUnsafeHeaders.Clone();
-  if (aShouldStripRequestBodyHeader) {
+  if (aShouldStripRequestBodyHeader || aShouldStripAuthHeader) {
     mUnsafeHeaders.RemoveElementsBy([&](const nsCString& aHeader) {
-      return aHeader.LowerCaseEqualsASCII("content-type") ||
-             aHeader.LowerCaseEqualsASCII("content-encoding") ||
-             aHeader.LowerCaseEqualsASCII("content-language") ||
-             aHeader.LowerCaseEqualsASCII("content-location");
+      return (aShouldStripRequestBodyHeader &&
+              (aHeader.LowerCaseEqualsASCII("content-type") ||
+               aHeader.LowerCaseEqualsASCII("content-encoding") ||
+               aHeader.LowerCaseEqualsASCII("content-language") ||
+               aHeader.LowerCaseEqualsASCII("content-location"))) ||
+             (aShouldStripAuthHeader &&
+              aHeader.LowerCaseEqualsASCII("authorization"));
     });
   }
 }

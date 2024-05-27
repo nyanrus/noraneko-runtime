@@ -3,6 +3,48 @@
     {
       "stash": {
         "blocked": [
+          "hiddenads@addon:1.2",
+          "hiddenads@addon:1.1"
+        ],
+        "unblocked": []
+      },
+      "schema": 1715073387064,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1715085306179,
+      "id": "3f7b0d0a-916d-439f-a4cd-e4f145840961",
+      "last_modified": 1715085361954
+    },
+    {
+      "stash": {
+        "blocked": [
+          "{2a212819-c872-4f67-9268-f08be03d03da}:1.0"
+        ],
+        "unblocked": []
+      },
+      "schema": 1714674961786,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1715020505773,
+      "id": "57ccc528-325f-4491-b0d9-8e5a5dff2d1e",
+      "last_modified": 1715020562858
+    },
+    {
+      "stash": {
+        "blocked": [
+          "{6da3c7e9-ab2e-4f92-9cab-5a6e032f31ed}:2.2.7",
+          "{6da3c7e9-ab2e-4f92-9cab-5a6e032f31ed}:2.2.8",
+          "{6da3c7e9-ab2e-4f92-9cab-5a6e032f31ed}:2.2.9"
+        ],
+        "unblocked": []
+      },
+      "schema": 1714502163393,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1714674905592,
+      "id": "023af584-1406-4d7d-8805-20c3d27838b2",
+      "last_modified": 1714674961628
+    },
+    {
+      "stash": {
+        "blocked": [
           "superiorblock@addon:1.1",
           "superiorblock@addon:1.0",
           "{f350fb55-0f0f-433b-a220-84ecd4e9c1c4}:1.0.0"
@@ -636,5 +678,5 @@
       "last_modified": 1707395854769
     }
   ],
-  "timestamp": 1714502163258
+  "timestamp": 1715085361954
 }

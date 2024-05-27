@@ -1065,7 +1065,7 @@ nsresult CheckCSPFrameAncestorPolicy(nsIChannel* aChannel,
   csp->SuppressParserLogMessages();
 
   nsCOMPtr<nsIURI> selfURI;
-  nsAutoString referrerSpec;
+  nsAutoCString referrerSpec;
   if (httpChannel) {
     aChannel->GetURI(getter_AddRefs(selfURI));
     nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
@@ -1367,6 +1367,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
                  StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
                  StringBeginsWith(aboutSpec, "about:settings"_ns) ||
                  StringBeginsWith(aboutSpec, "about:downloads"_ns) ||
+                 StringBeginsWith(aboutSpec, "about:fingerprinting"_ns) ||
                  StringBeginsWith(aboutSpec, "about:asrouter"_ns) ||
                  StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
                  StringBeginsWith(aboutSpec, "about:logins"_ns) ||
