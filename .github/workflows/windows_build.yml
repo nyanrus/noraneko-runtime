@@ -1,0 +1,85 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# © 2023 Floorp Projects & Contributors
+
+on:
+  workflow_call:
+
+jobs:
+  win-build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "lts/*"
+
+    - uses: actions/checkout@v4
+      name: Clone 🧬
+      with:
+        submodules: "recursive"
+
+    - name: Configure sccache
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: setup Rust 🦀
+      run: |
+        rustup target add x86_64-pc-windows-msvc
+
+        #? https://github.com/mozilla/sccache#known-caveats
+        export CARGO_INCREMENTAL=0
+
+    - name: Setup 🪛
+      run: |
+        cd $GITHUB_WORKSPACE
+
+        cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
+
+        sudo apt install msitools -y
+
+        sudo apt autoremove -y
+        sudo apt clean
+        sudo rm -rf  ./git
+        sudo rm -rf /home/linuxbrew
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/graalvm
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/node_modules
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /etc/apache2
+        sudo rm -rf /etc/nginx
+        sudo rm -rf /usr/local/share/chrome_driver
+        sudo rm -rf /usr/local/share/edge_driver
+        sudo rm -rf /usr/local/share/gecko_driver
+        sudo rm -rf /usr/share/java
+        sudo rm -rf /usr/share/miniconda
+        sudo rm -rf /usr/local/share/vcpkg
+
+        ./mach --no-interactive bootstrap --application-choice browser
+
+    - name: Build 🔨
+      run: |
+        ./mach build
+
+    # Publish START
+    - name: compress zstd
+      run: |
+        tar -I "zstd -T0 -10" -hcf ~/noraneko.tar.zst obj-x86_64-pc-windows-msvc
+
+    - name: Publish Package🎁
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-win-amd64-zstd
+        compression-level: 0
+        path: ~/noraneko.tar.zst
+    # Publish END
