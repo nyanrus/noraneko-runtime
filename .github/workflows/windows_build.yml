@@ -67,6 +67,10 @@ jobs:
 
         ./mach --no-interactive bootstrap --application-choice browser
 
+    - name: Mach Configure
+      run: |
+        ./mach configure
+
     - name: Build 🔨
       run: |
         ./mach build
