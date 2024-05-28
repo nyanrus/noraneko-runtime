@@ -18,12 +18,15 @@ jobs:
       - name: clone upstream
         run: |
           git clone -b release --single-branch https://github.com/mozilla/gecko-dev --depth 1 upstream_release
+          rm -rf ./upstream_release/.git ./upstream_release/.github
       - name: copy upstream to this_repo
         run: |
-          rsync -aq --progress upstream_release/ nyanrus_release --exclude .git --exclude .github
+          rsync -aq --progress upstream_release/ temp_release
+          cp -r ./nyanrus_release/.git temp_release
+          cp -r ./nyanrus_release/.github temp_release
       - name: push
         run: |
-          cd nyanrus_release
+          cd temp_release
           export FF_VERSION=$(cat browser/config/version.txt)
           git config user.name github-actions
           git config user.email github-actions@github.com
