@@ -4,7 +4,6 @@ ac_add_options --disable-maintenance-service
 ac_add_options --disable-updater
 ac_add_options --disable-tests
 ac_add_options --disable-crashreporter
-ac_add_options MOZ_TELEMETRY_REPORTING=
 ac_add_options --enable-bootstrap
 #? https://bugzilla.mozilla.org/show_bug.cgi?id=1617793
 #? https://phabricator.services.mozilla.com/D170170
@@ -15,3 +14,5 @@ ac_add_options --target=x86_64-pc-windows-msvc
 #ac_add_options --with-ccache
 #mk_add_options 'export SCCACHE_GHA_ENABLED=on'
 mk_add_options AUTOCLOBBER=1
+#Telemetry
+#https://searchfox.org/mozilla-central/rev/893f350260faac2ee6bf2b14c627d55eb2babfb0/toolkit/components/telemetry/docs/internals/preferences.rst
