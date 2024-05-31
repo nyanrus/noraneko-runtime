@@ -78,7 +78,9 @@ jobs:
     # Publish START
     - name: compress zstd
       run: |
-        tar -I "zstd -T0 -10" -hcf ~/noraneko.tar.zst obj-x86_64-pc-windows-msvc/dist/bin
+        rsync -aq --progress obj-x86_64-pc-windows-msvc/dist/bin ~/output
+        cd ~/output
+        tar -I "zstd -T0 -10" -hcf ~/noraneko.tar.zst output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
