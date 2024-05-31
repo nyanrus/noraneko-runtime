@@ -24,6 +24,8 @@ jobs:
           rsync -aq --progress upstream_release/ temp_release
           cp -r ./nyanrus_release/.git temp_release
           cp -r ./nyanrus_release/.github temp_release
+          cp ./nyanrus_release/.gitmodules temp_release
+          cp -r ./nyanrus_release/noraneko temp_release
       - name: push
         run: |
           cd temp_release
