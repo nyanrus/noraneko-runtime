@@ -35,13 +35,21 @@ jobs:
         #? https://github.com/mozilla/sccache#known-caveats
         export CARGO_INCREMENTAL=0
 
-    - name: Setup 🪛
+    - name: Allocate swap
       run: |
-        cd $GITHUB_WORKSPACE
-
-        cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
-
-        sudo apt install msitools -y
+        echo Before:
+        free -h
+        df -h
+        
+        echo
+        echo
+        
+        sudo swapoff /mnt/swapfile
+        sudo rm /mnt/swapfile
+        sudo fallocate -l 10G /mnt/swapfile
+        sudo chmod 600 /mnt/swapfile
+        sudo mkswap /mnt/swapfile
+        sudo swapon /mnt/swapfile
 
         sudo apt autoremove -y
         sudo apt clean
@@ -64,6 +72,22 @@ jobs:
         sudo rm -rf /usr/share/java
         sudo rm -rf /usr/share/miniconda
         sudo rm -rf /usr/local/share/vcpkg
+
+
+        echo
+        echo
+        
+        echo After:
+        free -h
+        df -h
+
+    - name: Setup 🪛
+      run: |
+        cd $GITHUB_WORKSPACE
+
+        cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
+
+        sudo apt install msitools -y
 
         ./mach --no-interactive bootstrap --application-choice browser
 
