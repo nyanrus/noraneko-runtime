@@ -106,12 +106,12 @@ jobs:
       run: |
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
         cd ~/output
-        tar -I "zstd -T0 -10" -cf ~/noraneko.tar.zst .
+        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-zstd
         compression-level: 0
-        path: ~/noraneko.tar.zst
+        path: ~/nora-win_x64-bin.tar.zst
     # Publish END
