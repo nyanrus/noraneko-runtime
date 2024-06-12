@@ -87,6 +87,9 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE
 
+        # update noraneko to latest
+        git submodule update --remote
+
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
         sudo apt install msitools -y
