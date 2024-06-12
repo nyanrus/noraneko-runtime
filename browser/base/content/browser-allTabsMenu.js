@@ -6,6 +6,7 @@
 /* eslint-env mozilla/browser-window */
 
 ChromeUtils.defineESModuleGetters(this, {
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   TabsPanel: "resource:///modules/TabsList.sys.mjs",
 });
 
@@ -72,6 +73,16 @@ var gTabsPanel = {
         !hasHiddenTabs;
       document.getElementById("allTabsMenu-hiddenTabsSeparator").hidden =
         !hasHiddenTabs;
+
+      let closeDuplicateEnabled = Services.prefs.getBoolPref(
+        "browser.tabs.context.close-duplicate.enabled"
+      );
+      let closeDuplicateTabsItem = document.getElementById(
+        "allTabsMenu-closeDuplicateTabs"
+      );
+      closeDuplicateTabsItem.hidden = !closeDuplicateEnabled;
+      closeDuplicateTabsItem.disabled =
+        !closeDuplicateEnabled || !gBrowser.getAllDuplicateTabsToClose().length;
     });
 
     this.allTabsView.addEventListener("ViewShown", () =>
@@ -148,6 +159,10 @@ var gTabsPanel = {
         "browser.ui.interaction.all_tabs_panel_entrypoint",
         entrypoint,
         1
+      );
+      BrowserUsageTelemetry.recordInteractionEvent(
+        entrypoint,
+        "all-tabs-panel-entrypoint"
       );
       PanelUI.showSubView(
         this.kElements.allTabsView,

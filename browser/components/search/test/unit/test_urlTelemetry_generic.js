@@ -7,7 +7,6 @@ ChromeUtils.defineESModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetryUtils: "resource:///modules/SearchSERPTelemetry.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
@@ -64,10 +63,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "ff",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -81,10 +81,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "ff",
+      source: "unknown",
       is_shopping_page: "true",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -98,10 +99,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "tb",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -115,10 +117,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "foo",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -132,10 +135,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "other",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -149,10 +153,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "other",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -166,10 +171,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -183,10 +189,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -200,10 +207,11 @@ const TESTS = [
       provider: "example2",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
 ];
@@ -259,10 +267,6 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
 do_get_profile();
 
 add_task(async function setup() {
-  Services.prefs.setBoolPref(
-    SearchUtils.BROWSER_SEARCH_PREF + "serpEventTelemetry.enabled",
-    true
-  );
   Services.fog.initializeFOG();
   await SearchSERPTelemetry.init();
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);

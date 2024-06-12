@@ -23,8 +23,6 @@ pref("browser.hiddenWindowChromeURL", "chrome://browser/content/hiddenWindowMac.
 
 // Set add-ons abuse report related prefs specific to Firefox Desktop.
 pref("extensions.abuseReport.enabled", true);
-pref("extensions.abuseReport.amWebAPI.enabled", true);
-pref("extensions.abuseReport.amoFormEnabled", true);
 
 // Enables some extra Extension System Logging (can reduce performance)
 pref("extensions.logging.enabled", false);
@@ -326,7 +324,7 @@ pref("browser.startup.couldRestoreSession.count", 0);
 pref("browser.startup.preXulSkeletonUI", true);
 
 // Whether the checkbox to enable Windows launch on login is shown
-pref("browser.startup.windowsLaunchOnLogin.enabled", false);
+pref("browser.startup.windowsLaunchOnLogin.enabled", true);
 // Whether to show the launch on login infobar notification
 pref("browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt", false);
 #endif
@@ -422,13 +420,7 @@ pref("browser.urlbar.suggest.engines",              true);
 pref("browser.urlbar.suggest.calculator",           false);
 pref("browser.urlbar.suggest.recentsearches",       true);
 
-#if defined(EARLY_BETA_OR_EARLIER)
-  // Enable QuickActions and its urlbar search mode button.
-  pref("browser.urlbar.quickactions.enabled", true);
-  pref("browser.urlbar.suggest.quickactions", true);
-  pref("browser.urlbar.shortcuts.quickactions", true);
-  pref("browser.urlbar.quickactions.showPrefs", true);
-#endif
+pref("browser.urlbar.secondaryActions.featureGate", false);
 
 #if defined(EARLY_BETA_OR_EARLIER)
   // Enable Trending suggestions.
@@ -541,8 +533,10 @@ pref("browser.urlbar.trimURLs", true);
 
 #ifdef NIGHTLY_BUILD
 pref("browser.urlbar.trimHttps", true);
+pref("browser.urlbar.untrimOnUserInteraction.featureGate", true);
 #else
 pref("browser.urlbar.trimHttps", false);
+pref("browser.urlbar.untrimOnUserInteraction.featureGate", false);
 #endif
 
 // If changed to true, copying the entire URL from the location bar will put the
@@ -745,9 +739,6 @@ pref("browser.search.separatePrivateDefault.ui.enabled", false);
 // The maximum amount of times the private default banner is shown.
 pref("browser.search.separatePrivateDefault.ui.banner.max", 0);
 
-// Enables search SERP telemetry (impressions, engagements and abandonment)
-pref("browser.search.serpEventTelemetry.enabled", true);
-
 // Enables search SERP telemetry page categorization.
 #ifdef NIGHTLY_BUILD
 pref("browser.search.serpEventTelemetryCategorization.enabled", true);
@@ -826,10 +817,6 @@ pref("browser.privatebrowsing.vpnpromourl", "https://vpn.mozilla.org/?utm_source
 
 // Whether the user has opted-in to recommended settings for data features.
 pref("browser.dataFeatureRecommendations.enabled", false);
-
-// Temporary pref to control whether or not Private Browsing windows show up
-// as separate icons in the Windows taskbar.
-pref("browser.privateWindowSeparation.enabled", true);
 
 // Use dark theme variant for PBM windows. This is only supported if the theme
 // sets darkTheme data.
@@ -954,11 +941,7 @@ pref("browser.tabs.tooltipsShowPidAndActiveness", false);
 pref("browser.tabs.cardPreview.enabled", false);
 pref("browser.tabs.cardPreview.showThumbnails", true);
 
-pref("browser.tabs.firefox-view", true);
-pref("browser.tabs.firefox-view-next", true);
-pref("browser.tabs.firefox-view-newIcon", true);
 pref("browser.tabs.firefox-view.logLevel", "Warn");
-pref("browser.tabs.firefox-view.notify-for-tabs", false);
 
 // allow_eval_* is enabled on Firefox Desktop only at this
 // point in time
@@ -1278,6 +1261,24 @@ pref("browser.sessionstore.interval.idle", 3600000); // 1h
 // collect/save the session quite as often.
 pref("browser.sessionstore.idleDelay", 180); // 3 minutes
 
+// Fine-grained default logging levels for each log appender
+pref("browser.sessionstore.log.appender.console", "Fatal");
+pref("browser.sessionstore.log.appender.dump", "Error");
+pref("browser.sessionstore.log.appender.file.level", "Trace");
+pref("browser.sessionstore.log.appender.file.logOnError", true);
+
+// The default log level for all Session restore logs.
+pref("browser.sessionstore.loglevel", "Warn");
+
+#ifdef EARLY_BETA_OR_EARLIER
+  pref("browser.sessionstore.loglevel", "Debug");
+  pref("browser.sessionstore.log.appender.file.logOnSuccess", true);
+#else
+  pref("browser.sessionstore.log.appender.file.logOnSuccess", false);
+#endif
+// How old can a log file be before it gets deleted?
+pref("browser.sessionstore.log.appender.file.maxErrorAge", 864000); // 10 days
+
 // on which sites to save text data, POSTDATA and cookies
 // 0 = everywhere, 1 = unencrypted sites, 2 = nowhere
 pref("browser.sessionstore.privacy_level", 0);
@@ -1310,7 +1311,7 @@ pref("browser.sessionstore.restore_pinned_tabs_on_demand", false);
 pref("browser.sessionstore.upgradeBackup.latestBuildID", "");
 // How many upgrade backups should be kept
 pref("browser.sessionstore.upgradeBackup.maxUpgradeBackups", 3);
-// End-users should not run sessionstore in debug mode
+// Toggle some debug behavior; end-users should not run sessionstore in debug mode
 pref("browser.sessionstore.debug", false);
 // Forget closed windows/tabs after two weeks
 pref("browser.sessionstore.cleanup.forget_closed_after", 1209600000);
@@ -1692,6 +1693,15 @@ pref("browser.partnerlink.campaign.topsites", "amzn_2020_a1");
 // Activates preloading of the new tab url.
 pref("browser.newtab.preload", true);
 
+// Weather widget for newtab
+pref("browser.newtabpage.activity-stream.showWeather", true);
+pref("browser.newtabpage.activity-stream.weather.query", "");
+pref("browser.newtabpage.activity-stream.weather.locationSearchEnabled", false);
+pref("browser.newtabpage.activity-stream.weather.temperatureUnits", "f");
+pref("browser.newtabpage.activity-stream.weather.display", "simple");
+// List of regions that get weather by default.
+pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "");
+
 // Preference to enable wallpaper selection in the Customize Menu of new tab page
 pref("browser.newtabpage.activity-stream.newtabWallpapers.enabled", false);
 
@@ -1751,7 +1761,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.spoc-positions", "1,5,7
 pref("browser.newtabpage.activity-stream.discoverystream.spoc-topsites-positions", "2");
 // This is a 0-based index, for consistency with the other position CSVs,
 // but Contile positions are a 1-based index, so we end up adding 1 to these before using them.
-pref("browser.newtabpage.activity-stream.discoverystream.contile-topsites-positions", "0,1");
+pref("browser.newtabpage.activity-stream.discoverystream.contile-topsites-positions", "0,1,2");
 pref("browser.newtabpage.activity-stream.discoverystream.widget-positions", "");
 
 pref("browser.newtabpage.activity-stream.discoverystream.spocs-endpoint", "");
@@ -1787,6 +1797,9 @@ pref("browser.newtabpage.activity-stream.discoverystream.region-bff-config", "US
 pref("browser.newtabpage.activity-stream.discoverystream.region-spocs-config", "US,CA,DE,GB,FR,IT,ES");
 // List of regions that don't get the 7 row layout.
 pref("browser.newtabpage.activity-stream.discoverystream.region-basic-config", "");
+
+// Add parameters to Pocket feed URL.
+pref("browser.newtabpage.activity-stream.discoverystream.pocket-feed-parameters", "");
 
 // Allows Pocket story collections to be dismissed.
 pref("browser.newtabpage.activity-stream.discoverystream.isCollectionDismissible", true);
@@ -1939,6 +1952,10 @@ pref("identity.mobilepromo.ios", "https://www.mozilla.org/firefox/ios/?utm_sourc
 // Default is 24 hours.
 pref("identity.fxaccounts.commands.missed.fetch_interval", 86400);
 
+// Controls whether this client can send and receive "close tab"
+// commands from other FxA clients
+pref("identity.fxaccounts.commands.remoteTabManagement.enabled", false);
+
 // Note: when media.gmp-*.visible is true, provided we're running on a
 // supported platform/OS version, the corresponding CDM appears in the
 // plugins list, Firefox will download the GMP/CDM if enabled, and our
@@ -1986,7 +2003,13 @@ pref("browser.translations.newSettingsUI.enable", false);
 
 // Enable Firefox Select translations powered by Bergamot translations
 // engine https://browser.mt/.
-pref("browser.translations.select.enable", false);
+#if defined(EARLY_BETA_OR_EARLIER)
+  // Enables Select Translations for Early Beta and Nightly.
+  pref("browser.translations.select.enable", true);
+#else
+  // Disables Select Translations for Late Beta and Release.
+  pref("browser.translations.select.enable", false);
+#endif
 
 // Telemetry settings.
 // Determines if Telemetry pings can be archived locally.
@@ -2233,6 +2256,9 @@ pref("privacy.exposeContentTitleInWindow.pbm", true);
 // Run media transport in a separate process?
 pref("media.peerconnection.mtransport_process", true);
 
+// Whether the "Close duplicate tabs" tab context menu is enabled.
+pref("browser.tabs.context.close-duplicate.enabled", true);
+
 // For speculatively warming up tabs to improve perceived
 // performance while using the async tab switcher.
 pref("browser.tabs.remote.warmup.enabled", true);
@@ -2347,11 +2373,6 @@ pref("extensions.pocket.refresh.hideRecentSaves.enabled", false);
 
 pref("signon.management.page.fileImport.enabled", true);
 
-#ifdef NIGHTLY_BUILD
-pref("signon.management.page.os-auth.enabled", true);
-#else
-pref("signon.management.page.os-auth.enabled", false);
-#endif
 // "available"      - user can see feature offer.
 // "offered"        - we have offered feature to user and they have not yet made a decision.
 // "enabled"        - user opted in to the feature.
@@ -2394,8 +2415,6 @@ pref("browser.crashReports.unsubmittedCheck.autoSubmit2", false);
 // Preferences for the form autofill toolkit component.
 // Checkbox in sync options for credit card data sync service
 pref("services.sync.engine.creditcards.available", true);
-// Whether the user enabled the OS re-auth dialog.
-pref("extensions.formautofill.reauth.enabled", false);
 
 // Whether or not to restore a session with lazy-browser tabs.
 pref("browser.sessionstore.restore_tabs_lazily", true);
@@ -2406,11 +2425,7 @@ pref("browser.suppress_first_window_animation", true);
 pref("extensions.screenshots.disabled", false);
 
 // Preference that determines whether Screenshots uses the dedicated browser component
-#ifdef NIGHTLY_BUILD
-  pref("screenshots.browser.component.enabled", true);
-#else
-  pref("screenshots.browser.component.enabled", false);
-#endif
+pref("screenshots.browser.component.enabled", true);
 
 // Preference that determines what button to focus
 pref("screenshots.browser.component.last-saved-method", "download");
@@ -3029,6 +3044,12 @@ pref("browser.mailto.prompt.os", true);
 
 // Pref to initialize the BackupService soon after startup.
 pref("browser.backup.enabled", true);
+// Pref to control the visibility of the backup section in about:preferences
+pref("browser.backup.preferences.ui.enabled", false);
+// The number of SQLite database pages to backup per step.
+pref("browser.backup.sqlite.pages_per_step", 5);
+// The delay between SQLite database backup steps in milliseconds.
+pref("browser.backup.sqlite.step_delay_ms", 250);
 
 // Pref to enable the new profiles
 pref("browser.profiles.enabled", false);
@@ -3038,3 +3059,5 @@ pref("startup.homepage_override_nimbus_maxVersion", "");
 
 // Pref to enable the content relevancy feature.
 pref("toolkit.contentRelevancy.enabled", false);
+// Pref to enable the ingestion through the Rust component.
+pref("toolkit.contentRelevancy.ingestEnabled", false);

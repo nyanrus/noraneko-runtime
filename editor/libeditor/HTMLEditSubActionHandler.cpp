@@ -1604,7 +1604,7 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
       NS_WARNING("Inserted <br> was unexpectedly removed");
       return Err(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
     }
-    WSScanResult backwardScanFromBeforeBRElementResult =
+    const WSScanResult backwardScanFromBeforeBRElementResult =
         WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
             editingHost,
             EditorDOMPoint(unwrappedInsertBRElementResult.GetNewNode()),
@@ -1615,8 +1615,8 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
       return Err(NS_ERROR_FAILURE);
     }
 
-    WSScanResult forwardScanFromAfterBRElementResult =
-        WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+    const WSScanResult forwardScanFromAfterBRElementResult =
+        WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
             editingHost, pointToPutCaret,
             BlockInlineCheck::UseComputedDisplayStyle);
     if (MOZ_UNLIKELY(forwardScanFromAfterBRElementResult.Failed())) {
@@ -1624,9 +1624,18 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
       return Err(NS_ERROR_FAILURE);
     }
     const bool brElementIsAfterBlock =
-        backwardScanFromBeforeBRElementResult.ReachedBlockBoundary();
+        backwardScanFromBeforeBRElementResult.ReachedBlockBoundary() ||
+        // FIXME: This is wrong considering because the inline editing host may
+        // be surrounded by visible inline content.  However, WSRunScanner is
+        // not aware of block boundary around it and stopping this change causes
+        // starting to fail some WPT.  Therefore, we need to keep doing this for
+        // now.
+        backwardScanFromBeforeBRElementResult
+            .ReachedInlineEditingHostBoundary();
     const bool brElementIsBeforeBlock =
-        forwardScanFromAfterBRElementResult.ReachedBlockBoundary();
+        forwardScanFromAfterBRElementResult.ReachedBlockBoundary() ||
+        // FIXME: See above comment.
+        forwardScanFromAfterBRElementResult.ReachedInlineEditingHostBoundary();
     const bool isEmptyEditingHost = HTMLEditUtils::IsEmptyNode(
         *editingHost, {EmptyCheckOption::TreatNonEditableContentAsInvisible});
     if (brElementIsBeforeBlock &&
@@ -1647,13 +1656,13 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
       unwrappedInvisibleAdditionalBRElement.IgnoreCaretPointSuggestion();
     } else if (forwardScanFromAfterBRElementResult
                    .InVisibleOrCollapsibleCharacters()) {
-      pointToPutCaret =
-          forwardScanFromAfterBRElementResult.Point<EditorDOMPoint>();
+      pointToPutCaret = forwardScanFromAfterBRElementResult
+                            .PointAtReachedContent<EditorDOMPoint>();
     } else if (forwardScanFromAfterBRElementResult.ReachedSpecialContent()) {
       // Next inserting text should be inserted into styled inline elements if
       // they have first visible thing in the new line.
-      pointToPutCaret =
-          forwardScanFromAfterBRElementResult.PointAtContent<EditorDOMPoint>();
+      pointToPutCaret = forwardScanFromAfterBRElementResult
+                            .PointAtReachedContent<EditorDOMPoint>();
     }
 
     nsresult rv = CollapseSelectionTo(pointToPutCaret);
@@ -2254,21 +2263,32 @@ Result<CreateElementResult, nsresult> HTMLEditor::HandleInsertBRElement(
       aEditingHost, {EmptyCheckOption::TreatNonEditableContentAsInvisible});
   WSRunScanner wsRunScanner(&aEditingHost, aPointToBreak,
                             BlockInlineCheck::UseComputedDisplayStyle);
-  WSScanResult backwardScanResult =
+  const WSScanResult backwardScanResult =
       wsRunScanner.ScanPreviousVisibleNodeOrBlockBoundaryFrom(aPointToBreak);
   if (MOZ_UNLIKELY(backwardScanResult.Failed())) {
     NS_WARNING(
         "WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundaryFrom() failed");
     return Err(NS_ERROR_FAILURE);
   }
-  const bool brElementIsAfterBlock = backwardScanResult.ReachedBlockBoundary();
-  WSScanResult forwardScanResult =
-      wsRunScanner.ScanNextVisibleNodeOrBlockBoundaryFrom(aPointToBreak);
+  const bool brElementIsAfterBlock =
+      backwardScanResult.ReachedBlockBoundary() ||
+      // FIXME: This is wrong considering because the inline editing host may
+      // be surrounded by visible inline content.  However, WSRunScanner is
+      // not aware of block boundary around it and stopping this change causes
+      // starting to fail some WPT.  Therefore, we need to keep doing this for
+      // now.
+      backwardScanResult.ReachedInlineEditingHostBoundary();
+  const WSScanResult forwardScanResult =
+      wsRunScanner.ScanInclusiveNextVisibleNodeOrBlockBoundaryFrom(
+          aPointToBreak);
   if (MOZ_UNLIKELY(forwardScanResult.Failed())) {
     NS_WARNING("WSRunScanner::ScanNextVisibleNodeOrBlockBoundaryFrom() failed");
     return Err(NS_ERROR_FAILURE);
   }
-  const bool brElementIsBeforeBlock = forwardScanResult.ReachedBlockBoundary();
+  const bool brElementIsBeforeBlock =
+      forwardScanResult.ReachedBlockBoundary() ||
+      // FIXME: See above comment
+      forwardScanResult.ReachedInlineEditingHostBoundary();
 
   // First, insert a <br> element.
   RefPtr<Element> brElement;
@@ -2383,8 +2403,8 @@ Result<CreateElementResult, nsresult> HTMLEditor::HandleInsertBRElement(
                                std::move(pointToPutCaret));
   }
 
-  WSScanResult forwardScanFromAfterBRElementResult =
-      WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+  const WSScanResult forwardScanFromAfterBRElementResult =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
           &aEditingHost, afterBRElement,
           BlockInlineCheck::UseComputedDisplayStyle);
   if (MOZ_UNLIKELY(forwardScanFromAfterBRElementResult.Failed())) {
@@ -2422,7 +2442,14 @@ Result<CreateElementResult, nsresult> HTMLEditor::HandleInsertBRElement(
           rv != NS_SUCCESS_EDITOR_BUT_IGNORED_TRIVIAL_ERROR,
           "MoveNodeResult::SuggestCaretPointTo() failed, but ignored");
     }
-  } else if (forwardScanFromAfterBRElementResult.ReachedBlockBoundary() &&
+  } else if ((forwardScanFromAfterBRElementResult.ReachedBlockBoundary() ||
+              // FIXME: This is wrong considering because the inline editing
+              // host may be surrounded by visible inline content.  However,
+              // WSRunScanner is not aware of block boundary around it and
+              // stopping this change causes starting to fail some WPT.
+              // Therefore, we need to keep doing this for now.
+              forwardScanFromAfterBRElementResult
+                  .ReachedInlineEditingHostBoundary()) &&
              !brElementIsAfterBlock) {
     Result<CreateElementResult, nsresult> invisibleAdditionalBRElementResult =
         InsertAdditionalInvisibleLineBreak();
@@ -2530,7 +2557,8 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::HandleInsertLinefeed(
     WSRunScanner wsScannerAtCaret(&aEditingHost, pointToPutCaret,
                                   BlockInlineCheck::UseComputedDisplayStyle);
     if (wsScannerAtCaret.StartsFromPreformattedLineBreak() &&
-        wsScannerAtCaret.EndsByBlockBoundary() &&
+        (wsScannerAtCaret.EndsByBlockBoundary() ||
+         wsScannerAtCaret.EndsByInlineEditingHostBoundary()) &&
         HTMLEditUtils::CanNodeContain(*wsScannerAtCaret.GetEndReasonContent(),
                                       *nsGkAtoms::br)) {
       AutoTrackDOMPoint trackingInsertedPosition(RangeUpdaterRef(),
@@ -2612,8 +2640,8 @@ HTMLEditor::HandleInsertParagraphInMailCiteElement(
     // mailquote (in either inline or block case). The latter can confuse a
     // user if they click there and start typing, because being in the
     // mailquote may affect wrapping behavior, or font color, etc.
-    WSScanResult forwardScanFromPointToSplitResult =
-        WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+    const WSScanResult forwardScanFromPointToSplitResult =
+        WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
             &aEditingHost, pointToSplit, BlockInlineCheck::UseHTMLDefaultStyle);
     if (forwardScanFromPointToSplitResult.Failed()) {
       return Err(NS_ERROR_FAILURE);
@@ -2624,8 +2652,8 @@ HTMLEditor::HandleInsertParagraphInMailCiteElement(
         forwardScanFromPointToSplitResult.BRElementPtr() != &aMailCiteElement &&
         aMailCiteElement.Contains(
             forwardScanFromPointToSplitResult.BRElementPtr())) {
-      pointToSplit =
-          forwardScanFromPointToSplitResult.PointAfterContent<EditorDOMPoint>();
+      pointToSplit = forwardScanFromPointToSplitResult
+                         .PointAfterReachedContent<EditorDOMPoint>();
     }
 
     if (NS_WARN_IF(!pointToSplit.IsInContentNode())) {
@@ -2726,7 +2754,7 @@ HTMLEditor::HandleInsertParagraphInMailCiteElement(
       // XXX Cannot we replace this complicated check with just a call of
       //     HTMLEditUtils::IsVisibleBRElement with
       //     resultOfInsertingBRElement.inspect()?
-      WSScanResult backwardScanFromPointToCreateNewBRElementResult =
+      const WSScanResult backwardScanFromPointToCreateNewBRElementResult =
           WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
               &aEditingHost, pointToCreateNewBRElement,
               BlockInlineCheck::UseComputedDisplayStyle);
@@ -2743,8 +2771,8 @@ HTMLEditor::HandleInsertParagraphInMailCiteElement(
                .ReachedSpecialContent()) {
         return NS_SUCCESS_DOM_NO_OPERATION;
       }
-      WSScanResult forwardScanFromPointAfterNewBRElementResult =
-          WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+      const WSScanResult forwardScanFromPointAfterNewBRElementResult =
+          WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
               &aEditingHost,
               EditorRawDOMPoint::After(pointToCreateNewBRElement),
               BlockInlineCheck::UseComputedDisplayStyle);
@@ -3343,12 +3371,14 @@ HTMLEditor::InsertBRElementIfHardLineIsEmptyAndEndsWithBlockBoundary(
                             BlockInlineCheck::UseComputedDisplayStyle);
   // If the point is not start of a hard line, we don't need to put a `<br>`
   // element here.
-  if (!wsRunScanner.StartsFromHardLineBreak()) {
+  if (!wsRunScanner.StartsFromHardLineBreak() &&
+      !wsRunScanner.StartsFromInlineEditingHostBoundary()) {
     return CaretPoint(EditorDOMPoint());
   }
   // If the point is not end of a hard line or the hard line does not end with
   // block boundary, we don't need to put a `<br>` element here.
-  if (!wsRunScanner.EndsByBlockBoundary()) {
+  if (!wsRunScanner.EndsByBlockBoundary() &&
+      !wsRunScanner.EndsByInlineEditingHostBoundary()) {
     return CaretPoint(EditorDOMPoint());
   }
 
@@ -7654,7 +7684,7 @@ HTMLEditor::GetRangeExtendedToHardLineEdgesForBlockEditAction(
       // element even if selected in a blocked phrase element or
       // non-HTMLelement.
       BlockInlineCheck::UseHTMLDefaultStyle);
-  WSScanResult scanResultAtEnd =
+  const WSScanResult scanResultAtEnd =
       wsScannerAtEnd.ScanPreviousVisibleNodeOrBlockBoundaryFrom(endPoint);
   if (scanResultAtEnd.Failed()) {
     NS_WARNING(
@@ -7673,7 +7703,8 @@ HTMLEditor::GetRangeExtendedToHardLineEdgesForBlockEditAction(
         newRange.SetEnd(EditorRawDOMPoint::After(*child));
       }
       // else block is empty - we can leave selection alone here, i think.
-    } else if (wsScannerAtEnd.StartsFromCurrentBlockBoundary()) {
+    } else if (wsScannerAtEnd.StartsFromCurrentBlockBoundary() ||
+               wsScannerAtEnd.StartsFromInlineEditingHostBoundary()) {
       // endpoint is just after start of this block
       if (nsIContent* child = HTMLEditUtils::GetPreviousContent(
               endPoint, {WalkTreeOption::IgnoreNonEditableNode},
@@ -7692,8 +7723,9 @@ HTMLEditor::GetRangeExtendedToHardLineEdgesForBlockEditAction(
   // selection past that, it would visibly change meaning of users selection.
   WSRunScanner wsScannerAtStart(&aEditingHost, startPoint,
                                 BlockInlineCheck::UseHTMLDefaultStyle);
-  WSScanResult scanResultAtStart =
-      wsScannerAtStart.ScanNextVisibleNodeOrBlockBoundaryFrom(startPoint);
+  const WSScanResult scanResultAtStart =
+      wsScannerAtStart.ScanInclusiveNextVisibleNodeOrBlockBoundaryFrom(
+          startPoint);
   if (scanResultAtStart.Failed()) {
     NS_WARNING("WSRunScanner::ScanNextVisibleNodeOrBlockBoundaryFrom() failed");
     return Err(NS_ERROR_FAILURE);
@@ -7710,7 +7742,8 @@ HTMLEditor::GetRangeExtendedToHardLineEdgesForBlockEditAction(
         newRange.SetStart(EditorRawDOMPoint(child));
       }
       // else block is empty - we can leave selection alone here, i think.
-    } else if (wsScannerAtStart.EndsByCurrentBlockBoundary()) {
+    } else if (wsScannerAtStart.EndsByCurrentBlockBoundary() ||
+               wsScannerAtStart.EndsByInlineEditingHostBoundary()) {
       // startpoint is just before end of this block
       if (nsIContent* child = HTMLEditUtils::GetNextContent(
               startPoint, {WalkTreeOption::IgnoreNonEditableNode},
@@ -8944,8 +8977,8 @@ HTMLEditor::HandleInsertParagraphInListItemElement(
   // If the right list item element is not empty, we need to consider where to
   // put caret in it. If it has non-container inline elements, <br> or <hr>, at
   // the element is proper position.
-  WSScanResult forwardScanFromStartOfListItemResult =
-      WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+  const WSScanResult forwardScanFromStartOfListItemResult =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
           &aEditingHost, EditorRawDOMPoint(&rightListItemElement, 0u),
           BlockInlineCheck::UseComputedDisplayStyle);
   if (MOZ_UNLIKELY(forwardScanFromStartOfListItemResult.Failed())) {
@@ -8955,8 +8988,8 @@ HTMLEditor::HandleInsertParagraphInListItemElement(
   if (forwardScanFromStartOfListItemResult.ReachedSpecialContent() ||
       forwardScanFromStartOfListItemResult.ReachedBRElement() ||
       forwardScanFromStartOfListItemResult.ReachedHRElement()) {
-    auto atFoundElement =
-        forwardScanFromStartOfListItemResult.PointAtContent<EditorDOMPoint>();
+    auto atFoundElement = forwardScanFromStartOfListItemResult
+                              .PointAtReachedContent<EditorDOMPoint>();
     if (NS_WARN_IF(!atFoundElement.IsSetAndValid())) {
       return Err(NS_ERROR_FAILURE);
     }
@@ -8966,7 +8999,13 @@ HTMLEditor::HandleInsertParagraphInListItemElement(
 
   // If we reached a block boundary (end of the list item or a child block),
   // let's put deepest start of the list item or the child block.
-  if (forwardScanFromStartOfListItemResult.ReachedBlockBoundary()) {
+  if (forwardScanFromStartOfListItemResult.ReachedBlockBoundary() ||
+      // FIXME: This is wrong considering because the inline editing host may
+      // be surrounded by visible inline content.  However, WSRunScanner is
+      // not aware of block boundary around it and stopping this change causes
+      // starting to fail some WPT.  Therefore, we need to keep doing this for
+      // now.
+      forwardScanFromStartOfListItemResult.ReachedInlineEditingHostBoundary()) {
     return InsertParagraphResult(
         &rightListItemElement,
         HTMLEditUtils::GetDeepestEditableStartPointOf<EditorDOMPoint>(
@@ -8978,9 +9017,9 @@ HTMLEditor::HandleInsertParagraphInListItemElement(
   // Otherwise, return the point at first visible thing.
   // XXX This may be not meaningful position if it reached block element
   //     in aListItemElement.
-  return InsertParagraphResult(
-      &rightListItemElement,
-      forwardScanFromStartOfListItemResult.Point<EditorDOMPoint>());
+  return InsertParagraphResult(&rightListItemElement,
+                               forwardScanFromStartOfListItemResult
+                                   .PointAtReachedContent<EditorDOMPoint>());
 }
 
 Result<CreateElementResult, nsresult>

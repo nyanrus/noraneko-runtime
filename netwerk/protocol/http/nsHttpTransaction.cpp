@@ -398,11 +398,16 @@ nsresult nsHttpTransaction::Init(
   }
 
   RefPtr<nsHttpChannel> httpChannel = do_QueryObject(eventsink);
-  RefPtr<WebTransportSessionEventListener> listener =
-      httpChannel ? httpChannel->GetWebTransportSessionEventListener()
-                  : nullptr;
-  if (listener) {
-    mWebTransportSessionEventListener = std::move(listener);
+  if (httpChannel) {
+    RefPtr<WebTransportSessionEventListener> listener =
+        httpChannel->GetWebTransportSessionEventListener();
+    if (listener) {
+      mWebTransportSessionEventListener = std::move(listener);
+    }
+    nsCOMPtr<nsIURI> uri;
+    if (NS_SUCCEEDED(httpChannel->GetURI(getter_AddRefs(uri)))) {
+      mUrl = uri->GetSpecOrDefault();
+    }
   }
 
   return NS_OK;
@@ -2198,8 +2203,9 @@ bool nsHttpTransaction::HandleWebTransportResponse(uint16_t aStatus) {
     webTransportListener = mWebTransportSessionEventListener;
     mWebTransportSessionEventListener = nullptr;
   }
-  if (webTransportListener) {
-    webTransportListener->OnSessionReadyInternal(wtSession);
+  if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
+          do_QueryInterface(webTransportListener)) {
+    listener->OnSessionReadyInternal(wtSession);
     wtSession->SetWebTransportSessionEventListener(webTransportListener);
   }
 
@@ -3289,7 +3295,9 @@ nsresult nsHttpTransaction::OnHTTPSRRAvailable(
 
   RefPtr<nsHttpConnectionInfo> newInfo =
       mConnInfo->CloneAndAdoptHTTPSSVCRecord(svcbRecord);
-  bool needFastFallback = newInfo->IsHttp3();
+  // Don't fallback until we support WebTransport over HTTP/2.
+  // TODO: implement fallback in bug 1874102.
+  bool needFastFallback = newInfo->IsHttp3() && !newInfo->GetWebTransport();
   bool foundInPendingQ = gHttpHandler->ConnMgr()->RemoveTransFromConnEntry(
       this, mHashKeyOfConnectionEntry);
 

@@ -1183,11 +1183,9 @@ TEST_F(Strings, stringbuffer) {
   memcpy(data, kData, sizeof(kData));
 
   nsCString str;
-  buf->ToString(sizeof(kData) - 1, str);
+  str.Assign(buf, sizeof(kData) - 1);
 
-  nsStringBuffer* buf2;
-  buf2 = nsStringBuffer::FromString(str);
-
+  nsStringBuffer* buf2 = str.GetStringBuffer();
   EXPECT_EQ(buf, buf2);
 }
 
@@ -1281,9 +1279,6 @@ TEST_F(Strings, string_tointeger) {
   nsresult rv;
   for (const ToIntegerTest* t = kToIntegerTests; t->str; ++t) {
     int32_t result = nsAutoCString(t->str).ToInteger(&rv, t->radix);
-    EXPECT_EQ(rv, t->rv);
-    EXPECT_EQ(result, t->result);
-    result = nsAutoCString(t->str).ToInteger(&rv, t->radix);
     EXPECT_EQ(rv, t->rv);
     EXPECT_EQ(result, t->result);
   }
@@ -2286,6 +2281,30 @@ TEST_F(Strings, printf) {
     // Calling with a non-const pointer triggers selection of va_list overload
     // in MSVC at time of writing
     create_printf_strings(format, (char*)anotherString);
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "RightJustify %8s";
+    const char* expectedOutput = "RightJustify      foo";
+    create_printf_strings(format, "foo");
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "LeftJustify %-8s";
+    const char* expectedOutput = "LeftJustify foo     ";
+    create_printf_strings(format, "foo");
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "RightJustify2 %*s";
+    const char* expectedOutput = "RightJustify2      foo";
+    create_printf_strings(format, 8, "foo");
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "LeftJustify2 %-*s";
+    const char* expectedOutput = "LeftJustify2 foo     ";
+    create_printf_strings(format, 8, "foo");
     verify_printf_strings(expectedOutput);
   }
 }

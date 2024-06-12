@@ -54,6 +54,7 @@ hide-types = [
     "mozilla::StyleTimingFunction.*",
     # https://github.com/rust-lang/rust-bindgen/issues/1559
     "mozilla::StyleGeneric.*",
+    "nsTArray_.*",
     ".*ErrorResult.*",
 ]
 bitfield-enums = [
@@ -290,7 +291,6 @@ allowlist-types = [
     "nsStyleUI",
     "nsStyleVisibility",
     "nsStyleXUL",
-    "nsTArrayHeader",
     "mozilla::UniquePtr",
     "mozilla::DeclarationBlock",
     "mozilla::DefaultDelete",
@@ -403,6 +403,7 @@ cbindgen-types = [
     { gecko = "StyleOffsetRotate", servo = "crate::values::computed::motion::OffsetRotate" },
     { gecko = "StylePathCommand", servo = "crate::values::specified::svg_path::PathCommand" },
     { gecko = "StyleRayFunction", servo = "crate::values::computed::motion::RayFunction" },
+    { gecko = "StyleParserState", servo = "cssparser::ParserState" },
     { gecko = "StyleUnicodeRange", servo = "cssparser::UnicodeRange" },
     { gecko = "StyleOverflowWrap", servo = "crate::values::computed::OverflowWrap" },
     { gecko = "StyleWordBreak", servo = "crate::values::computed::WordBreak" },
@@ -631,6 +632,8 @@ mapped-generic-types = [
     { generic = false, gecko = "nsAString", servo = "nsstring::nsAString" },
     { generic = false, gecko = "nsCString", servo = "nsstring::nsCString" },
     { generic = false, gecko = "nsString", servo = "nsstring::nsString" },
+    { generic = true, gecko = "nsTArray", servo = "thin_vec::ThinVec" },
+    { generic = true, gecko = "CopyableTArray", servo = "thin_vec::ThinVec" },
 ]
 
 allowlist-functions = ["Servo_.*", "Gecko_.*"]

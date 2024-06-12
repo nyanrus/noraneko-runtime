@@ -129,6 +129,21 @@ pub struct SvgFilterInstance {
     pub extra_data_address: GpuCacheAddress,
 }
 
+#[derive(Clone, Debug)]
+#[repr(C)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct SVGFEFilterInstance {
+    pub target_rect: DeviceRect,
+    pub input_1_content_scale_and_offset: [f32; 4],
+    pub input_2_content_scale_and_offset: [f32; 4],
+    pub input_1_task_address: RenderTaskAddress,
+    pub input_2_task_address: RenderTaskAddress,
+    pub kind: u16,
+    pub input_count: u16,
+    pub extra_data_address: GpuCacheAddress,
+}
+
 #[derive(Copy, Clone, Debug, Hash, MallocSizeOf, PartialEq, Eq)]
 #[repr(C)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -535,7 +550,7 @@ impl From<SplitCompositeInstance> for PrimitiveInstanceData {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct QuadInstance {
-    pub render_task_address: RenderTaskAddress,
+    pub dst_task_address: RenderTaskAddress,
     pub prim_address_i: GpuBufferAddress,
     pub prim_address_f: GpuBufferAddress,
     pub z_id: ZBufferId,
@@ -565,12 +580,13 @@ impl From<QuadInstance> for PrimitiveInstanceData {
                 ((instance.part_index as i32)    <<  8) |
                 ((instance.segment_index as i32) <<  0),
 
-                instance.render_task_address.0,
+                instance.dst_task_address.0,
             ],
         }
     }
 }
 
+#[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct QuadSegment {
     pub rect: LayoutRect,

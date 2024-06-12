@@ -71,6 +71,23 @@ SharedArrayRawBuffer* SharedArrayRawBuffer::Allocate(bool isGrowable,
   if (!p) {
     return nullptr;
   }
+  MOZ_ASSERT(reinterpret_cast<uintptr_t>(p) %
+                     ArrayBufferObject::ARRAY_BUFFER_ALIGNMENT ==
+                 0,
+             "shared array buffer memory is aligned");
+
+  // jemalloc tiny allocations can produce allocations not aligned to the
+  // smallest std::malloc allocation. Ensure shared array buffer allocations
+  // don't have to worry about this special case.
+  static_assert(sizeof(SharedArrayRawBuffer) > sizeof(void*),
+                "SharedArrayRawBuffer doesn't fit in jemalloc tiny allocation");
+
+  static_assert(sizeof(SharedArrayRawBuffer) %
+                        ArrayBufferObject::ARRAY_BUFFER_ALIGNMENT ==
+                    0,
+                "sizeof(SharedArrayRawBuffer) is a multiple of the array "
+                "buffer alignment, so |p + sizeof(SharedArrayRawBuffer)| is "
+                "also array buffer aligned");
 
   uint8_t* buffer = p + sizeof(SharedArrayRawBuffer);
   return new (p) SharedArrayRawBuffer(isGrowable, buffer, length);
@@ -587,6 +604,7 @@ SharedArrayBufferType* SharedArrayBufferObject::NewWith(
 
 bool SharedArrayBufferObject::acceptRawBuffer(SharedArrayRawBuffer* buffer,
                                               size_t length) {
+  MOZ_ASSERT(!isInitialized());
   if (!zone()->addSharedMemory(buffer,
                                SharedArrayMappedSize(buffer->isWasm(), length),
                                MemoryUse::SharedArrayRawBuffer)) {
@@ -595,6 +613,7 @@ bool SharedArrayBufferObject::acceptRawBuffer(SharedArrayRawBuffer* buffer,
 
   setFixedSlot(RAWBUF_SLOT, PrivateValue(buffer));
   setFixedSlot(LENGTH_SLOT, PrivateValue(length));
+  MOZ_ASSERT(isInitialized());
   return true;
 }
 
@@ -605,6 +624,7 @@ void SharedArrayBufferObject::dropRawBuffer() {
                                           MemoryUse::SharedArrayRawBuffer);
   rawBufferObject()->dropReference();
   setFixedSlot(RAWBUF_SLOT, UndefinedValue());
+  MOZ_ASSERT(!isInitialized());
 }
 
 SharedArrayRawBuffer* SharedArrayBufferObject::rawBufferObject() const {
@@ -639,6 +659,11 @@ void SharedArrayBufferObject::addSizeOfExcludingThis(
   // the refcount goes down). But that's unlikely and hard to avoid, so we
   // just live with the risk.
   const SharedArrayBufferObject& buf = obj->as<SharedArrayBufferObject>();
+
+  if (MOZ_UNLIKELY(!buf.isInitialized())) {
+    return;
+  }
+
   size_t nbytes = buf.byteLengthOrMaxByteLength();
   size_t owned = nbytes / buf.rawBufferObject()->refcount();
   if (buf.isWasm()) {
@@ -683,6 +708,7 @@ SharedArrayBufferObject* SharedArrayBufferObject::createFromNewRawBuffer(
 
   if (!obj->acceptRawBuffer(buffer, initialSize)) {
     buffer->dropReference();
+    js::ReportOutOfMemory(cx);
     return nullptr;
   }
 

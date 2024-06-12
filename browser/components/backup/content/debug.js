@@ -26,13 +26,31 @@ let DebugUI = {
     }
   },
 
+  secondsToHms(seconds) {
+    let h = Math.floor(seconds / 3600);
+    let m = Math.floor((seconds % 3600) / 60);
+    let s = Math.floor((seconds % 3600) % 60);
+    return `${h}h ${m}m ${s}s`;
+  },
+
   async onButtonClick(button) {
     switch (button.id) {
       case "create-backup": {
         let service = BackupService.get();
+        let lastBackupStatus = document.querySelector("#last-backup-status");
+        lastBackupStatus.textContent = "Creating backup...";
+
+        let then = Cu.now();
         button.disabled = true;
         await service.createBackup();
+        let totalTimeSeconds = (Cu.now() - then) / 1000;
         button.disabled = false;
+        new Notification(`Backup created`, {
+          body: `Total time ${this.secondsToHms(totalTimeSeconds)}`,
+        });
+        lastBackupStatus.textContent = `Backup created - total time: ${this.secondsToHms(
+          totalTimeSeconds
+        )}`;
         break;
       }
       case "open-backup-folder": {
@@ -51,6 +69,42 @@ let DebugUI = {
         }
 
         break;
+      }
+      case "recover-from-staging": {
+        let backupsDir = PathUtils.join(PathUtils.profileDir, "backups");
+        let fp = Cc["@mozilla.org/filepicker;1"].createInstance(
+          Ci.nsIFilePicker
+        );
+        fp.init(
+          window.browsingContext,
+          "Choose a staging folder",
+          Ci.nsIFilePicker.modeGetFolder
+        );
+        fp.displayDirectory = await IOUtils.getDirectory(backupsDir);
+        let result = await new Promise(resolve => fp.open(resolve));
+        if (result == Ci.nsIFilePicker.returnCancel) {
+          break;
+        }
+
+        let path = fp.file.path;
+        let lastRecoveryStatus = document.querySelector(
+          "#last-recovery-status"
+        );
+        lastRecoveryStatus.textContent = "Recovering from backup...";
+
+        let service = BackupService.get();
+        try {
+          let newProfile = await service.recoverFromBackup(
+            path,
+            true /* shouldLaunch */
+          );
+          lastRecoveryStatus.textContent = `Created profile ${newProfile.name} at ${newProfile.rootDir.path}`;
+        } catch (e) {
+          lastRecoveryStatus.textContent(
+            `Failed to recover: ${e.message} Check the console for the full exception.`
+          );
+          throw e;
+        }
       }
     }
   },

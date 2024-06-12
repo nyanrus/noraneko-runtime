@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { Log } from "resource://gre/modules/Log.sys.mjs";
-import { LogManager } from "resource://services-common/logmanager.sys.mjs";
+import { LogManager } from "resource://gre/modules/LogManager.sys.mjs";
 
 // loglevel should be one of "Fatal", "Error", "Warn", "Info", "Config",
 // "Debug", "Trace" or "All". If none is specified, "Debug" will be used by
@@ -29,7 +29,13 @@ let logs = [
 ];
 
 // For legacy reasons, the log manager still thinks it's part of sync.
-export let logManager = new LogManager("services.sync.", logs, "sync");
+export let logManager = new LogManager({
+  prefRoot: "services.sync.",
+  logNames: logs,
+  logFilePrefix: "sync",
+  logFileSubDirectoryEntries: ["weave", "logs"],
+  testTopicPrefix: "services-tests:common:log-manager:",
+});
 
 // A boolean to indicate if personally identifiable information (or anything
 // else sensitive, such as credentials) should be logged.
@@ -77,6 +83,9 @@ export let COMMAND_PREFIX = "https://identity.mozilla.com/cmd/";
 // The commands we support - only the _TAIL values are recorded in telemetry.
 export let COMMAND_SENDTAB_TAIL = "open-uri";
 export let COMMAND_SENDTAB = COMMAND_PREFIX + COMMAND_SENDTAB_TAIL;
+// A command to close a tab on this device
+export let COMMAND_CLOSETAB_TAIL = "close-uri/v1";
+export let COMMAND_CLOSETAB = COMMAND_PREFIX + COMMAND_CLOSETAB_TAIL;
 
 // OAuth
 export let FX_OAUTH_CLIENT_ID = "5882386c6d801776";
@@ -266,6 +275,7 @@ export let FXA_PWDMGR_PLAINTEXT_FIELDS = new Set([
   "device",
   "profileCache",
   "encryptedSendTabKeys",
+  "encryptedCloseTabKeys",
 ]);
 
 // Fields we store in secure storage if it exists.

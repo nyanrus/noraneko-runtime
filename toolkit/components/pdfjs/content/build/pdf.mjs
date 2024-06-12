@@ -827,6 +827,12 @@ class BaseFilterFactory {
   addHCMFilter(fgColor, bgColor) {
     return "none";
   }
+  addAlphaFilter(map) {
+    return "none";
+  }
+  addLuminosityFilter(map) {
+    return "none";
+  }
   addHighlightHCMFilter(filterName, fgColor, bgColor, newFgColor, newBgColor) {
     return "none";
   }
@@ -1011,6 +1017,27 @@ class DOMFilterFactory extends BaseFilterFactory {
     }
     return this.#_defs;
   }
+  #createTables(maps) {
+    if (maps.length === 1) {
+      const mapR = maps[0];
+      const buffer = new Array(256);
+      for (let i = 0; i < 256; i++) {
+        buffer[i] = mapR[i] / 255;
+      }
+      const table = buffer.join(",");
+      return [table, table, table];
+    }
+    const [mapR, mapG, mapB] = maps;
+    const bufferR = new Array(256);
+    const bufferG = new Array(256);
+    const bufferB = new Array(256);
+    for (let i = 0; i < 256; i++) {
+      bufferR[i] = mapR[i] / 255;
+      bufferG[i] = mapG[i] / 255;
+      bufferB[i] = mapB[i] / 255;
+    }
+    return [bufferR.join(","), bufferG.join(","), bufferB.join(",")];
+  }
   addFilter(maps) {
     if (!maps) {
       return "none";
@@ -1019,29 +1046,8 @@ class DOMFilterFactory extends BaseFilterFactory {
     if (value) {
       return value;
     }
-    let tableR, tableG, tableB, key;
-    if (maps.length === 1) {
-      const mapR = maps[0];
-      const buffer = new Array(256);
-      for (let i = 0; i < 256; i++) {
-        buffer[i] = mapR[i] / 255;
-      }
-      key = tableR = tableG = tableB = buffer.join(",");
-    } else {
-      const [mapR, mapG, mapB] = maps;
-      const bufferR = new Array(256);
-      const bufferG = new Array(256);
-      const bufferB = new Array(256);
-      for (let i = 0; i < 256; i++) {
-        bufferR[i] = mapR[i] / 255;
-        bufferG[i] = mapG[i] / 255;
-        bufferB[i] = mapB[i] / 255;
-      }
-      tableR = bufferR.join(",");
-      tableG = bufferG.join(",");
-      tableB = bufferB.join(",");
-      key = `${tableR}${tableG}${tableB}`;
-    }
+    const [tableR, tableG, tableB] = this.#createTables(maps);
+    const key = maps.length === 1 ? tableR : `${tableR}${tableG}${tableB}`;
     value = this.#cache.get(key);
     if (value) {
       this.#cache.set(maps, value);
@@ -1108,6 +1114,54 @@ class DOMFilterFactory extends BaseFilterFactory {
     this.#addTransferMapConversion(getSteps(0, 5), getSteps(1, 5), getSteps(2, 5), filter);
     info.url = `url(#${id})`;
     return info.url;
+  }
+  addAlphaFilter(map) {
+    let value = this.#cache.get(map);
+    if (value) {
+      return value;
+    }
+    const [tableA] = this.#createTables([map]);
+    const key = `alpha_${tableA}`;
+    value = this.#cache.get(key);
+    if (value) {
+      this.#cache.set(map, value);
+      return value;
+    }
+    const id = `g_${this.#docId}_alpha_map_${this.#id++}`;
+    const url = `url(#${id})`;
+    this.#cache.set(map, url);
+    this.#cache.set(key, url);
+    const filter = this.#createFilter(id);
+    this.#addTransferMapAlphaConversion(tableA, filter);
+    return url;
+  }
+  addLuminosityFilter(map) {
+    let value = this.#cache.get(map || "luminosity");
+    if (value) {
+      return value;
+    }
+    let tableA, key;
+    if (map) {
+      [tableA] = this.#createTables([map]);
+      key = `luminosity_${tableA}`;
+    } else {
+      key = "luminosity";
+    }
+    value = this.#cache.get(key);
+    if (value) {
+      this.#cache.set(map, value);
+      return value;
+    }
+    const id = `g_${this.#docId}_luminosity_map_${this.#id++}`;
+    const url = `url(#${id})`;
+    this.#cache.set(map, url);
+    this.#cache.set(key, url);
+    const filter = this.#createFilter(id);
+    this.#addLuminosityConversion(filter);
+    if (map) {
+      this.#addTransferMapAlphaConversion(tableA, filter);
+    }
+    return url;
   }
   addHighlightHCMFilter(filterName, fgColor, bgColor, newFgColor, newBgColor) {
     const key = `${fgColor}-${bgColor}-${newFgColor}-${newBgColor}`;
@@ -1179,6 +1233,12 @@ class DOMFilterFactory extends BaseFilterFactory {
     }
     this.#id = 0;
   }
+  #addLuminosityConversion(filter) {
+    const feColorMatrix = this.#document.createElementNS(SVG_NS, "feColorMatrix");
+    feColorMatrix.setAttribute("type", "matrix");
+    feColorMatrix.setAttribute("values", "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.3 0.59 0.11 0 0");
+    filter.append(feColorMatrix);
+  }
   #addGrayConversion(filter) {
     const feColorMatrix = this.#document.createElementNS(SVG_NS, "feColorMatrix");
     feColorMatrix.setAttribute("type", "matrix");
@@ -1204,6 +1264,11 @@ class DOMFilterFactory extends BaseFilterFactory {
     this.#appendFeFunc(feComponentTransfer, "feFuncR", rTable);
     this.#appendFeFunc(feComponentTransfer, "feFuncG", gTable);
     this.#appendFeFunc(feComponentTransfer, "feFuncB", bTable);
+  }
+  #addTransferMapAlphaConversion(aTable, filter) {
+    const feComponentTransfer = this.#document.createElementNS(SVG_NS, "feComponentTransfer");
+    filter.append(feComponentTransfer);
+    this.#appendFeFunc(feComponentTransfer, "feFuncA", aTable);
   }
   #getRGB(color) {
     this.#defs.style.color = color;
@@ -2084,6 +2149,7 @@ class AnnotationEditorUIManager {
   #allLayers = new Map();
   #altTextManager = null;
   #annotationStorage = null;
+  #changedExistingAnnotations = null;
   #commandManager = new CommandManager();
   #currentPageIndex = 0;
   #deletedAnnotationsElementIds = new Set();
@@ -2858,6 +2924,7 @@ class AnnotationEditorUIManager {
   }
   addDeletedAnnotationElement(editor) {
     this.#deletedAnnotationsElementIds.add(editor.annotationElementId);
+    this.addChangedExistingAnnotation(editor);
     editor.deleted = true;
   }
   isDeletedAnnotationElement(annotationElementId) {
@@ -2865,6 +2932,7 @@ class AnnotationEditorUIManager {
   }
   removeDeletedAnnotationElement(editor) {
     this.#deletedAnnotationsElementIds.delete(editor.annotationElementId);
+    this.removeChangedExistingAnnotation(editor);
     editor.deleted = false;
   }
   #addEditorToLayer(editor) {
@@ -3268,6 +3336,31 @@ class AnnotationEditorUIManager {
       }
     }
     return boxes.length === 0 ? null : boxes;
+  }
+  addChangedExistingAnnotation({
+    annotationElementId,
+    id
+  }) {
+    (this.#changedExistingAnnotations ||= new Map()).set(annotationElementId, id);
+  }
+  removeChangedExistingAnnotation({
+    annotationElementId
+  }) {
+    this.#changedExistingAnnotations?.delete(annotationElementId);
+  }
+  renderAnnotationElement(annotation) {
+    const editorId = this.#changedExistingAnnotations?.get(annotation.data.id);
+    if (!editorId) {
+      return;
+    }
+    const editor = this.#annotationStorage.getRawValue(editorId);
+    if (!editor) {
+      return;
+    }
+    if (this.#mode === AnnotationEditorType.NONE && !editor.hasBeenModified) {
+      return;
+    }
+    editor.renderAnnotationElement(annotation);
   }
 }
 
@@ -3869,6 +3962,7 @@ class AnnotationEditor {
     };
     this.parent.togglePointerEvents(false);
     window.addEventListener("pointermove", boundResizerPointermove, pointerMoveOptions);
+    window.addEventListener("contextmenu", noContextMenu);
     const savedX = this.x;
     const savedY = this.y;
     const savedWidth = this.width;
@@ -3883,6 +3977,7 @@ class AnnotationEditor {
       window.removeEventListener("pointerup", pointerUpCallback);
       window.removeEventListener("blur", pointerUpCallback);
       window.removeEventListener("pointermove", boundResizerPointermove, pointerMoveOptions);
+      window.removeEventListener("contextmenu", noContextMenu);
       this.parent.div.style.cursor = savedParentCursor;
       this.div.style.cursor = savedCursor;
       this.#addResizeToUndoStack(savedX, savedY, savedWidth, savedHeight);
@@ -4234,6 +4329,9 @@ class AnnotationEditor {
     editor.height = height / pageHeight;
     return editor;
   }
+  get hasBeenModified() {
+    return !!this.annotationElementId && (this.deleted || this.serialize() !== null);
+  }
   remove() {
     this.div.removeEventListener("focusin", this.#boundFocusin);
     this.div.removeEventListener("focusout", this.#boundFocusout);
@@ -4492,6 +4590,28 @@ class AnnotationEditor {
       this.div.tabIndex = -1;
     }
     this.#disabled = true;
+  }
+  renderAnnotationElement(annotation) {
+    let content = annotation.container.querySelector(".annotationContent");
+    if (!content) {
+      content = document.createElement("div");
+      content.classList.add("annotationContent", this.editorType);
+      annotation.container.prepend(content);
+    } else if (content.nodeName === "CANVAS") {
+      const canvas = content;
+      content = document.createElement("div");
+      content.classList.add("annotationContent", this.editorType);
+      canvas.before(content);
+    }
+    return content;
+  }
+  resetAnnotationElement(annotation) {
+    const {
+      firstChild
+    } = annotation.container;
+    if (firstChild.nodeName === "DIV" && firstChild.classList.contains("annotationContent")) {
+      firstChild.remove();
+    }
   }
 }
 class FakeEditor extends AnnotationEditor {
@@ -5596,7 +5716,6 @@ function grayToRGBA(src, dest) {
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 100;
-const MAX_GROUP_SIZE = 4096;
 const EXECUTION_TIME = 15;
 const EXECUTION_STEPS = 10;
 const MAX_SIZE_TO_COMPILE = 1000;
@@ -6148,83 +6267,15 @@ function resetCtxToDefault(ctx) {
     ctx.filter = "none";
   }
 }
-function composeSMaskBackdrop(bytes, r0, g0, b0) {
-  const length = bytes.length;
-  for (let i = 3; i < length; i += 4) {
-    const alpha = bytes[i];
-    if (alpha === 0) {
-      bytes[i - 3] = r0;
-      bytes[i - 2] = g0;
-      bytes[i - 1] = b0;
-    } else if (alpha < 255) {
-      const alpha_ = 255 - alpha;
-      bytes[i - 3] = bytes[i - 3] * alpha + r0 * alpha_ >> 8;
-      bytes[i - 2] = bytes[i - 2] * alpha + g0 * alpha_ >> 8;
-      bytes[i - 1] = bytes[i - 1] * alpha + b0 * alpha_ >> 8;
-    }
-  }
-}
-function composeSMaskAlpha(maskData, layerData, transferMap) {
-  const length = maskData.length;
-  const scale = 1 / 255;
-  for (let i = 3; i < length; i += 4) {
-    const alpha = transferMap ? transferMap[maskData[i]] : maskData[i];
-    layerData[i] = layerData[i] * alpha * scale | 0;
-  }
-}
-function composeSMaskLuminosity(maskData, layerData, transferMap) {
-  const length = maskData.length;
-  for (let i = 3; i < length; i += 4) {
-    const y = maskData[i - 3] * 77 + maskData[i - 2] * 152 + maskData[i - 1] * 28;
-    layerData[i] = transferMap ? layerData[i] * transferMap[y >> 8] >> 8 : layerData[i] * y >> 16;
-  }
-}
-function genericComposeSMask(maskCtx, layerCtx, width, height, subtype, backdrop, transferMap, layerOffsetX, layerOffsetY, maskOffsetX, maskOffsetY) {
-  const hasBackdrop = !!backdrop;
-  const r0 = hasBackdrop ? backdrop[0] : 0;
-  const g0 = hasBackdrop ? backdrop[1] : 0;
-  const b0 = hasBackdrop ? backdrop[2] : 0;
-  const composeFn = subtype === "Luminosity" ? composeSMaskLuminosity : composeSMaskAlpha;
-  const PIXELS_TO_PROCESS = 1048576;
-  const chunkSize = Math.min(height, Math.ceil(PIXELS_TO_PROCESS / width));
-  for (let row = 0; row < height; row += chunkSize) {
-    const chunkHeight = Math.min(chunkSize, height - row);
-    const maskData = maskCtx.getImageData(layerOffsetX - maskOffsetX, row + (layerOffsetY - maskOffsetY), width, chunkHeight);
-    const layerData = layerCtx.getImageData(layerOffsetX, row + layerOffsetY, width, chunkHeight);
-    if (hasBackdrop) {
-      composeSMaskBackdrop(maskData.data, r0, g0, b0);
-    }
-    composeFn(maskData.data, layerData.data, transferMap);
-    layerCtx.putImageData(layerData, layerOffsetX, row + layerOffsetY);
-  }
-}
-function composeSMask(ctx, smask, layerCtx, layerBox) {
-  const layerOffsetX = layerBox[0];
-  const layerOffsetY = layerBox[1];
-  const layerWidth = layerBox[2] - layerOffsetX;
-  const layerHeight = layerBox[3] - layerOffsetY;
-  if (layerWidth === 0 || layerHeight === 0) {
-    return;
-  }
-  genericComposeSMask(smask.context, layerCtx, layerWidth, layerHeight, smask.subtype, smask.backdrop, smask.transferMap, layerOffsetX, layerOffsetY, smask.offsetX, smask.offsetY);
-  ctx.save();
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(layerCtx.canvas, 0, 0);
-  ctx.restore();
-}
 function getImageSmoothingEnabled(transform, interpolate) {
+  if (interpolate) {
+    return true;
+  }
   const scale = Util.singularValueDecompose2dScale(transform);
   scale[0] = Math.fround(scale[0]);
   scale[1] = Math.fround(scale[1]);
   const actualScale = Math.fround((globalThis.devicePixelRatio || 1) * PixelsPerInch.PDF_TO_CSS_UNITS);
-  if (interpolate !== undefined) {
-    return interpolate;
-  } else if (scale[0] <= actualScale || scale[1] <= actualScale) {
-    return true;
-  }
-  return false;
+  return scale[0] <= actualScale && scale[1] <= actualScale;
 }
 const LINE_CAP_STYLES = ["butt", "round", "square"];
 const LINE_JOIN_STYLES = ["miter", "round", "bevel"];
@@ -6616,11 +6667,72 @@ class CanvasGraphics {
     }
     const smask = this.current.activeSMask;
     const suspendedCtx = this.suspendedCtx;
-    composeSMask(suspendedCtx, smask, this.ctx, dirtyBox);
+    this.composeSMask(suspendedCtx, smask, this.ctx, dirtyBox);
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
     this.ctx.restore();
+  }
+  composeSMask(ctx, smask, layerCtx, layerBox) {
+    const layerOffsetX = layerBox[0];
+    const layerOffsetY = layerBox[1];
+    const layerWidth = layerBox[2] - layerOffsetX;
+    const layerHeight = layerBox[3] - layerOffsetY;
+    if (layerWidth === 0 || layerHeight === 0) {
+      return;
+    }
+    this.genericComposeSMask(smask.context, layerCtx, layerWidth, layerHeight, smask.subtype, smask.backdrop, smask.transferMap, layerOffsetX, layerOffsetY, smask.offsetX, smask.offsetY);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layerCtx.canvas, 0, 0);
+    ctx.restore();
+  }
+  genericComposeSMask(maskCtx, layerCtx, width, height, subtype, backdrop, transferMap, layerOffsetX, layerOffsetY, maskOffsetX, maskOffsetY) {
+    let maskCanvas = maskCtx.canvas;
+    let maskX = layerOffsetX - maskOffsetX;
+    let maskY = layerOffsetY - maskOffsetY;
+    if (backdrop) {
+      if (maskX < 0 || maskY < 0 || maskX + width > maskCanvas.width || maskY + height > maskCanvas.height) {
+        const canvas = this.cachedCanvases.getCanvas("maskExtension", width, height);
+        const ctx = canvas.context;
+        ctx.drawImage(maskCanvas, -maskX, -maskY);
+        if (backdrop.some(c => c !== 0)) {
+          ctx.globalCompositeOperation = "destination-atop";
+          ctx.fillStyle = Util.makeHexColor(...backdrop);
+          ctx.fillRect(0, 0, width, height);
+          ctx.globalCompositeOperation = "source-over";
+        }
+        maskCanvas = canvas.canvas;
+        maskX = maskY = 0;
+      } else if (backdrop.some(c => c !== 0)) {
+        maskCtx.save();
+        maskCtx.globalAlpha = 1;
+        maskCtx.setTransform(1, 0, 0, 1, 0, 0);
+        const clip = new Path2D();
+        clip.rect(maskX, maskY, width, height);
+        maskCtx.clip(clip);
+        maskCtx.globalCompositeOperation = "destination-atop";
+        maskCtx.fillStyle = Util.makeHexColor(...backdrop);
+        maskCtx.fillRect(maskX, maskY, width, height);
+        maskCtx.restore();
+      }
+    }
+    layerCtx.save();
+    layerCtx.globalAlpha = 1;
+    layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+    if (subtype === "Alpha" && transferMap) {
+      layerCtx.filter = this.filterFactory.addAlphaFilter(transferMap);
+    } else if (subtype === "Luminosity") {
+      layerCtx.filter = this.filterFactory.addLuminosityFilter(transferMap);
+    }
+    const clip = new Path2D();
+    clip.rect(layerOffsetX, layerOffsetY, width, height);
+    layerCtx.clip(clip);
+    layerCtx.globalCompositeOperation = "destination-in";
+    layerCtx.drawImage(maskCanvas, maskX, maskY, width, height, layerOffsetX, layerOffsetY, width, height);
+    layerCtx.restore();
   }
   save() {
     if (this.inSMaskMode) {
@@ -7304,18 +7416,8 @@ class CanvasGraphics {
     bounds = Util.intersect(bounds, canvasBounds) || [0, 0, 0, 0];
     const offsetX = Math.floor(bounds[0]);
     const offsetY = Math.floor(bounds[1]);
-    let drawnWidth = Math.max(Math.ceil(bounds[2]) - offsetX, 1);
-    let drawnHeight = Math.max(Math.ceil(bounds[3]) - offsetY, 1);
-    let scaleX = 1,
-      scaleY = 1;
-    if (drawnWidth > MAX_GROUP_SIZE) {
-      scaleX = drawnWidth / MAX_GROUP_SIZE;
-      drawnWidth = MAX_GROUP_SIZE;
-    }
-    if (drawnHeight > MAX_GROUP_SIZE) {
-      scaleY = drawnHeight / MAX_GROUP_SIZE;
-      drawnHeight = MAX_GROUP_SIZE;
-    }
+    const drawnWidth = Math.max(Math.ceil(bounds[2]) - offsetX, 1);
+    const drawnHeight = Math.max(Math.ceil(bounds[3]) - offsetY, 1);
     this.current.startNewPathAndClipBox([0, 0, drawnWidth, drawnHeight]);
     let cacheId = "groupAt" + this.groupLevel;
     if (group.smask) {
@@ -7323,7 +7425,6 @@ class CanvasGraphics {
     }
     const scratchCanvas = this.cachedCanvases.getCanvas(cacheId, drawnWidth, drawnHeight);
     const groupCtx = scratchCanvas.context;
-    groupCtx.scale(1 / scaleX, 1 / scaleY);
     groupCtx.translate(-offsetX, -offsetY);
     groupCtx.transform(...currentTransform);
     if (group.smask) {
@@ -7332,8 +7433,6 @@ class CanvasGraphics {
         context: groupCtx,
         offsetX,
         offsetY,
-        scaleX,
-        scaleY,
         subtype: group.smask.subtype,
         backdrop: group.smask.backdrop,
         transferMap: group.smask.transferMap || null,
@@ -7342,7 +7441,6 @@ class CanvasGraphics {
     } else {
       currentCtx.setTransform(1, 0, 0, 1, 0, 0);
       currentCtx.translate(offsetX, offsetY);
-      currentCtx.scale(scaleX, scaleY);
       currentCtx.save();
     }
     copyCtxState(currentCtx, groupCtx);
@@ -9255,7 +9353,7 @@ function getDocument(src) {
   }
   const fetchDocParams = {
     docId,
-    apiVersion: "4.1.379",
+    apiVersion: "4.3.8",
     data,
     password,
     disableAutoFetch,
@@ -9339,6 +9437,9 @@ function getDataProp(val) {
     return new Uint8Array(val);
   }
   throw new Error("Invalid PDF binary data: either TypedArray, " + "string, or array-like object is expected in the data property.");
+}
+function isRefProxy(ref) {
+  return typeof ref === "object" && Number.isInteger(ref?.num) && ref.num >= 0 && Number.isInteger(ref?.gen) && ref.gen >= 0;
 }
 class PDFDocumentLoadingTask {
   static #docId = 0;
@@ -9522,6 +9623,9 @@ class PDFDocumentProxy {
   }
   destroy() {
     return this.loadingTask.destroy();
+  }
+  cachedPageNumber(ref) {
+    return this._transport.cachedPageNumber(ref);
   }
   get loadingParams() {
     return this._transport.loadingParams;
@@ -10140,6 +10244,7 @@ class WorkerTransport {
   #methodPromises = new Map();
   #pageCache = new Map();
   #pagePromises = new Map();
+  #pageRefCache = new Map();
   #passwordCapability = null;
   constructor(messageHandler, loadingTask, networkStream, params, factory) {
     this.messageHandler = messageHandler;
@@ -10228,6 +10333,7 @@ class WorkerTransport {
     }
     this.#pageCache.clear();
     this.#pagePromises.clear();
+    this.#pageRefCache.clear();
     if (this.hasOwnProperty("annotationStorage")) {
       this.annotationStorage.resetModified();
     }
@@ -10557,6 +10663,9 @@ class WorkerTransport {
       if (this.destroyed) {
         throw new Error("Transport destroyed");
       }
+      if (pageInfo.refStr) {
+        this.#pageRefCache.set(pageInfo.refStr, pageNumber);
+      }
       const page = new PDFPageProxy(pageIndex, pageInfo, this, this._params.pdfBug);
       this.#pageCache.set(pageIndex, page);
       return page;
@@ -10565,7 +10674,7 @@ class WorkerTransport {
     return promise;
   }
   getPageIndex(ref) {
-    if (typeof ref !== "object" || ref === null || !Number.isInteger(ref.num) || ref.num < 0 || !Number.isInteger(ref.gen) || ref.gen < 0) {
+    if (!isRefProxy(ref)) {
       return Promise.reject(new Error("Invalid pageIndex request."));
     }
     return this.messageHandler.sendWithPromise("GetPageIndex", {
@@ -10675,6 +10784,13 @@ class WorkerTransport {
     this.#methodPromises.clear();
     this.filterFactory.destroy(true);
     cleanupTextLayer();
+  }
+  cachedPageNumber(ref) {
+    if (!isRefProxy(ref)) {
+      return null;
+    }
+    const refStr = ref.gen === 0 ? `${ref.num}R` : `${ref.num}R${ref.gen}`;
+    return this.#pageRefCache.get(refStr) ?? null;
   }
   get loadingParams() {
     const {
@@ -10897,8 +11013,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.1.379";
-const build = "017e49244";
+const version = "4.3.8";
+const build = "c419c8333";
 
 ;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
 function makeColorComp(n) {
@@ -11247,6 +11363,7 @@ class AnnotationElementFactory {
   }
 }
 class AnnotationElement {
+  #updates = null;
   #hasBorder = false;
   constructor(parameters, {
     isRenderable = false,
@@ -11283,6 +11400,61 @@ class AnnotationElement {
   get hasPopupData() {
     return AnnotationElement._hasPopupData(this.data);
   }
+  updateEdited(params) {
+    if (!this.container) {
+      return;
+    }
+    this.#updates ||= {
+      rect: this.data.rect.slice(0)
+    };
+    const {
+      rect
+    } = params;
+    if (rect) {
+      this.#setRectEdited(rect);
+    }
+  }
+  resetEdited() {
+    if (!this.#updates) {
+      return;
+    }
+    this.#setRectEdited(this.#updates.rect);
+    this.#updates = null;
+  }
+  #setRectEdited(rect) {
+    const {
+      container: {
+        style
+      },
+      data: {
+        rect: currentRect,
+        rotation
+      },
+      parent: {
+        viewport: {
+          rawDims: {
+            pageWidth,
+            pageHeight,
+            pageX,
+            pageY
+          }
+        }
+      }
+    } = this;
+    currentRect?.splice(0, 4, ...rect);
+    const {
+      width,
+      height
+    } = getRectDims(rect);
+    style.left = `${100 * (rect[0] - pageX) / pageWidth}%`;
+    style.top = `${100 * (pageHeight - rect[3] + pageY) / pageHeight}%`;
+    if (rotation === 0) {
+      style.width = `${100 * width / pageWidth}%`;
+      style.height = `${100 * height / pageHeight}%`;
+    } else {
+      this.setRotation(rotation);
+    }
+  }
   _createContainer(ignoreBorder) {
     const {
       data,
@@ -11296,7 +11468,10 @@ class AnnotationElement {
     if (!(this instanceof WidgetAnnotationElement)) {
       container.tabIndex = DEFAULT_TAB_INDEX;
     }
-    container.style.zIndex = this.parent.zIndex++;
+    const {
+      style
+    } = container;
+    style.zIndex = this.parent.zIndex++;
     if (data.popupRef) {
       container.setAttribute("aria-haspopup", "dialog");
     }
@@ -11306,12 +11481,6 @@ class AnnotationElement {
     if (data.noRotate) {
       container.classList.add("norotate");
     }
-    const {
-      pageWidth,
-      pageHeight,
-      pageX,
-      pageY
-    } = viewport.rawDims;
     if (!data.rect || this instanceof PopupAnnotationElement) {
       const {
         rotation
@@ -11325,24 +11494,23 @@ class AnnotationElement {
       width,
       height
     } = getRectDims(data.rect);
-    const rect = Util.normalizeRect([data.rect[0], page.view[3] - data.rect[1] + page.view[1], data.rect[2], page.view[3] - data.rect[3] + page.view[1]]);
     if (!ignoreBorder && data.borderStyle.width > 0) {
-      container.style.borderWidth = `${data.borderStyle.width}px`;
+      style.borderWidth = `${data.borderStyle.width}px`;
       const horizontalRadius = data.borderStyle.horizontalCornerRadius;
       const verticalRadius = data.borderStyle.verticalCornerRadius;
       if (horizontalRadius > 0 || verticalRadius > 0) {
         const radius = `calc(${horizontalRadius}px * var(--scale-factor)) / calc(${verticalRadius}px * var(--scale-factor))`;
-        container.style.borderRadius = radius;
+        style.borderRadius = radius;
       } else if (this instanceof RadioButtonWidgetAnnotationElement) {
         const radius = `calc(${width}px * var(--scale-factor)) / calc(${height}px * var(--scale-factor))`;
-        container.style.borderRadius = radius;
+        style.borderRadius = radius;
       }
       switch (data.borderStyle.style) {
         case AnnotationBorderStyleType.SOLID:
-          container.style.borderStyle = "solid";
+          style.borderStyle = "solid";
           break;
         case AnnotationBorderStyleType.DASHED:
-          container.style.borderStyle = "dashed";
+          style.borderStyle = "dashed";
           break;
         case AnnotationBorderStyleType.BEVELED:
           warn("Unimplemented border style: beveled");
@@ -11351,7 +11519,7 @@ class AnnotationElement {
           warn("Unimplemented border style: inset");
           break;
         case AnnotationBorderStyleType.UNDERLINE:
-          container.style.borderBottomStyle = "solid";
+          style.borderBottomStyle = "solid";
           break;
         default:
           break;
@@ -11359,19 +11527,26 @@ class AnnotationElement {
       const borderColor = data.borderColor || null;
       if (borderColor) {
         this.#hasBorder = true;
-        container.style.borderColor = Util.makeHexColor(borderColor[0] | 0, borderColor[1] | 0, borderColor[2] | 0);
+        style.borderColor = Util.makeHexColor(borderColor[0] | 0, borderColor[1] | 0, borderColor[2] | 0);
       } else {
-        container.style.borderWidth = 0;
+        style.borderWidth = 0;
       }
     }
-    container.style.left = `${100 * (rect[0] - pageX) / pageWidth}%`;
-    container.style.top = `${100 * (rect[1] - pageY) / pageHeight}%`;
+    const rect = Util.normalizeRect([data.rect[0], page.view[3] - data.rect[1] + page.view[1], data.rect[2], page.view[3] - data.rect[3] + page.view[1]]);
+    const {
+      pageWidth,
+      pageHeight,
+      pageX,
+      pageY
+    } = viewport.rawDims;
+    style.left = `${100 * (rect[0] - pageX) / pageWidth}%`;
+    style.top = `${100 * (rect[1] - pageY) / pageHeight}%`;
     const {
       rotation
     } = data;
     if (data.hasOwnCanvas || rotation === 0) {
-      container.style.width = `${100 * width / pageWidth}%`;
-      container.style.height = `${100 * height / pageHeight}%`;
+      style.width = `${100 * width / pageWidth}%`;
+      style.height = `${100 * height / pageHeight}%`;
     } else {
       this.setRotation(rotation, container);
     }
@@ -11786,6 +11961,9 @@ class LinkAnnotationElement extends AnnotationElement {
   }
   #bindAttachment(link, attachment, dest = null) {
     link.href = this.linkService.getAnchorUrl("");
+    if (attachment.description) {
+      link.title = attachment.description;
+    }
     link.onclick = () => {
       this.downloadManager?.openOrDownloadData(attachment.content, attachment.filename, dest);
       return false;
@@ -12746,6 +12924,7 @@ class ChoiceWidgetAnnotationElement extends WidgetAnnotationElement {
       });
       selectElement.addEventListener("input", event => {
         const exportValue = getValue(true);
+        const change = getValue(false);
         storage.setValue(id, {
           value: exportValue
         });
@@ -12756,6 +12935,7 @@ class ChoiceWidgetAnnotationElement extends WidgetAnnotationElement {
             id,
             name: "Keystroke",
             value: selectedValues,
+            change,
             changeEx: exportValue,
             willCommit: false,
             commitKey: 1,
@@ -13372,14 +13552,16 @@ class FileAttachmentAnnotationElement extends AnnotationElement {
     });
     const {
       filename,
-      content
+      content,
+      description
     } = this.data.file;
     this.filename = getFilenameFromUrl(filename, true);
     this.content = content;
     this.linkService.eventBus?.dispatch("fileattachmentannotation", {
       source: this,
       filename,
-      content
+      content,
+      description
     });
   }
   render() {
@@ -13434,6 +13616,7 @@ class AnnotationLayer {
     div,
     accessibilityManager,
     annotationCanvasMap,
+    annotationEditorUIManager,
     page,
     viewport
   }) {
@@ -13443,6 +13626,7 @@ class AnnotationLayer {
     this.page = page;
     this.viewport = viewport;
     this.zIndex = 0;
+    this._annotationEditorUIManager = annotationEditorUIManager;
   }
   #appendElement(element, id) {
     const contentElement = element.firstChild || element;
@@ -13505,14 +13689,15 @@ class AnnotationLayer {
           elements.push(element);
         }
       }
-      if (element.annotationEditorType > 0) {
-        this.#editableAnnotations.set(element.data.id, element);
-      }
       const rendered = element.render();
       if (data.hidden) {
         rendered.style.visibility = "hidden";
       }
       this.#appendElement(rendered, data.id);
+      if (element.annotationEditorType > 0) {
+        this.#editableAnnotations.set(element.data.id, element);
+        this._annotationEditorUIManager?.renderAnnotationElement(element);
+      }
     }
     this.#setAnnotationCanvasMap();
   }
@@ -13537,6 +13722,7 @@ class AnnotationLayer {
       if (!element) {
         continue;
       }
+      canvas.className = "annotationContent";
       const {
         firstChild
       } = element;
@@ -13544,8 +13730,10 @@ class AnnotationLayer {
         element.append(canvas);
       } else if (firstChild.nodeName === "CANVAS") {
         firstChild.replaceWith(canvas);
-      } else {
+      } else if (!firstChild.classList.contains("annotationContent")) {
         firstChild.before(canvas);
+      } else {
+        firstChild.after(canvas);
       }
     }
     this.#annotationCanvasMap.clear();
@@ -13795,11 +13983,14 @@ class FreeTextEditor extends AnnotationEditor {
         div
       } = this;
       const savedDisplay = div.style.display;
+      const savedVisibility = div.classList.contains("hidden");
+      div.classList.remove("hidden");
       div.style.display = "hidden";
       currentLayer.div.append(this.div);
       rect = div.getBoundingClientRect();
       div.remove();
       div.style.display = savedDisplay;
+      div.classList.toggle("hidden", savedVisibility);
     }
     if (this.rotation % 180 === this.parentRotation % 180) {
       this.width = rect.width / parentWidth;
@@ -14080,7 +14271,7 @@ class FreeTextEditor extends AnnotationEditor {
         value: textContent.join("\n"),
         position: textPosition,
         pageIndex: pageNumber - 1,
-        rect,
+        rect: rect.slice(0),
         rotation,
         id,
         deleted: false
@@ -14135,6 +14326,32 @@ class FreeTextEditor extends AnnotationEditor {
       pageIndex
     } = this.#initialData;
     return this._hasBeenMoved || serialized.value !== value || serialized.fontSize !== fontSize || serialized.color.some((c, i) => c !== color[i]) || serialized.pageIndex !== pageIndex;
+  }
+  renderAnnotationElement(annotation) {
+    const content = super.renderAnnotationElement(annotation);
+    if (this.deleted) {
+      return content;
+    }
+    const {
+      style
+    } = content;
+    style.fontSize = `calc(${this.#fontSize}px * var(--scale-factor))`;
+    style.color = this.#color;
+    content.replaceChildren();
+    for (const line of this.#content.split("\n")) {
+      const div = document.createElement("div");
+      div.append(line ? document.createTextNode(line) : document.createElement("br"));
+      content.append(div);
+    }
+    const padding = FreeTextEditor._internalPadding * this.parentScale;
+    annotation.updateEdited({
+      rect: this.getRect(padding, padding)
+    });
+    return content;
+  }
+  resetAnnotationElement(annotation) {
+    super.resetAnnotationElement(annotation);
+    annotation.resetEdited();
   }
 }
 
@@ -16917,7 +17134,9 @@ class AnnotationEditorLayer {
     const annotationElementIds = new Set();
     for (const editor of this.#editors.values()) {
       editor.enableEditing();
+      editor.show(true);
       if (editor.annotationElementId) {
+        this.#uiManager.removeChangedExistingAnnotation(editor);
         annotationElementIds.add(editor.annotationElementId);
       }
     }
@@ -16945,12 +17164,18 @@ class AnnotationEditorLayer {
     this.#isDisabling = true;
     this.div.tabIndex = -1;
     this.togglePointerEvents(false);
-    const hiddenAnnotationIds = new Set();
+    const changedAnnotations = new Map();
+    const resetAnnotations = new Map();
     for (const editor of this.#editors.values()) {
       editor.disableEditing();
-      if (!editor.annotationElementId || editor.serialize() !== null) {
-        hiddenAnnotationIds.add(editor.annotationElementId);
+      if (!editor.annotationElementId) {
         continue;
+      }
+      if (editor.serialize() !== null) {
+        changedAnnotations.set(editor.annotationElementId, editor);
+        continue;
+      } else {
+        resetAnnotations.set(editor.annotationElementId, editor);
       }
       this.getEditableAnnotation(editor.annotationElementId)?.show();
       editor.remove();
@@ -16961,8 +17186,21 @@ class AnnotationEditorLayer {
         const {
           id
         } = editable.data;
-        if (hiddenAnnotationIds.has(id) || this.#uiManager.isDeletedAnnotationElement(id)) {
+        if (this.#uiManager.isDeletedAnnotationElement(id)) {
           continue;
+        }
+        let editor = resetAnnotations.get(id);
+        if (editor) {
+          editor.resetAnnotationElement(editable);
+          editor.show(false);
+          editable.show();
+          continue;
+        }
+        editor = changedAnnotations.get(id);
+        if (editor) {
+          this.#uiManager.addChangedExistingAnnotation(editor);
+          editor.renderAnnotationElement(editable);
+          editor.show(false);
         }
         editable.show();
       }
@@ -17074,7 +17312,7 @@ class AnnotationEditorLayer {
     if (editor.parent === this) {
       return;
     }
-    if (editor.annotationElementId) {
+    if (editor.parent && editor.annotationElementId) {
       this.#uiManager.addDeletedAnnotationElement(editor.annotationElementId);
       AnnotationEditor.deleteAnnotationElement(editor);
       editor.annotationElementId = null;
@@ -17566,8 +17804,8 @@ class DrawLayer {
 
 
 
-const pdfjsVersion = "4.1.379";
-const pdfjsBuild = "017e49244";
+const pdfjsVersion = "4.3.8";
+const pdfjsBuild = "c419c8333";
 
 var __webpack_exports__AbortException = __webpack_exports__.AbortException;
 var __webpack_exports__AnnotationEditorLayer = __webpack_exports__.AnnotationEditorLayer;

@@ -9,7 +9,6 @@ import androidx.test.espresso.Espresso.pressBack
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -511,7 +510,6 @@ class SettingsSearchTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/412927
-    @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1807268")
     @Test
     fun verifyShowClipboardSuggestionsToggleTest() {
         val link = "https://www.mozilla.org/en-US/"
@@ -599,12 +597,11 @@ class SettingsSearchTest : TestSetup() {
             verifySearchShortcutChecked(
                 EngineShortcut(name = "Google", checkboxIndex = 1, isChecked = true),
                 EngineShortcut(name = "Bing", checkboxIndex = 4, isChecked = true),
-                EngineShortcut(name = "Amazon.com", checkboxIndex = 7, isChecked = true),
-                EngineShortcut(name = "DuckDuckGo", checkboxIndex = 10, isChecked = true),
-                EngineShortcut(name = "eBay", checkboxIndex = 13, isChecked = true),
-                EngineShortcut(name = "Wikipedia", checkboxIndex = 16, isChecked = true),
-                EngineShortcut(name = "Reddit", checkboxIndex = 19, isChecked = false),
-                EngineShortcut(name = "YouTube", checkboxIndex = 22, isChecked = false),
+                EngineShortcut(name = "DuckDuckGo", checkboxIndex = 7, isChecked = true),
+                EngineShortcut(name = "eBay", checkboxIndex = 10, isChecked = true),
+                EngineShortcut(name = "Wikipedia", checkboxIndex = 13, isChecked = true),
+                EngineShortcut(name = "Reddit", checkboxIndex = 16, isChecked = false),
+                EngineShortcut(name = "YouTube", checkboxIndex = 19, isChecked = false),
             )
         }
     }
@@ -619,14 +616,13 @@ class SettingsSearchTest : TestSetup() {
         }.openSearchSubMenu {
             openManageShortcutsMenu()
             selectSearchShortcut(EngineShortcut(name = "Google", checkboxIndex = 1))
-            selectSearchShortcut(EngineShortcut(name = "Amazon.com", checkboxIndex = 7))
-            selectSearchShortcut(EngineShortcut(name = "Reddit", checkboxIndex = 19))
-            selectSearchShortcut(EngineShortcut(name = "YouTube", checkboxIndex = 22))
+            selectSearchShortcut(EngineShortcut(name = "Reddit", checkboxIndex = 16))
+            selectSearchShortcut(EngineShortcut(name = "YouTube", checkboxIndex = 19))
             exitMenu()
         }
         searchScreen {
             clickSearchSelectorButton()
-            verifySearchShortcutListContains("Google", "Amazon.com", shouldExist = false)
+            verifySearchShortcutListContains("Google", shouldExist = false)
             verifySearchShortcutListContains("YouTube", shouldExist = true)
             verifySearchShortcutListContains("Reddit", shouldExist = true)
         }

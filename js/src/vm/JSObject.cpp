@@ -1215,6 +1215,10 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(a));
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(b));
 
+  // Don't allow a GC which may observe intermediate state or run before we
+  // execute all necessary barriers.
+  gc::AutoSuppressGC nogc(cx);
+
   if (!Watchtower::watchObjectSwap(cx, a, b)) {
     oomUnsafe.crash("watchObjectSwap");
   }
@@ -1305,10 +1309,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
       a->as<ProxyObject>().setInlineValueArray();
     }
   } else {
-    // Avoid GC in here to avoid confusing the tracing code with our
-    // intermediate state.
-    gc::AutoSuppressGC suppress(cx);
-
     // When the objects have different sizes, they will have different numbers
     // of fixed slots before and after the swap, so the slots for native objects
     // will need to be rearranged. Remember the original values from the
@@ -2204,7 +2204,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
-#ifdef NIGHTLY_BUILD
   if (key == JSProto_Set && !JS::Prefs::experimental_new_set_methods() &&
       (id == NameToId(cx->names().union_) ||
        id == NameToId(cx->names().difference) ||
@@ -2216,6 +2215,7 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
+#ifdef NIGHTLY_BUILD
   if (key == JSProto_ArrayBuffer && !JS::Prefs::arraybuffer_transfer() &&
       (id == NameToId(cx->names().transfer) ||
        id == NameToId(cx->names().transferToFixedLength) ||
@@ -2263,6 +2263,18 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       !JS::Prefs::experimental_json_parse_with_source() &&
       (id == NameToId(cx->names().isRawJSON) ||
        id == NameToId(cx->names().rawJSON))) {
+    return true;
+  }
+#endif
+
+#ifdef NIGHTLY_BUILD
+  if (key == JSProto_Math && !JS::Prefs::experimental_float16array() &&
+      (id == NameToId(cx->names().f16round))) {
+    return true;
+  }
+  if (key == JSProto_DataView && !JS::Prefs::experimental_float16array() &&
+      (id == NameToId(cx->names().getFloat16) ||
+       id == NameToId(cx->names().setFloat16))) {
     return true;
   }
 #endif

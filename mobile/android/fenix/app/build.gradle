@@ -681,8 +681,8 @@ dependencies {
     implementation FenixDependencies.androidx_core_splashscreen
     implementation FenixDependencies.androidx_transition
     implementation ComponentsDependencies.androidx_work_runtime
-    implementation FenixDependencies.androidx_datastore
-    implementation ComponentsDependencies.androidx_data_store_preferences
+    implementation ComponentsDependencies.androidx_datastore
+    implementation ComponentsDependencies.androidx_datastore_preferences
     implementation FenixDependencies.protobuf_javalite
     implementation ComponentsDependencies.google_material
 
@@ -894,13 +894,8 @@ if (gradle.hasProperty('localProperties.dependencySubstitutions.geckoviewTopsrcd
     if (gradle.hasProperty('localProperties.dependencySubstitutions.geckoviewTopobjdir')) {
         ext.topobjdir = gradle."localProperties.dependencySubstitutions.geckoviewTopobjdir"
     }
-    ext.topsrcdir = StringUtils.removeSuffix(gradle."localProperties.dependencySubstitutions.geckoviewTopsrcdir", File.separator)
+    ext.topsrcdir = gradle."localProperties.dependencySubstitutions.geckoviewTopsrcdir"
     apply from: "${topsrcdir}/substitute-local-geckoview.gradle"
-}
-
-if (gradle.hasProperty('localProperties.autoPublish.glean.dir')) {
-    ext.gleanSrcDir = gradle."localProperties.autoPublish.glean.dir"
-    apply from: "../${gleanSrcDir}/build-scripts/substitute-local-glean.gradle"
 }
 
 android.applicationVariants.configureEach { variant ->

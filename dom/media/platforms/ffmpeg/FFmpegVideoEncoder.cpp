@@ -15,7 +15,7 @@
 #include "libavutil/pixfmt.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "nsPrintfCString.h"
-#include "ImageToI420.h"
+#include "ImageConversion.h"
 #include "libyuv.h"
 #include "FFmpegRuntimeLinker.h"
 
@@ -510,7 +510,7 @@ Result<MediaDataEncoder::EncodedData, nsresult> FFmpegVideoEncoder<
   // Save duration in the time_base unit.
   mDurationMap.Insert(mFrame->pts, aSample->mDuration.ToMicroseconds());
 #  endif
-  mFrame->pkt_duration = aSample->mDuration.ToMicroseconds();
+  Duration(mFrame) = aSample->mDuration.ToMicroseconds();
 
   // Now send the AVFrame to ffmpeg for encoding, same code for audio and video.
   return FFmpegDataEncoder<LIBAV_VER>::EncodeWithModernAPIs();

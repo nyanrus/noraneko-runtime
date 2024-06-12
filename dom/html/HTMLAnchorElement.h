@@ -48,7 +48,7 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
-  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+  bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
@@ -188,6 +188,8 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
 
  protected:
   virtual ~HTMLAnchorElement();
+
+  void MaybeTryDNSPrefetch();
 
   JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
   RefPtr<nsDOMTokenList> mRelList;

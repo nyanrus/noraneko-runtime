@@ -23,6 +23,7 @@ command-cancel = Cancel
 passwords-section-label = Passwords
 passwords-disabled = Passwords are disabled
 
+passwords-dismiss-breach-alert-command = Dismiss breach alert
 passwords-command-create = Add Password
 passwords-command-import = Import from a File…
 passwords-command-export = Export Passwords…
@@ -63,6 +64,33 @@ passwords-filtered-count =
   { $total ->
       [one] { $count } of { $total } password
      *[other] { $count } of { $total } passwords
+  }
+
+# Confirm the removal of all saved passwords
+#   $total (number) - Total number of passwords
+passwords-remove-all-title =
+  { $total ->
+     [one] Remove { $total } password?
+    *[other] Remove all { $total } passwords?
+  }
+
+# Checkbox label to confirm the removal of saved passwords
+#   $total (number) - Total number of passwords
+passwords-remove-all-confirm =
+  { $total ->
+     [1] Yes, remove password
+    *[other] Yes, remove passwords
+  }
+
+# Button label to confirm removal of saved passwords
+passwords-remove-all-confirm-button = Confirm
+
+# Message to confirm the removal of saved passwords
+#   $total (number) - Total number of passwords
+passwords-remove-all-message =
+  { $total ->
+     [1] This will remove your saved password and any breach alerts. You cannot undo this action.
+    *[other] This will remove your saved passwords and any breach alerts. You cannot undo this action.
   }
 
 passwords-origin-label = Website address

@@ -207,6 +207,7 @@ void* js::MapBufferMemory(wasm::IndexType t, size_t mappedSize,
   void* data = nullptr;
   if (int err = posix_memalign(&data, gc::SystemPageSize(), mappedSize)) {
     MOZ_ASSERT(err == ENOMEM);
+    (void)err;
     return nullptr;
   }
   MOZ_ASSERT(data);
@@ -2578,8 +2579,15 @@ size_t ArrayBufferObject::objectMoved(JSObject* obj, JSObject* old) {
   auto& dst = obj->as<ArrayBufferType>();
   const auto& src = old->as<ArrayBufferType>();
 
-  MOZ_ASSERT(
-      !obj->runtimeFromMainThread()->gc.nursery().isInside(src.dataPointer()));
+#ifdef DEBUG
+  // Check the data pointer is not inside the nursery, but take account of the
+  // fact that inline data pointers for zero length buffers can point to the end
+  // of a chunk which can abut the start of the nursery.
+  if (src.byteLength() != 0 || (uintptr_t(src.dataPointer()) & gc::ChunkMask)) {
+    Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
+    MOZ_ASSERT(!nursery.isInside(src.dataPointer()));
+  }
+#endif
 
   // Fix up possible inline data pointer.
   if (src.hasInlineData()) {

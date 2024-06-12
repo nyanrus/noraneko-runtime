@@ -61,7 +61,6 @@ import {
   lineAtHeight,
   toSourceLine,
   getDocument,
-  scrollToPosition,
   toEditorPosition,
   getSourceLocationFromMouseEvent,
   hasDocument,
@@ -149,14 +148,14 @@ class Editor extends PureComponent {
         this.props.selectedSourceTextContent?.value ||
       nextProps.symbols !== this.props.symbols;
 
+    const shouldScroll =
+      nextProps.selectedLocation &&
+      this.shouldScrollToLocation(nextProps, editor);
+
     if (!features.codemirrorNext) {
       const shouldUpdateSize =
         nextProps.startPanelSize !== this.props.startPanelSize ||
         nextProps.endPanelSize !== this.props.endPanelSize;
-
-      const shouldScroll =
-        nextProps.selectedLocation &&
-        this.shouldScrollToLocation(nextProps, editor);
 
       if (shouldUpdateText || shouldUpdateSize || shouldScroll) {
         startOperation();
@@ -182,6 +181,10 @@ class Editor extends PureComponent {
       // eslint-disable-next-line no-lonely-if
       if (shouldUpdateText) {
         this.setText(nextProps, editor);
+      }
+
+      if (shouldScroll) {
+        this.scrollToLocation(nextProps, editor);
       }
     }
   }
@@ -238,7 +241,12 @@ class Editor extends PureComponent {
       editor.setUpdateListener(this.onEditorUpdated);
       editor.setGutterEventListeners({
         click: (event, cm, line) => this.onGutterClick(cm, line, null, event),
-        contextmenu: (event, cm, line) => this.openMenu(event, line, true),
+        contextmenu: (event, cm, line) => this.openMenu(event, line),
+      });
+      editor.setContentEventListeners({
+        click: (event, cm, line, column) => this.onClick(event, line, column),
+        contextmenu: (event, cm, line, column) =>
+          this.openMenu(event, line, column),
       });
     }
     this.setState({ editor });
@@ -278,7 +286,7 @@ class Editor extends PureComponent {
     }
   };
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate(prevProps, prevState) {
     const {
       selectedSource,
       blackboxedRanges,
@@ -295,7 +303,9 @@ class Editor extends PureComponent {
     if (features.codemirrorNext) {
       const shouldUpdateBreakableLines =
         prevProps.breakableLines.size !== this.props.breakableLines.size ||
-        prevProps.selectedSource?.id !== selectedSource.id;
+        prevProps.selectedSource?.id !== selectedSource.id ||
+        // Make sure we update after the editor has loaded
+        (!prevState.editor && !!editor);
 
       const isSourceWasm = isWasm(selectedSource.id);
 
@@ -459,7 +469,7 @@ class Editor extends PureComponent {
   };
   // Note: The line is optional, if not passed (as is likely for codemirror 6)
   // it fallsback to lineAtHeight.
-  openMenu(event, line) {
+  openMenu(event, line, ch) {
     event.stopPropagation();
     event.preventDefault();
 
@@ -508,7 +518,7 @@ class Editor extends PureComponent {
         line
       ).trim();
 
-      const lineObject = { from: { line }, to: { line } };
+      const lineObject = { from: { line, ch }, to: { line, ch } };
 
       this.props.showEditorGutterContextMenu(
         event,
@@ -523,13 +533,23 @@ class Editor extends PureComponent {
       return;
     }
 
-    const location = getSourceLocationFromMouseEvent(
-      editor,
-      selectedSource,
-      event
-    );
+    let location;
+    if (features.codemirrorNext) {
+      location = createLocation({
+        source: selectedSource,
+        line: fromEditorLine(
+          selectedSource.id,
+          line,
+          isWasm(selectedSource.id)
+        ),
+        column: isWasm(selectedSource.id) ? 0 : ch + 1,
+      });
+    } else {
+      location = getSourceLocationFromMouseEvent(editor, selectedSource, event);
+    }
 
-    this.props.showEditorContextMenu(event, editor, location);
+    const lineObject = editor.getSelectionCursor();
+    this.props.showEditorContextMenu(event, editor, lineObject, location);
   }
 
   /**
@@ -617,16 +637,29 @@ class Editor extends PureComponent {
     );
   };
 
-  onClick(e) {
+  onClick(e, line, ch) {
     const { selectedSource, updateCursorPosition, jumpToMappedLocation } =
       this.props;
 
     if (selectedSource) {
-      const sourceLocation = getSourceLocationFromMouseEvent(
-        this.state.editor,
-        selectedSource,
-        e
-      );
+      let sourceLocation;
+      if (features.codemirrorNext) {
+        sourceLocation = createLocation({
+          source: selectedSource,
+          line: fromEditorLine(
+            selectedSource.id,
+            line,
+            isWasm(selectedSource.id)
+          ),
+          column: isWasm(selectedSource.id) ? 0 : ch + 1,
+        });
+      } else {
+        sourceLocation = getSourceLocationFromMouseEvent(
+          this.state.editor,
+          selectedSource,
+          e
+        );
+      }
 
       if (e.metaKey && e.altKey) {
         jumpToMappedLocation(sourceLocation);
@@ -664,8 +697,7 @@ class Editor extends PureComponent {
       const lineText = doc.getLine(line);
       column = Math.max(column, getIndentation(lineText));
     }
-
-    scrollToPosition(editor.codeMirror, line, column);
+    editor.scrollTo(line, column);
   }
 
   setText(props, editor) {
@@ -774,6 +806,7 @@ class Editor extends PureComponent {
     };
   }
 
+  // eslint-disable-next-line complexity
   renderItems() {
     const {
       selectedSource,
@@ -788,19 +821,44 @@ class Editor extends PureComponent {
     } = this.props;
     const { editor } = this.state;
 
+    if (!selectedSource || !editor) {
+      return null;
+    }
+
     if (features.codemirrorNext) {
       return React.createElement(
         React.Fragment,
         null,
-        React.createElement(Breakpoints, {
-          editor,
-        }),
+        React.createElement(Breakpoints, { editor }),
         React.createElement(DebugLine, { editor, selectedSource }),
-        React.createElement(Exceptions, { editor })
+        React.createElement(HighlightLine, { editor }),
+        React.createElement(Exceptions, { editor }),
+        conditionalPanelLocation
+          ? React.createElement(ConditionalPanel, {
+              editor,
+              selectedSource,
+            })
+          : null,
+        isPaused &&
+          inlinePreviewEnabled &&
+          (!selectedSource.isOriginal ||
+            selectedSource.isPrettyPrinted ||
+            mapScopesEnabled)
+          ? React.createElement(InlinePreviews, {
+              editor,
+              selectedSource,
+            })
+          : null,
+        highlightedLineRange
+          ? React.createElement(HighlightLines, {
+              editor,
+              range: highlightedLineRange,
+            })
+          : null
       );
     }
 
-    if (!selectedSource || !editor || !getDocument(selectedSource.id)) {
+    if (!getDocument(selectedSource.id)) {
       return null;
     }
     return div(

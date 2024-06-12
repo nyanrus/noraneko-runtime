@@ -4,12 +4,13 @@
 
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
+import {
+  createDialog,
+  cancelDialog,
+} from "chrome://global/content/megalist/Dialog.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/megalist/VirtualizedList.mjs";
-
-// eslint-disable-next-line import/no-unassigned-import
-import "chrome://global/content/megalist/search-input.mjs";
 
 /**
  * Map with limit on how many entries it can have.
@@ -77,6 +78,7 @@ export class MegalistView extends MozLitElement {
     super();
     this.selectedIndex = 0;
     this.searchText = "";
+    this.layout = null;
 
     window.addEventListener("MessageFromViewModel", ev =>
       this.#onMessageFromViewModel(ev)
@@ -88,6 +90,7 @@ export class MegalistView extends MozLitElement {
       listLength: { type: Number },
       selectedIndex: { type: Number },
       searchText: { type: String },
+      layout: { type: Object },
     };
   }
 
@@ -111,6 +114,10 @@ export class MegalistView extends MozLitElement {
   #snapshotById = new MostRecentMap(7680 / MegalistView.LINE_HEIGHT);
 
   #templates = {};
+
+  static queries = {
+    searchInput: ".search",
+  };
 
   connectedCallback() {
     super.connectedCallback();
@@ -296,6 +303,16 @@ export class MegalistView extends MozLitElement {
     this.requestUpdate();
   }
 
+  receiveSetLayout({ layout }) {
+    if (layout) {
+      createDialog(layout, commandId =>
+        this.#messageToViewModel("Command", { commandId })
+      );
+    } else {
+      cancelDialog();
+    }
+  }
+
   #handleInputChange(e) {
     const searchText = e.target.value;
     this.#messageToViewModel("UpdateFilter", { searchText });
@@ -333,6 +350,15 @@ export class MegalistView extends MozLitElement {
   }
 
   #handleClick(e) {
+    const elementWithCommand = e.composedTarget.closest("[data-command]");
+    if (elementWithCommand) {
+      const commandId = elementWithCommand.dataset.command;
+      if (commandId) {
+        this.#messageToViewModel("Command", { commandId });
+        return;
+      }
+    }
+
     const lineElement = e.composedTarget.closest(".line");
     if (!lineElement) {
       return;
@@ -360,6 +386,12 @@ export class MegalistView extends MozLitElement {
 
     const popup = this.ownerDocument.createElement("div");
     popup.className = "menuPopup";
+
+    let closeMenu = () => {
+      popup.remove();
+      this.searchInput.focus();
+    };
+
     popup.addEventListener(
       "keydown",
       e => {
@@ -385,7 +417,7 @@ export class MegalistView extends MozLitElement {
 
         switch (e.code) {
           case "Escape":
-            popup.remove();
+            closeMenu();
             break;
           case "Tab":
             if (e.shiftKey) {
@@ -416,9 +448,7 @@ export class MegalistView extends MozLitElement {
           e.composedTarget?.closest(".menuPopup") !=
           e.relatedTarget?.closest(".menuPopup")
         ) {
-          // TODO: this triggers on macOS before "click" event. Due to this,
-          // we are not receiving the command.
-          popup.remove();
+          closeMenu();
         }
       },
       { capture: true }
@@ -433,7 +463,7 @@ export class MegalistView extends MozLitElement {
       }
 
       const menuItem = this.ownerDocument.createElement("button");
-      menuItem.textContent = command.label;
+      menuItem.setAttribute("data-l10n-id", command.label);
       menuItem.addEventListener("click", e => {
         this.#messageToViewModel("Command", {
           snapshotId,
@@ -449,26 +479,50 @@ export class MegalistView extends MozLitElement {
     popup.querySelector("button")?.focus();
   }
 
+  /**
+   * Renders data-source specific UI that should be displayed before the
+   * virtualized list. This is determined by the "SetLayout" message provided
+   * by the View Model. Defaults to displaying the search input.
+   */
+  renderBeforeList() {
+    return html`
+      <input
+        class="search"
+        type="search"
+        data-l10n-id="filter-placeholder"
+        .value=${this.searchText}
+        @input=${e => this.#handleInputChange(e)}
+      />
+    `;
+  }
+
+  renderList() {
+    if (this.layout) {
+      return null;
+    }
+
+    return html` <virtualized-list
+      .lineCount=${this.listLength}
+      .lineHeight=${MegalistView.LINE_HEIGHT}
+      .selectedIndex=${this.selectedIndex}
+      .createLineElement=${index => this.createLineElement(index)}
+      @click=${e => this.#handleClick(e)}
+    >
+    </virtualized-list>`;
+  }
+
+  renderAfterList() {}
+
   render() {
     return html`
       <link
         rel="stylesheet"
         href="chrome://global/content/megalist/megalist.css"
       />
-      <div class="container">
-        <search-input
-          .value=${this.searchText}
-          .change=${e => this.#handleInputChange(e)}
-        >
-        </search-input>
-        <virtualized-list
-          .lineCount=${this.listLength}
-          .lineHeight=${MegalistView.LINE_HEIGHT}
-          .selectedIndex=${this.selectedIndex}
-          .createLineElement=${index => this.createLineElement(index)}
-          @click=${e => this.#handleClick(e)}
-        >
-        </virtualized-list>
+      <div @click=${this.#handleClick} class="container">
+        <div class="beforeList">${this.renderBeforeList()}</div>
+        ${this.renderList()}
+        <div class="afterList">${this.renderAfterList()}</div>
       </div>
     `;
   }

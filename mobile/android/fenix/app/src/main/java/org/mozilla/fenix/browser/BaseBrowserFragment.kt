@@ -115,25 +115,29 @@ import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.kotlin.getOrigin
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import mozilla.components.support.locale.ActivityContextWrapper
+import mozilla.components.support.utils.ext.isLandscape
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.GleanMetrics.MediaState
 import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.PullToRefreshInBrowser
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.NavGraphDirections
-import org.mozilla.fenix.OnBackLongPressedListener
+import org.mozilla.fenix.OnLongPressedListener
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.readermode.DefaultReaderModeController
 import org.mozilla.fenix.browser.tabstrip.TabStrip
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.FindInPageIntegration
 import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.components.toolbar.BrowserFragmentState
 import org.mozilla.fenix.components.toolbar.BrowserFragmentStore
@@ -165,6 +169,7 @@ import org.mozilla.fenix.ext.breadcrumb
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.hideToolbar
+import org.mozilla.fenix.ext.isTablet
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.registerForActivityResult
@@ -173,6 +178,7 @@ import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ext.updateNavBarForConfigurationChange
 import org.mozilla.fenix.home.HomeScreenViewModel
 import org.mozilla.fenix.home.SharedViewModel
 import org.mozilla.fenix.library.bookmarks.BookmarksSharedViewModel
@@ -201,7 +207,7 @@ abstract class BaseBrowserFragment :
     Fragment(),
     UserInteractionHandler,
     ActivityResultHandler,
-    OnBackLongPressedListener,
+    OnLongPressedListener,
     AccessibilityManager.AccessibilityStateChangeListener {
 
     private var _binding: FragmentBrowserBinding? = null
@@ -212,7 +218,9 @@ abstract class BaseBrowserFragment :
     private lateinit var startForResult: ActivityResultLauncher<Intent>
 
     private var _browserToolbarInteractor: BrowserToolbarInteractor? = null
-    protected val browserToolbarInteractor: BrowserToolbarInteractor
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
+    internal val browserToolbarInteractor: BrowserToolbarInteractor
         get() = _browserToolbarInteractor!!
 
     @VisibleForTesting
@@ -268,6 +276,13 @@ abstract class BaseBrowserFragment :
     private val bookmarksSharedViewModel: BookmarksSharedViewModel by activityViewModels()
 
     private var currentStartDownloadDialog: StartDownloadDialog? = null
+
+    private lateinit var savedLoginsLauncher: ActivityResultLauncher<Intent>
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        savedLoginsLauncher = registerForActivityResult { navigateToSavedLoginsFragment() }
+    }
 
     @CallSuper
     override fun onCreateView(
@@ -419,6 +434,7 @@ abstract class BaseBrowserFragment :
             },
         )
         val browserToolbarMenuController = DefaultBrowserToolbarMenuController(
+            fragment = this,
             store = store,
             activity = activity,
             navController = findNavController(),
@@ -439,7 +455,8 @@ abstract class BaseBrowserFragment :
             tabCollectionStorage = requireComponents.core.tabCollectionStorage,
             topSitesStorage = requireComponents.core.topSitesStorage,
             pinnedSiteStorage = requireComponents.core.pinnedSiteStorage,
-            browserStore = store,
+            onShowPinVerification = { intent -> savedLoginsLauncher.launch(intent) },
+            onBiometricAuthenticationSuccessful = { navigateToSavedLoginsFragment() },
         )
 
         _browserToolbarInteractor = DefaultBrowserToolbarInteractor(
@@ -485,7 +502,11 @@ abstract class BaseBrowserFragment :
             },
         )
 
-        if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
+        // We don't show the navigation bar for tablets and in landscape mode.
+        val shouldAddNavigationBar = IncompleteRedesignToolbarFeature(context.settings()).isEnabled &&
+            !requireContext().isLandscape() &&
+            !isTablet()
+        if (shouldAddNavigationBar) {
             initializeNavBar(
                 browserToolbar = browserToolbarView.view,
                 view = view,
@@ -756,6 +777,9 @@ abstract class BaseBrowserFragment :
                 loginValidationDelegate = DefaultLoginValidationDelegate(
                     context.components.core.lazyPasswordsStorage,
                 ),
+                isLoginAutofillEnabled = {
+                    context.settings().shouldAutofillLogins
+                },
                 isSaveLoginEnabled = {
                     context.settings().shouldPromptToSaveLogins
                 },
@@ -836,6 +860,7 @@ abstract class BaseBrowserFragment :
             feature = SessionFeature(
                 requireComponents.core.store,
                 requireComponents.useCases.sessionUseCases.goBack,
+                requireComponents.useCases.sessionUseCases.goForward,
                 binding.engineView,
                 customTabSessionId,
             ),
@@ -1005,7 +1030,9 @@ abstract class BaseBrowserFragment :
         )
 
         initializeEngineView(
-            topToolbarHeight = context.settings().getTopToolbarHeight(includeTabStrip = customTabSessionId == null),
+            topToolbarHeight = context.settings().getTopToolbarHeight(
+                includeTabStrip = customTabSessionId == null && context.isTabStripEnabled(),
+            ),
             bottomToolbarHeight = bottomToolbarHeight,
         )
     }
@@ -1221,7 +1248,7 @@ abstract class BaseBrowserFragment :
                         topToolbarHeight = topToolbarHeight,
                     )
             } else {
-                val toolbarHeight = if (customTabSessionId == null && context.settings().isTabletAndTabStripEnabled) {
+                val toolbarHeight = if (customTabSessionId == null && context.isTabStripEnabled()) {
                     resources.getDimensionPixelSize(R.dimen.browser_toolbar_height) +
                         resources.getDimensionPixelSize(R.dimen.tab_strip_height)
                 } else {
@@ -1348,7 +1375,9 @@ abstract class BaseBrowserFragment :
                             onMenuButtonClick = {
                                 findNavController().nav(
                                     R.id.browserFragment,
-                                    BrowserFragmentDirections.actionGlobalMenuDialogFragment(),
+                                    BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                                        accesspoint = MenuAccessPoint.Browser,
+                                    ),
                                 )
                             },
                         )
@@ -1513,6 +1542,11 @@ abstract class BaseBrowserFragment :
             removeSessionIfNeeded()
     }
 
+    @CallSuper
+    override fun onForwardPressed(): Boolean {
+        return sessionFeature.onForwardPressed()
+    }
+
     /**
      * Forwards activity results to the [ActivityResultHandler] features.
      */
@@ -1523,12 +1557,24 @@ abstract class BaseBrowserFragment :
         ).any { it.onActivityResult(requestCode, data, resultCode) }
     }
 
-    override fun onBackLongPressed(): Boolean {
+    /**
+     * Navigate to GlobalTabHistoryDialogFragment.
+     */
+    private fun navigateToGlobalTabHistoryDialogFragment() {
         findNavController().navigate(
             NavGraphDirections.actionGlobalTabHistoryDialogFragment(
                 activeSessionId = customTabSessionId,
             ),
         )
+    }
+
+    override fun onBackLongPressed(): Boolean {
+        navigateToGlobalTabHistoryDialogFragment()
+        return true
+    }
+
+    override fun onForwardLongPressed(): Boolean {
+        navigateToGlobalTabHistoryDialogFragment()
         return true
     }
 
@@ -1773,7 +1819,7 @@ abstract class BaseBrowserFragment :
                 browserToolbarView.visible()
                 initializeEngineView(
                     topToolbarHeight = requireContext().settings().getTopToolbarHeight(
-                        includeTabStrip = customTabSessionId == null,
+                        includeTabStrip = customTabSessionId == null && requireContext().isTabStripEnabled(),
                     ),
                     bottomToolbarHeight = requireContext().settings().getBottomToolbarHeight(),
                 )
@@ -1787,6 +1833,27 @@ abstract class BaseBrowserFragment :
     @CallSuper
     internal open fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarView) {
         toolbar.dismissMenu()
+
+        // If the navbar feature could be visible, we should update it's state.
+        val shouldUpdateNavBarState =
+            IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled && !isTablet()
+        if (shouldUpdateNavBarState) {
+            updateNavBarForConfigurationChange(
+                parent = binding.browserLayout,
+                toolbarView = browserToolbarView.view,
+                bottomToolbarContainerView = _bottomToolbarContainerView?.toolbarContainerView,
+                reinitializeNavBar = ::reinitializeNavBar,
+            )
+        }
+    }
+
+    private fun reinitializeNavBar() {
+        initializeNavBar(
+            browserToolbar = browserToolbarView.view,
+            view = requireView(),
+            context = requireContext(),
+            activity = requireActivity() as HomeActivity,
+        )
     }
 
     /*
@@ -1937,6 +2004,15 @@ abstract class BaseBrowserFragment :
                     saveLoginJob?.cancel()
                 }
             }
+        }
+    }
+
+    private fun navigateToSavedLoginsFragment() {
+        val navController = findNavController()
+        if (navController.currentDestination?.id == R.id.browserFragment) {
+            Logins.openLogins.record(NoExtras())
+            val directions = BrowserFragmentDirections.actionLoginsListFragment()
+            navController.navigate(directions)
         }
     }
 }

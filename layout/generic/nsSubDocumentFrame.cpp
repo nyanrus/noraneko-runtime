@@ -322,29 +322,28 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;
   }
 
-  nsFrameLoader* frameLoader = FrameLoader();
-  bool isRemoteFrame = frameLoader && frameLoader->IsRemoteFrame();
-
-  // If we are pointer-events:none then we don't need to HitTest background
   const bool pointerEventsNone =
       Style()->PointerEvents() == StylePointerEvents::None;
-  if (!aBuilder->IsForEventDelivery() || !pointerEventsNone) {
-    nsDisplayListCollection decorations(aBuilder);
-    DisplayBorderBackgroundOutline(aBuilder, decorations);
-    if (isRemoteFrame) {
-      // Wrap background colors of <iframe>s with remote subdocuments in their
-      // own layer so we generate a ColorLayer. This is helpful for optimizing
-      // compositing; we can skip compositing the ColorLayer when the
-      // remote content is opaque.
-      WrapBackgroundColorInOwnLayer(aBuilder, this,
-                                    decorations.BorderBackground());
-    }
-    decorations.MoveTo(aLists);
-  }
-
   if (aBuilder->IsForEventDelivery() && pointerEventsNone) {
+    // If we are pointer-events:none then we don't need to HitTest background or
+    // anything else.
     return;
   }
+
+  nsFrameLoader* frameLoader = FrameLoader();
+  const bool isRemoteFrame = frameLoader && frameLoader->IsRemoteFrame();
+
+  nsDisplayListCollection decorations(aBuilder);
+  DisplayBorderBackgroundOutline(aBuilder, decorations);
+  if (isRemoteFrame) {
+    // Wrap background colors of <iframe>s with remote subdocuments in their
+    // own layer so we generate a ColorLayer. This is helpful for optimizing
+    // compositing; we can skip compositing the ColorLayer when the
+    // remote content is opaque.
+    WrapBackgroundColorInOwnLayer(aBuilder, this,
+                                  decorations.BorderBackground());
+  }
+  decorations.MoveTo(aLists);
 
   if (HidesContent()) {
     return;
@@ -554,22 +553,7 @@ nsresult nsSubDocumentFrame::GetFrameName(nsAString& aResult) const {
 
 /* virtual */
 nscoord nsSubDocumentFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-
-  nsCOMPtr<nsIObjectLoadingContent> iolc = do_QueryInterface(mContent);
-  auto olc = static_cast<nsObjectLoadingContent*>(iolc.get());
-
-  if (olc && olc->GetSubdocumentIntrinsicSize()) {
-    // The subdocument is an SVG document, so technically we should call
-    // SVGOuterSVGFrame::GetMinISize() on its root frame.  That method always
-    // returns 0, though, so we can just do that & don't need to bother with
-    // the cross-doc communication.
-    result = 0;
-  } else {
-    result = GetIntrinsicISize();
-  }
-
-  return result;
+  return GetIntrinsicISize();
 }
 
 /* virtual */
@@ -706,7 +690,7 @@ void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
 
     nsViewManager* vm = mInnerView->GetViewManager();
     vm->MoveViewTo(mInnerView, destRect.x, destRect.y);
-    vm->ResizeView(mInnerView, nsRect(nsPoint(0, 0), destRect.Size()), true);
+    vm->ResizeView(mInnerView, nsRect(nsPoint(0, 0), destRect.Size()));
   }
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();

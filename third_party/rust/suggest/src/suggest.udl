@@ -6,6 +6,9 @@
 [External="remote_settings"]
 typedef extern RemoteSettingsConfig;
 
+[External="remote_settings"]
+typedef extern RemoteSettingsServer;
+
 namespace suggest {
 
 boolean raw_suggestion_url_matches([ByRef] string raw_url, [ByRef] string url);
@@ -103,6 +106,14 @@ dictionary SuggestionQuery {
 dictionary SuggestIngestionConstraints {
     u64? max_suggestions = null;
     sequence<SuggestionProvider>? providers = null;
+    // Only ingest if the table `suggestions` is empty.
+    //
+    // This is indented to handle periodic updates.  Consumers can schedule an ingest with
+    // `empty_only=true` on startup and a regular ingest with `empty_only=false` to run on a long periodic schedule (maybe
+    // once a day). This allows ingestion to normally be run at a slow, periodic rate.  However, if
+    // there is a schema upgrade that causes the database to be thrown away, then the
+    // `empty_only=true` ingestion that runs on startup will repopulate it.
+    boolean empty_only = false;
 };
 
 dictionary SuggestGlobalConfig {
@@ -154,6 +165,10 @@ interface SuggestStoreBuilder {
     [Self=ByArc]
     SuggestStoreBuilder cache_path(string path);
 
+    [Self=ByArc]
+    SuggestStoreBuilder remote_settings_server(RemoteSettingsServer server);
+
+    // Deprecated: Use `remote_settings_server()` instead.
     [Self=ByArc]
     SuggestStoreBuilder remote_settings_config(RemoteSettingsConfig config);
 

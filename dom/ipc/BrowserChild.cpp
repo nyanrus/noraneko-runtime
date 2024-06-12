@@ -502,7 +502,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChild)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
-  NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChromeFocus)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIWindowProvider)
   NS_INTERFACE_MAP_ENTRY(nsIBrowserChild)
@@ -626,18 +625,6 @@ BrowserChild::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
 
 NS_IMETHODIMP
 BrowserChild::Blur() { return NS_ERROR_NOT_IMPLEMENTED; }
-
-NS_IMETHODIMP
-BrowserChild::FocusNextElement(bool aForDocumentNavigation) {
-  SendMoveFocus(true, aForDocumentNavigation);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BrowserChild::FocusPrevElement(bool aForDocumentNavigation) {
-  SendMoveFocus(false, aForDocumentNavigation);
-  return NS_OK;
-}
 
 NS_IMETHODIMP
 BrowserChild::GetInterface(const nsIID& aIID, void** aSink) {
@@ -2151,18 +2138,23 @@ bool BrowserChild::DeallocPDocAccessibleChild(
 #endif
 
 RefPtr<VsyncMainChild> BrowserChild::GetVsyncChild() {
-  // Initializing mVsyncChild here turns on per-BrowserChild Vsync for a
+  // Initializing VsyncMainChild here turns on per-BrowserChild Vsync for a
   // given platform. Note: this only makes sense if nsWindow returns a
   // window-specific VsyncSource.
 #if defined(MOZ_WAYLAND)
-  if (IsWaylandEnabled() && !mVsyncChild) {
-    mVsyncChild = MakeRefPtr<VsyncMainChild>();
-    if (!SendPVsyncConstructor(mVsyncChild)) {
-      mVsyncChild = nullptr;
+  if (IsWaylandEnabled()) {
+    if (auto* actor = static_cast<VsyncMainChild*>(
+            LoneManagedOrNullAsserts(ManagedPVsyncChild()))) {
+      return actor;
     }
+    auto actor = MakeRefPtr<VsyncMainChild>();
+    if (!SendPVsyncConstructor(actor)) {
+      return nullptr;
+    }
+    return actor;
   }
 #endif
-  return mVsyncChild;
+  return nullptr;
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvLoadRemoteScript(

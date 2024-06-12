@@ -972,6 +972,7 @@ CanvasRenderingContext2D::ContextState::ContextState(const ContextState& aOther)
       textRendering(aOther.textRendering),
       letterSpacing(aOther.letterSpacing),
       wordSpacing(aOther.wordSpacing),
+      fontLineHeight(aOther.fontLineHeight),
       letterSpacingStr(aOther.letterSpacingStr),
       wordSpacingStr(aOther.wordSpacingStr),
       shadowColor(aOther.shadowColor),
@@ -1089,6 +1090,7 @@ CanvasRenderingContext2D::CanvasRenderingContext2D(
 }
 
 CanvasRenderingContext2D::~CanvasRenderingContext2D() {
+  CanvasImageCache::NotifyCanvasDestroyed(this);
   RemovePostRefreshObserver();
   RemoveShutdownObserver();
   ResetBitmap();
@@ -2886,10 +2888,16 @@ void CanvasRenderingContext2D::ParseSpacing(const nsACString& aSpacing,
 class CanvasUserSpaceMetrics : public UserSpaceMetricsWithSize {
  public:
   CanvasUserSpaceMetrics(const gfx::IntSize& aSize, const nsFont& aFont,
+                         const StyleLineHeight& aLineHeight,
+                         RefPtr<nsAtom> aFontLanguage,
+                         bool aFontExplicitLanguage,
                          const ComputedStyle* aCanvasStyle,
                          nsPresContext* aPresContext)
       : mSize(aSize),
         mFont(aFont),
+        mLineHeight(aLineHeight),
+        mFontLanguage(std::move(aFontLanguage)),
+        mFontExplicitLanguage(aFontExplicitLanguage),
         mCanvasStyle(aCanvasStyle),
         mPresContext(aPresContext) {}
 
@@ -2909,6 +2917,26 @@ class CanvasUserSpaceMetrics : public UserSpaceMetricsWithSize {
 
   CSSSize GetCSSViewportSize() const override {
     return GetCSSViewportSizeFromContext(mPresContext);
+  }
+
+  float GetLineHeight(Type aType) const override {
+    // This is used if a filter is added through `url()`, and if the SVG
+    // filter being referred to is using line-height units.
+    switch (aType) {
+      case Type::This: {
+        const auto wm = GetWritingModeForType(aType);
+        const auto lh = ReflowInput::CalcLineHeightForCanvas(
+            mLineHeight, mFont, mFontLanguage, mFontExplicitLanguage,
+            mPresContext, wm);
+        return nsPresContext::AppUnitsToFloatCSSPixels(lh);
+      }
+      case Type::Root: {
+        return SVGContentUtils::GetLineHeight(
+            mPresContext->Document()->GetRootElement());
+      }
+    }
+    MOZ_ASSERT_UNREACHABLE("Was a new value added to the enumeration?");
+    return 1.0f;
   }
 
  private:
@@ -2946,6 +2974,9 @@ class CanvasUserSpaceMetrics : public UserSpaceMetricsWithSize {
 
   gfx::IntSize mSize;
   const nsFont& mFont;
+  StyleLineHeight mLineHeight;
+  RefPtr<nsAtom> mFontLanguage;
+  bool mFontExplicitLanguage;
   RefPtr<const ComputedStyle> mCanvasStyle;
   nsPresContext* mPresContext;
 };
@@ -3001,8 +3032,10 @@ void CanvasRenderingContext2D::UpdateFilter(bool aFlushIfNeeded) {
   CurrentState().filter = FilterInstance::GetFilterDescription(
       mCanvasElement, CurrentState().filterChain.AsSpan(),
       CurrentState().autoSVGFiltersObserver, writeOnly,
-      CanvasUserSpaceMetrics(GetSize(), CurrentState().fontFont, canvasStyle,
-                             presContext),
+      CanvasUserSpaceMetrics(
+          GetSize(), CurrentState().fontFont, CurrentState().fontLineHeight,
+          CurrentState().fontLanguage, CurrentState().fontExplicitLanguage,
+          canvasStyle, presContext),
       gfxRect(0, 0, mWidth, mHeight), CurrentState().filterAdditionalImages);
   CurrentState().filterSourceGraphicTainted = writeOnly;
 }
@@ -4043,6 +4076,7 @@ bool CanvasRenderingContext2D::SetFontInternal(const nsACString& aFont,
   CurrentState().fontFont.size = fontStyle->mSize;
   CurrentState().fontLanguage = fontStyle->mLanguage;
   CurrentState().fontExplicitLanguage = fontStyle->mExplicitLanguage;
+  CurrentState().fontLineHeight = data.mStyle->StyleFont()->mLineHeight;
 
   return true;
 }
@@ -4251,6 +4285,8 @@ bool CanvasRenderingContext2D::SetFontInternalDisconnected(
   CurrentState().fontFont.variantCaps = fontStyle.variantCaps;
   CurrentState().fontLanguage = nullptr;
   CurrentState().fontExplicitLanguage = false;
+  // We don't have any computed style, assume normal height.
+  CurrentState().fontLineHeight = StyleLineHeight::Normal();
   return true;
 }
 
@@ -5392,6 +5428,10 @@ MaybeGetSurfaceDescriptorForRemoteCanvas(
     if (subdescType == layers::RemoteDecoderVideoSubDescriptor::Tnull_t) {
       return sd;
     }
+    if (subdescType == layers::RemoteDecoderVideoSubDescriptor::
+                           TSurfaceDescriptorMacIOSurface) {
+      return sd;
+    }
   }
 
   return Nothing();
@@ -5502,9 +5542,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       element = video;
     }
 
-    srcSurf =
-        CanvasImageCache::LookupCanvas(element, mCanvasElement, mTarget,
-                                       &imgSize, &intrinsicImgSize, &cropRect);
+    srcSurf = CanvasImageCache::LookupCanvas(element, this, mTarget, &imgSize,
+                                             &intrinsicImgSize, &cropRect);
   }
 
   DirectDrawInfo drawInfo;
@@ -5578,9 +5617,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
     if (srcSurf) {
       if (res.mImageRequest) {
-        CanvasImageCache::NotifyDrawImage(element, mCanvasElement, mTarget,
-                                          srcSurf, imgSize, intrinsicImgSize,
-                                          cropRect);
+        CanvasImageCache::NotifyDrawImage(element, this, mTarget, srcSurf,
+                                          imgSize, intrinsicImgSize, cropRect);
       }
     } else {
       drawInfo = res.mDrawInfo;

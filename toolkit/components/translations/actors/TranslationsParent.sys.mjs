@@ -443,6 +443,15 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
+   * Returns whether the Translations Engine is mocked for testing.
+   *
+   * @returns {boolean}
+   */
+  static isTranslationsEngineMocked() {
+    return TranslationsParent.#isTranslationsEngineMocked;
+  }
+
+  /**
    * Offer translations (for instance by automatically opening the popup panel) whenever
    * languages are detected, but only do it once per host per session.
    *
@@ -455,7 +464,10 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!lazy.automaticallyPopupPref) {
       return;
     }
-    if (lazy.BrowserHandler?.kiosk) {
+
+    // On Android the BrowserHandler is intermittently not available (for unknown reasons).
+    // Check that the component is available before de-lazifying lazy.BrowserHandler.
+    if (Cc["@mozilla.org/browser/clh;1"] && lazy.BrowserHandler?.kiosk) {
       // Pop-ups should not be shown in kiosk mode.
       return;
     }
@@ -628,7 +640,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {object} gBrowser
    * @returns {boolean}
    */
-  static isRestrictedPage(gBrowser) {
+  static isFullPageTranslationsRestrictedForPage(gBrowser) {
     const contentType = gBrowser.selectedBrowser.documentContentType;
     const scheme = gBrowser.currentURI.scheme;
 
@@ -636,7 +648,8 @@ export class TranslationsParent extends JSWindowActorParent {
       return true;
     }
 
-    // Keep this logic up to date with TranslationsChild.prototype.#isRestrictedPage.
+    // Keep this logic up to date with the "matches" array in the
+    // `toolkit/modules/ActorManagerParent.sys.mjs` definition.
     switch (scheme) {
       case "https":
       case "http":
@@ -898,6 +911,9 @@ export class TranslationsParent extends JSWindowActorParent {
 
         return undefined;
       }
+      case "Translations:ReportFirstVisibleChange": {
+        this.languageState.hasVisibleChange = true;
+      }
     }
     return undefined;
   }
@@ -1041,6 +1057,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * @returns {Promise<SupportedLanguages>}
    */
   static async getSupportedLanguages() {
+    await chaosMode(1 / 4);
     const languagePairs = await TranslationsParent.getLanguagePairs();
 
     /** @type {Set<string>} */
@@ -2125,6 +2142,7 @@ export class TranslationsParent extends JSWindowActorParent {
     // Skip auto-translate for one page load.
     const windowState = this.getWindowState();
     windowState.isPageRestored = true;
+    this.languageState.hasVisibleChange = false;
     this.languageState.requestedTranslationPair = null;
     windowState.previousDetectedLanguages =
       this.languageState.detectedLanguages;
@@ -2314,7 +2332,7 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!langTags.docLangTag) {
       const message = "No valid language detected.";
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2339,7 +2357,7 @@ export class TranslationsParent extends JSWindowActorParent {
       const message =
         "The app and document languages match, so not translating.";
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2392,7 +2410,7 @@ export class TranslationsParent extends JSWindowActorParent {
       // No language pairs match.
       const message = `No matching translation pairs were found for translating from "${langTags.docLangTag}".`;
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2750,6 +2768,9 @@ class TranslationsLanguageState {
   /** @type {LangTags | null} */
   #detectedLanguages = null;
 
+  /** @type {boolean} */
+  #hasVisibleChange = false;
+
   /** @type {null | TranslationErrors} */
   #error = null;
 
@@ -2797,8 +2818,7 @@ class TranslationsLanguageState {
   }
 
   /**
-   * The TranslationsChild will detect languages and offer them up for translation.
-   * The results are stored here.
+   * The stored results for the detected languages.
    *
    * @returns {LangTags | null}
    */
@@ -2812,6 +2832,24 @@ class TranslationsLanguageState {
     }
 
     this.#detectedLanguages = detectedLanguages;
+    this.dispatch();
+  }
+
+  /**
+   * A visual translation change occurred on the DOM.
+   *
+   * @returns {boolean}
+   */
+  get hasVisibleChange() {
+    return this.#hasVisibleChange;
+  }
+
+  set hasVisibleChange(hasVisibleChange) {
+    if (this.#hasVisibleChange === hasVisibleChange) {
+      return;
+    }
+
+    this.#hasVisibleChange = hasVisibleChange;
     this.dispatch();
   }
 

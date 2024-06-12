@@ -645,8 +645,9 @@ const StyleImage* nsImageFrame::GetImageFromStyle() const {
                               nonAnonymousParent->GetContent());
         styleContent = nonAnonymousParent->StyleContent();
       }
-      MOZ_RELEASE_ASSERT(contentIndex < styleContent->ContentCount());
-      auto& contentItem = styleContent->ContentAt(contentIndex);
+      auto items = styleContent->NonAltContentItems();
+      MOZ_RELEASE_ASSERT(contentIndex < items.Length());
+      const auto& contentItem = items[contentIndex];
       MOZ_RELEASE_ASSERT(contentItem.IsImage());
       return &contentItem.AsImage();
     }
@@ -1055,11 +1056,8 @@ bool nsImageFrame::ShouldCreateImageFrameForContentProperty(
   if (aElement.IsRootOfNativeAnonymousSubtree()) {
     return false;
   }
-  const auto& content = aStyle.StyleContent()->mContent;
-  if (!content.IsItems()) {
-    return false;
-  }
-  Span<const StyleContentItem> items = content.AsItems().AsSpan();
+  Span<const StyleContentItem> items =
+      aStyle.StyleContent()->NonAltContentItems();
   return items.Length() == 1 && items[0].IsImage();
 }
 
@@ -2857,10 +2855,10 @@ LogicalSides nsImageFrame::GetLogicalSkipSides() const {
     return skip;
   }
   if (GetPrevInFlow()) {
-    skip |= eLogicalSideBitsBStart;
+    skip += LogicalSide::BStart;
   }
   if (GetNextInFlow()) {
-    skip |= eLogicalSideBitsBEnd;
+    skip += LogicalSide::BEnd;
   }
   return skip;
 }

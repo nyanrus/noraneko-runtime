@@ -482,6 +482,101 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForResult(controller.uninstall(extension))
     }
 
+    @Test
+    fun optionalOriginsNormalized() {
+        // For mv3 extensions the host_permissions are being granted automatically at install time
+        // but this test needs them to not be granted yet and so we explicitly opt-out in this test.
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "extensions.originControls.grantByDefault" to false,
+            ),
+        )
+
+        var extension = sessionRule.waitForResult(
+            controller.ensureBuiltIn(
+                "resource://android/assets/web_extensions/optional-permission-all-urls/",
+                "optional-permission-all-urls@example.com",
+            ),
+        )
+
+        assertEquals("optional-permission-all-urls@example.com", extension.id)
+
+        var grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+        assertArrayEquals(
+            "grantedOptionalPermissions must be initially empty",
+            arrayOf(),
+            grantedOptionalOrigins,
+        )
+
+        extension = sessionRule.waitForResult(
+            controller.addOptionalPermissions(
+                extension.id,
+                arrayOf(),
+                arrayOf("http://*/", "https://*/", "file://*/*"),
+            ),
+        )
+
+        grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertArrayEquals(
+            "grantedOptionalPermissions must be [http://*/*, https://*/*, file://*/*]",
+            arrayOf("http://*/*", "https://*/*", "file://*/*"),
+            grantedOptionalOrigins,
+        )
+
+        sessionRule.waitForResult(controller.uninstall(extension))
+    }
+
+    @Test
+    fun onOptionalPermissionsChanged() {
+        var extension = sessionRule.waitForResult(
+            controller.ensureBuiltIn(
+                "resource://android/assets/web_extensions/optional-permission-request/",
+                "optional-permission-request@example.com",
+            ),
+        )
+
+        assertEquals("optional-permission-request@example.com", extension.id)
+
+        var grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        var grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.AddonManagerDelegate {
+            @AssertCalled(count = 1)
+            override fun onOptionalPermissionsChanged(updatedExtension: WebExtension) {
+                grantedOptionalPermissions = updatedExtension.metaData.grantedOptionalPermissions
+                grantedOptionalOrigins = updatedExtension.metaData.grantedOptionalOrigins
+                assertNull(updatedExtension)
+                assertArrayEquals(
+                    "grantedOptionalPermissions must be [activeTab, geolocation].",
+                    arrayOf("activeTab", "geolocation"),
+                    grantedOptionalPermissions,
+                )
+                assertArrayEquals(
+                    "grantedOptionalPermissions must be [*://example.com/*].",
+                    arrayOf("*://example.com/*"),
+                    grantedOptionalOrigins,
+                )
+            }
+        })
+
+        extension = sessionRule.waitForResult(
+            controller.addOptionalPermissions(
+                extension.id,
+                arrayOf("activeTab", "geolocation"),
+                arrayOf("*://example.com/*"),
+            ),
+        )
+        sessionRule.waitForResult(controller.uninstall(extension))
+    }
+
     private fun assertBodyBorderEqualTo(expected: String) {
         val color = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat(
@@ -2763,7 +2858,7 @@ class WebExtensionTest : BaseSessionTest() {
                 "extensions.install.requireBuiltInCerts" to false,
                 "extensions.update.requireBuiltInCerts" to false,
                 "extensions.getAddons.cache.enabled" to true,
-                "extensions.getAddons.cache.lastUpdate" to 0,
+                "extensions.getAddons.cache.lastUpdate" to 1,
             ),
         )
         mainSession.loadUri("https://example.com")
@@ -3720,11 +3815,6 @@ class WebExtensionTest : BaseSessionTest() {
             "mozAddonManager is exposed",
             mainSession.evaluateJS("typeof navigator.mozAddonManager") as String,
             equalTo("object"),
-        )
-        assertThat(
-            "mozAddonManager.abuseReportPanelEnabled should be false",
-            mainSession.evaluateJS("navigator.mozAddonManager.abuseReportPanelEnabled") as Boolean,
-            equalTo(false),
         )
 
         // Install an add-on, then assert results got from `mozAddonManager.getAddonByID()`.

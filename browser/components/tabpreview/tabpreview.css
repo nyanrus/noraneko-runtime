@@ -1,12 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #tab-preview-panel {
   --panel-width: 280px;
   --panel-padding: 0;
-  --panel-background: var(--tab-selected-bgcolor);
-  --panel-color: var(--tab-selected-textcolor);
+  pointer-events: none;
 }
 
 .tab-preview-text-container {
@@ -14,17 +13,22 @@
 }
 
 .tab-preview-title {
-  max-height: 3em;
   overflow: hidden;
+  -webkit-line-clamp: 2;
   font-weight: var(--font-weight-bold);
 }
 
 .tab-preview-uri {
   color: var(--text-color-deemphasized);
-  max-height: 1.5em;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.tab-preview-pid-activeness {
+  color: var(--text-color-deemphasized);
+  display: flex;
+  justify-content: space-between;
 }
 
 .tab-preview-thumbnail-container {

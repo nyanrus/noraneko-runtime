@@ -388,6 +388,10 @@ fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/inte
 fails-if(!xulRuntime.shell) script test262/language/expressions/class/subclass-builtins/subclass-SharedArrayBuffer.js
 fails-if(!xulRuntime.shell) script test262/language/statements/class/subclass-builtins/subclass-SharedArrayBuffer.js
 
+# https://github.com/tc39/test262/pull/3955
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1892186
+skip script test262/language/module-code/top-level-await/async-module-does-not-block-sibling-modules.js
+
 
 ##################################################
 # Test262 tests skipped due to SpiderMonkey bugs #
@@ -631,6 +635,26 @@ skip script test262/built-ins/RegExp/unicode_full_case_folding.js
 skip script test262/intl402/Locale/likely-subtags.js
 skip script test262/intl402/Locale/prototype/minimize/removing-likely-subtags-first-adds-likely-subtags.js
 
+# Failures in AsyncFromSyncIteratorPrototype, see bug 1877862.
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-poisoned-return.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-object.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-not-object.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-null.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-result-poisoned-wrapper.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/iterator-result-rejected-promise-close.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-get-return-undefined.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/next-result-poisoned-wrapper.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-iterator-next-rejected-promise-close.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-iterator-next-rejected-promise-close.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-next-rejected-promise-close.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/iterator-result-poisoned-wrapper.js
+skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-next-rejected-promise-close.js
+
+# https://github.com/tc39/proposal-redeclarable-global-eval-vars
+skip script test262/language/global-code/script-decl-lex-var-declared-via-eval.js
+skip script test262/annexB/language/eval-code/direct/script-decl-lex-no-collision.js
+
 
 ###########################################################
 # Tests disabled due to issues in test262 importer script #
@@ -672,6 +696,9 @@ skip script test262/staging/Temporal/Regex/old/timezone.js
 skip script test262/language/statements/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 skip script test262/language/expressions/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 
+# These don't expect Float16Array to be enabled, see https://github.com/tc39/test262/issues/4029
+skip script test262/harness/testTypedArray.js
+skip script test262/harness/testTypedArray-conversions.js
 
 ##############################################
 # Enable Iterator Helpers tests in the shell #
@@ -1035,6 +1062,19 @@ shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/na
 shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take.js
 shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take-more-than-available.js
 
+##############################################
+# Temporal                                   #
+##############################################
+
+# https://github.com/tc39/proposal-temporal/pull/2762
+# https://github.com/tc39/proposal-temporal/pull/2759
+skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/wrapping-at-end-of-month.js
+skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/wrapping-at-end-of-month.js
+skip script test262/built-ins/Temporal/PlainDate/prototype/since/wrapping-at-end-of-month.js
+skip script test262/built-ins/Temporal/PlainDate/prototype/until/wrapping-at-end-of-month.js
+skip script test262/built-ins/Temporal/PlainDateTime/prototype/since/wrapping-at-end-of-month.js
+skip script test262/built-ins/Temporal/PlainDateTime/prototype/until/wrapping-at-end-of-month.js
+
 
 ##############################################
 # Temporal Intl tests                        #
@@ -1054,6 +1094,7 @@ skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/time
 skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/resolved-time-zone.js
 skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/options-undefined.js
 skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/calendar-mismatch.js
+skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/dateStyle.js
 skip script test262/intl402/Temporal/PlainMonthDay/prototype/with/fields-missing-properties.js
 skip script test262/intl402/Temporal/PlainMonthDay/from/reference-date-noniso-calendar.js
 skip script test262/intl402/Temporal/PlainMonthDay/from/fields-missing-properties.js
@@ -1095,6 +1136,11 @@ skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/cust
 skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/offset-time-zone-not-supported.js
 skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/calendar-mismatch.js
 skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/options-timeZone.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/dateStyle.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/weekOfYear/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/weekOfYear/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/yearOfWeek/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/yearOfWeek/non-iso-week-of-year.js
 
 skip script test262/intl402/Temporal/PlainDate/from/infinity-throws-rangeerror.js
 skip script test262/intl402/Temporal/PlainDate/compare/infinity-throws-rangeerror.js
@@ -1114,7 +1160,12 @@ skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/options-
 skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/resolved-time-zone.js
 skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/options-undefined.js
 skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/calendar-mismatch.js
+skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/dateStyle.js
 skip script test262/intl402/Temporal/PlainDate/prototype/with/cross-era-boundary.js
+skip script test262/intl402/Temporal/PlainDate/prototype/weekOfYear/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/PlainDate/prototype/weekOfYear/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/PlainDate/prototype/yearOfWeek/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/PlainDate/prototype/yearOfWeek/non-iso-week-of-year.js
 
 skip script test262/intl402/Temporal/TimeZone/prototype/getPossibleInstantsFor/infinity-throws-rangeerror.js
 skip script test262/intl402/Temporal/TimeZone/prototype/getInstantFor/infinity-throws-rangeerror.js
@@ -1157,13 +1208,19 @@ skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/time
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/resolved-time-zone.js
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/options-undefined.js
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/calendar-mismatch.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/dateStyle.js
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toString/calendarname-always.js
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toString/calendarname-auto.js
 skip script test262/intl402/Temporal/PlainDateTime/prototype/toString/calendarname-never.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/weekOfYear/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/weekOfYear/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/yearOfWeek/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/yearOfWeek/gregory-iso-weekofyear.js
 
 skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/locales-undefined.js
 skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/options-conflict.js
 skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/options-undefined.js
+skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/dateStyle.js
 
 skip script test262/intl402/Temporal/PlainYearMonth/from/argument-object.js
 skip script test262/intl402/Temporal/PlainYearMonth/from/infinity-throws-rangeerror.js
@@ -1183,6 +1240,7 @@ skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/tim
 skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/options-undefined.js
 skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/resolved-time-zone.js
 skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/calendar-mismatch.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/dateStyle.js
 
 skip script test262/intl402/Temporal/Calendar/calendar-case-insensitive.js
 skip script test262/intl402/Temporal/Calendar/from/basic.js
@@ -1296,6 +1354,14 @@ skip script test262/intl402/Temporal/Calendar/prototype/era/argument-duplicate-c
 skip script test262/intl402/Temporal/Calendar/prototype/era/argument-constructor-in-calendar-fields.js
 skip script test262/intl402/Temporal/Calendar/prototype/era/argument-proto-in-calendar-fields.js
 skip script test262/intl402/Temporal/Calendar/prototype/monthDayFromFields/fields-underspecified.js
+skip script test262/intl402/Temporal/Calendar/prototype/weekOfYear/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/Calendar/prototype/weekOfYear/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/Calendar/prototype/eraYear/argument-propertybag-calendar-iso-string.js
+skip script test262/intl402/Temporal/Calendar/prototype/eraYear/argument-string-calendar-annotation-invalid-key.js
+skip script test262/intl402/Temporal/Calendar/prototype/yearOfWeek/non-iso-week-of-year.js
+skip script test262/intl402/Temporal/Calendar/prototype/yearOfWeek/gregory-iso-weekofyear.js
+skip script test262/intl402/Temporal/Calendar/prototype/era/argument-propertybag-calendar-iso-string.js
+skip script test262/intl402/Temporal/Calendar/prototype/era/argument-string-calendar-annotation-invalid-key.js
 
 skip script test262/staging/Temporal/ZonedDateTime/old/construction-and-properties.js
 skip script test262/staging/Intl402/Temporal/old/date-time-format.js
@@ -1331,58 +1397,3 @@ skip script test262/intl402/Temporal/TimeZone/from/iana-legacy-names.js
 skip script test262/intl402/Temporal/TimeZone/from/etc-timezone.js
 skip script test262/intl402/Temporal/TimeZone/from/argument-valid.js
 skip script test262/intl402/Temporal/TimeZone/from/timezone-case-insensitive.js
-
-# New Temporal failures, see bug 1878340
-skip script test262/built-ins/Temporal/Duration/out-of-range.js
-skip script test262/built-ins/Temporal/Duration/compare/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/compare/relativeto-plaindate-add24hourdaystonormalizedtimeduration-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/result-out-of-range-1.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/result-out-of-range-2.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/relativeto-zoneddatetime-normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/Duration/prototype/subtract/argument-duration-precision-exact-numerical-values.js
-skip script test262/built-ins/Temporal/Duration/prototype/toString/throws-when-rounded-duration-is-invalid.js
-skip script test262/built-ins/Temporal/Duration/prototype/round/result-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/prototype/round/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/Duration/prototype/round/relativeto-zoneddatetime-normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/Duration/prototype/round/out-of-range-when-converting-from-normalized-duration.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/result-out-of-range-1.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/result-out-of-range-2.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/relativeto-zoneddatetime-normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/Duration/prototype/add/argument-duration-precision-exact-numerical-values.js
-skip script test262/built-ins/Temporal/Duration/prototype/total/precision-exact-mathematical-values-7.js
-skip script test262/built-ins/Temporal/Duration/prototype/total/precision-exact-mathematical-values-6.js
-skip script test262/built-ins/Temporal/Duration/prototype/total/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/Duration/prototype/total/relativeto-plaindate-add24hourdaystonormalizedtimeduration-out-of-range.js
-skip script test262/built-ins/Temporal/Duration/prototype/total/relativeto-zoneddatetime-normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/Duration/from/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/subtract/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/add/argument-duration-out-of-range.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/normalized-time-duration-to-days-range-errors.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/normalized-time-duration-to-days-loop-arbitrarily.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/hoursInDay/precision-exact-mathematical-values-2.js
-
-##############################################
-# AsyncFromSyncIteratorPrototype tests       #
-##############################################
-
-# Failures in AsyncFromSyncIteratorPrototype, see bug 1877862.
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-poisoned-return.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-object.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-not-object.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-null.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/iterator-result-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-get-return-undefined.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/next-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-iterator-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-iterator-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/iterator-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-next-rejected-promise-close.js

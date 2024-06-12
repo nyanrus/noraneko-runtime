@@ -527,6 +527,8 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
         });
         aStage.SetResolution(v->mImage->GetSize().Width(),
                              v->mImage->GetSize().Height());
+        aStage.SetStartTimeAndEndTime(v->mTime.ToMicroseconds(),
+                                      v->GetEndTime().ToMicroseconds());
       });
 
       RemoteDataDecoder::UpdateOutputStatus(std::move(v));
@@ -574,7 +576,7 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
   bool mIsHardwareAccelerated = false;
   // Accessed on mThread and reader's thread. SimpleMap however is
   // thread-safe, so it's okay to do so.
-  SimpleMap<InputInfo> mInputInfos;
+  SimpleMap<int64_t, InputInfo, ThreadSafePolicy> mInputInfos;
   // Only accessed on mThread.
   Maybe<TimeUnit> mSeekTarget;
   Maybe<TimeUnit> mLatestOutputTime;

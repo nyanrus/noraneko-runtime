@@ -12,7 +12,10 @@
 // META: variant=?31-35
 // META: variant=?36-40
 // META: variant=?40-45
-// META: variant=?46-last
+// META: variant=?46-50
+// META: variant=?51-55
+// META: variant=?56-60
+// META: variant=?61-last
 
 "use strict;"
 
@@ -108,6 +111,62 @@ const EXPECT_PROMISE_ERROR = auctionResult => {
   assert_true(auctionResult instanceof TypeError,
               "did not get expected error type: " + auctionResult);
 }
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without end bracket is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'${No_End_Bracket': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without percents and brackets.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'No_Wrapper': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without dollar sign.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'{No_Dollar_Sign}': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without start bracket is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'$No_Start_Bracket}': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements mix and match is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'${Bracket_And_Percent%%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements missing start percent is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%Missing_Start_Percents%%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements single percents is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%Single_Percents%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without end percents is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%%No_End_Percents': 'SSP'}}
+});
 
 makeTest({
   name: 'no buyers => no winners',
@@ -443,6 +502,60 @@ makeTest({
   auctionConfigOverrides: {allSlotsRequestedSizes:
                             [{width: '100', height: '100'},
                              {width: '200furlongs', height: '200'}]}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has default local reporting type',
+  expect:  EXPECT_WINNER,
+  auctionConfigOverrides: {sellerRealTimeReportingConfig:
+                            {type: 'default-local-reporting'}}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has no type',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {sellerRealTimeReportingConfig:
+                            {notType: 'default-local-reporting'}}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has unknown type',
+  expect:  EXPECT_WINNER,
+  auctionConfigOverrides: {sellerRealTimeReportingConfig: {type: 'unknown type'}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {"https://example.com": {type: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has no entry',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig: {}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has invalid buyer',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {"http://example.com": {type: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has no type',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {"https://example.com": {notType: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has unknown type',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {"https://example.com": {type: 'unknown type'}}}
 });
 
 subsetTest(promise_test, async test => {

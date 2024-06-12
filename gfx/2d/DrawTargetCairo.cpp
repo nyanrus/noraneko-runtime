@@ -665,9 +665,6 @@ void DrawTargetCairo::Link(const char* aDestination, const Rect& aRect) {
   //
   // We also need to escape any backslashes (bug 1748077), as per doc at
   // https://www.cairographics.org/manual/cairo-Tags-and-Links.html#cairo-tag-begin
-  // The cairo-pdf-interchange backend (used on all platforms EXCEPT macOS)
-  // actually requires that we *doubly* escape the backslashes (this may be a
-  // cairo bug), while the quartz backend is fine with them singly-escaped.
   //
   // (Encoding of non-ASCII chars etc gets handled later by the PDF backend.)
   nsAutoCString dest(aDestination);
@@ -676,11 +673,7 @@ void DrawTargetCairo::Link(const char* aDestination, const Rect& aRect) {
     if (dest[i] == '\'') {
       dest.ReplaceLiteral(i, 1, "\\'");
     } else if (dest[i] == '\\') {
-#ifdef XP_MACOSX
       dest.ReplaceLiteral(i, 1, "\\\\");
-#else
-      dest.ReplaceLiteral(i, 1, "\\\\\\\\");
-#endif
     }
   }
 
@@ -1745,16 +1738,6 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateSimilarDrawTarget(
       similar = cairo_win32_surface_create_with_dib(
           GfxFormatToCairoFormat(aFormat), aSize.width, aSize.height);
       break;
-#endif
-#ifdef CAIRO_HAS_QUARTZ_SURFACE
-    case CAIRO_SURFACE_TYPE_QUARTZ:
-      if (StaticPrefs::gfx_cairo_quartz_cg_layer_enabled()) {
-        similar = cairo_quartz_surface_create_cg_layer(
-            mSurface, GfxFormatToCairoContent(aFormat), aSize.width,
-            aSize.height);
-        break;
-      }
-      [[fallthrough]];
 #endif
     default:
       similar = cairo_surface_create_similar(mSurface,

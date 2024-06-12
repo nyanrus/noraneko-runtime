@@ -114,6 +114,7 @@ const NEWTAB_PING_PREFS = {
   "feeds.section.topstories": Glean.pocket.enabled,
   showSponsored: Glean.pocket.sponsoredStoriesEnabled,
   topSitesRows: Glean.topsites.rows,
+  showWeather: Glean.newtab.weatherEnabled,
 };
 const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
 
@@ -932,7 +933,85 @@ export class TelemetryFeed {
       case at.BLOCK_URL:
         this.handleBlockUrl(action);
         break;
+      case at.WALLPAPER_CLICK:
+        this.handleWallpaperUserEvent(action);
+        break;
+      case at.SET_PREF:
+        this.handleSetPref(action);
+        break;
+      case at.WEATHER_IMPRESSION:
+        this.handleWeatherUserEvent(action);
+        break;
+      case at.WEATHER_LOAD_ERROR:
+        this.handleWeatherUserEvent(action);
+        break;
+      case at.WEATHER_OPEN_PROVIDER_URL:
+        this.handleWeatherUserEvent(action);
+        break;
     }
+  }
+
+  handleSetPref(action) {
+    const prefName = action.data.name;
+
+    // TODO: Migrate this event to handleWeatherUserEvent()
+    if (prefName === "weather.display") {
+      const session = this.sessions.get(au.getPortIdOfSender(action));
+
+      if (!session) {
+        return;
+      }
+
+      Glean.newtab.weatherChangeDisplay.record({
+        newtab_visit_id: session.session_id,
+        weather_display_mode: action.data.value,
+      });
+    }
+  }
+
+  handleWeatherUserEvent(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+
+    if (!session) {
+      return;
+    }
+
+    // Weather specific telemtry events can be added and parsed here.
+    switch (action.type) {
+      case "WEATHER_IMPRESSION":
+        Glean.newtab.weatherImpression.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WEATHER_LOAD_ERROR":
+        Glean.newtab.weatherLoadError.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WEATHER_OPEN_PROVIDER_URL":
+        Glean.newtab.weatherOpenProviderUrl.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  handleWallpaperUserEvent(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+
+    if (!session) {
+      return;
+    }
+    const { data } = action;
+    const { selected_wallpaper, hadPreviousWallpaper } = data;
+    // if either of the wallpaper prefs are truthy, they had a previous wallpaper
+    Glean.newtab.wallpaperClick.record({
+      newtab_visit_id: session.session_id,
+      selected_wallpaper,
+      hadPreviousWallpaper,
+    });
   }
 
   handleBlockUrl(action) {

@@ -71,16 +71,8 @@ EncoderTemplate<EncoderType>::EncodeMessage::EncodeMessage(
 
 template <typename EncoderType>
 EncoderTemplate<EncoderType>::FlushMessage::FlushMessage(
-    WebCodecsId aConfigureId, Promise* aPromise)
-    : ControlMessage(aConfigureId), mPromise(aPromise) {}
-
-template <typename EncoderType>
-void EncoderTemplate<EncoderType>::FlushMessage::RejectPromiseIfAny(
-    const nsresult& aReason) {
-  if (mPromise) {
-    mPromise->MaybeReject(aReason);
-  }
-}
+    WebCodecsId aConfigureId)
+    : ControlMessage(aConfigureId) {}
 
 /*
  * Below are EncoderTemplate implementation
@@ -215,7 +207,13 @@ already_AddRefed<Promise> EncoderTemplate<EncoderType>::Flush(
     return p.forget();
   }
 
-  mControlMessageQueue.push(MakeRefPtr<FlushMessage>(mLatestConfigureId, p));
+  auto msg = MakeRefPtr<FlushMessage>(mLatestConfigureId);
+  const auto flushPromiseId = static_cast<int64_t>(msg->mMessageId);
+  MOZ_ASSERT(!mPendingFlushPromises.Contains(flushPromiseId));
+  mPendingFlushPromises.Insert(flushPromiseId, p);
+
+  mControlMessageQueue.emplace(std::move(msg));
+
   LOG("%s %p enqueues %s", EncoderType::Name.get(), this,
       mControlMessageQueue.back()->ToString().get());
   ProcessControlMessageQueue();
@@ -259,7 +257,7 @@ Result<Ok, nsresult> EncoderTemplate<EncoderType>::ResetInternal(
   mEncodeCounter = 0;
   mFlushCounter = 0;
 
-  CancelPendingControlMessages(aResult);
+  CancelPendingControlMessagesAndFlushPromises(aResult);
   DestroyEncoderAgentIfAny();
 
   if (mEncodeQueueSize > 0) {
@@ -403,8 +401,8 @@ void EncoderTemplate<VideoEncoderTraits>::OutputEncodedVideoData(
 
       metadata.mDecoderConfig.Construct(std::move(decoderConfig));
       mOutputNewDecoderConfig = false;
-      LOGE("New config passed to output callback: %s",
-           decoderConfigInternal.ToString().get());
+      LOG("New config passed to output callback: %s",
+          decoderConfigInternal.ToString().get());
     }
 
     nsAutoCString metadataInfo;
@@ -462,7 +460,7 @@ void EncoderTemplate<AudioEncoderTraits>::OutputEncodedAudioData(
           this->EncoderConfigToDecoderConfig(GetParentObject(), data,
                                              *mActiveConfig);
 
-      // Convert VideoDecoderConfigInternal to VideoDecoderConfig
+      // Convert AudioDecoderConfigInternal to AudioDecoderConfig
       RootedDictionary<AudioDecoderConfig> decoderConfig(cx);
       decoderConfig.mCodec = decoderConfigInternal.mCodec;
       decoderConfig.mNumberOfChannels = decoderConfigInternal.mNumberOfChannels;
@@ -473,8 +471,8 @@ void EncoderTemplate<AudioEncoderTraits>::OutputEncodedAudioData(
 
       metadata.mDecoderConfig.Construct(std::move(decoderConfig));
       mOutputNewDecoderConfig = false;
-      LOGE("New config passed to output callback: %s",
-           decoderConfigInternal.ToString().get());
+      LOG("New config passed to output callback: %s",
+          decoderConfigInternal.ToString().get());
     }
 
     nsAutoCString metadataInfo;
@@ -578,7 +576,7 @@ void EncoderTemplate<EncoderType>::ProcessControlMessageQueue() {
 }
 
 template <typename EncoderType>
-void EncoderTemplate<EncoderType>::CancelPendingControlMessages(
+void EncoderTemplate<EncoderType>::CancelPendingControlMessagesAndFlushPromises(
     const nsresult& aResult) {
   AssertIsOnOwningThread();
 
@@ -587,11 +585,6 @@ void EncoderTemplate<EncoderType>::CancelPendingControlMessages(
     LOG("%s %p cancels current %s", EncoderType::Name.get(), this,
         mProcessingMessage->ToString().get());
     mProcessingMessage->Cancel();
-
-    if (RefPtr<FlushMessage> flush = mProcessingMessage->AsFlushMessage()) {
-      flush->RejectPromiseIfAny(aResult);
-    }
-
     mProcessingMessage = nullptr;
   }
 
@@ -601,13 +594,17 @@ void EncoderTemplate<EncoderType>::CancelPendingControlMessages(
         mControlMessageQueue.front()->ToString().get());
 
     MOZ_ASSERT(!mControlMessageQueue.front()->IsProcessing());
-    if (RefPtr<FlushMessage> flush =
-            mControlMessageQueue.front()->AsFlushMessage()) {
-      flush->RejectPromiseIfAny(aResult);
-    }
-
     mControlMessageQueue.pop();
   }
+
+  // If there are pending flush promises, reject them.
+  mPendingFlushPromises.ForEach(
+      [&](const int64_t& id, const RefPtr<Promise>& p) {
+        LOG("%s %p, reject the promise for flush %" PRId64,
+            EncoderType::Name.get(), this, id);
+        p->MaybeReject(aResult);
+      });
+  mPendingFlushPromises.Clear();
 }
 
 template <typename EncoderType>
@@ -1020,78 +1017,88 @@ MessageProcessedResult EncoderTemplate<EncoderType>::ProcessFlushMessage(
   }
 
   mAgent->Drain()
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [self = RefPtr{this}, id = mAgent->mId, aMessage,
-           this](EncoderAgent::EncodePromise::ResolveOrRejectValue&& aResult) {
-            MOZ_ASSERT(self->mProcessingMessage);
-            MOZ_ASSERT(self->mProcessingMessage->AsFlushMessage());
-            MOZ_ASSERT(self->mState == CodecState::Configured);
-            MOZ_ASSERT(self->mAgent);
-            MOZ_ASSERT(id == self->mAgent->mId);
-            MOZ_ASSERT(self->mActiveConfig);
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [self = RefPtr{this}, id = mAgent->mId, aMessage, this](
+                 EncoderAgent::EncodePromise::ResolveOrRejectValue&& aResult) {
+               MOZ_ASSERT(self->mProcessingMessage);
+               MOZ_ASSERT(self->mProcessingMessage->AsFlushMessage());
+               MOZ_ASSERT(self->mState == CodecState::Configured);
+               MOZ_ASSERT(self->mAgent);
+               MOZ_ASSERT(id == self->mAgent->mId);
+               MOZ_ASSERT(self->mActiveConfig);
 
-            LOG("%s %p, EncoderAgent #%zu %s has been %s",
-                EncoderType::Name.get(), self.get(), id,
-                aMessage->ToString().get(),
-                aResult.IsResolve() ? "resolved" : "rejected");
-
-            nsCString msgStr = aMessage->ToString();
-
-            aMessage->Complete();
-
-            // If flush failed, it means encoder fails to encode the data
-            // sent before, so we treat it like an encode error. We reject
-            // the promise first and then queue a task to close VideoEncoder
-            // with an EncodingError.
-            if (aResult.IsReject()) {
-              const MediaResult& error = aResult.RejectValue();
-              LOGE("%s %p, EncoderAgent #%zu failed to flush: %s",
+               LOG("%s %p, EncoderAgent #%zu %s has been %s",
                    EncoderType::Name.get(), self.get(), id,
-                   error.Description().get());
-              RefPtr<Promise> promise = aMessage->TakePromise();
-              // Reject with an EncodingError instead of the error we got
-              // above.
-              self->QueueATask(
-                  "Error during flush runnable",
-                  [self = RefPtr{this}, promise]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
-                    promise->MaybeReject(
-                        NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
-                    self->mProcessingMessage = nullptr;
-                    MOZ_ASSERT(self->mState != CodecState::Closed);
-                    self->CloseInternal(
-                        NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
-                  });
-              return;
-            }
+                   aMessage->ToString().get(),
+                   aResult.IsResolve() ? "resolved" : "rejected");
 
-            // If flush succeeded, schedule to output encoded data first
-            // and then resolve the promise, then keep processing the
-            // control messages.
-            MOZ_ASSERT(aResult.IsResolve());
-            nsTArray<RefPtr<MediaRawData>> data =
-                std::move(aResult.ResolveValue());
+               nsCString msgStr = aMessage->ToString();
 
-            if (data.IsEmpty()) {
-              LOG("%s %p gets no data for %s", EncoderType::Name.get(),
-                  self.get(), msgStr.get());
-            } else {
-              LOG("%s %p, schedule %zu encoded data output for %s",
-                  EncoderType::Name.get(), self.get(), data.Length(),
-                  msgStr.get());
-            }
+               aMessage->Complete();
 
-            RefPtr<Promise> promise = aMessage->TakePromise();
-            self->QueueATask(
-                "Flush: output encoded data task",
-                [self = RefPtr{self}, promise, data = std::move(data)]()
-                    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
-                      self->OutputEncodedData(std::move(data));
-                      promise->MaybeResolveWithUndefined();
-                    });
-            self->mProcessingMessage = nullptr;
-            self->ProcessControlMessageQueue();
-          })
+               // If flush failed, it means encoder fails to encode the data
+               // sent before, so we treat it like an encode error. We reject
+               // the promise first and then queue a task to close VideoEncoder
+               // with an EncodingError.
+               if (aResult.IsReject()) {
+                 const MediaResult& error = aResult.RejectValue();
+                 LOGE("%s %p, EncoderAgent #%zu failed to flush: %s",
+                      EncoderType::Name.get(), self.get(), id,
+                      error.Description().get());
+                 // Reject with an EncodingError instead of the error we got
+                 // above.
+                 self->QueueATask(
+                     "Error during flush runnable",
+                     [self = RefPtr{this}]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+                       // If Reset() was invoked before this task executes, the
+                       // promise in mPendingFlushPromises is handled there.
+                       // Otherwise, the promise is going to be rejected by
+                       // CloseInternal() below.
+                       self->mProcessingMessage = nullptr;
+                       MOZ_ASSERT(self->mState != CodecState::Closed);
+                       self->CloseInternal(
+                           NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
+                     });
+                 return;
+               }
+
+               // If flush succeeded, schedule to output encoded data first
+               // and then resolve the promise, then keep processing the
+               // control messages.
+               MOZ_ASSERT(aResult.IsResolve());
+               nsTArray<RefPtr<MediaRawData>> data =
+                   std::move(aResult.ResolveValue());
+
+               if (data.IsEmpty()) {
+                 LOG("%s %p gets no data for %s", EncoderType::Name.get(),
+                     self.get(), msgStr.get());
+               } else {
+                 LOG("%s %p, schedule %zu encoded data output for %s",
+                     EncoderType::Name.get(), self.get(), data.Length(),
+                     msgStr.get());
+               }
+
+               const auto flushPromiseId =
+                   static_cast<int64_t>(aMessage->mMessageId);
+               self->QueueATask(
+                   "Flush: output encoded data task",
+                   [self = RefPtr{self}, data = std::move(data),
+                    flushPromiseId]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+                     self->OutputEncodedData(std::move(data));
+                     // If Reset() was invoked before this task executes, or
+                     // during the output callback above in the execution of
+                     // this task, the promise in mPendingFlushPromises is
+                     // handled there. Otherwise, the promise is resolved here.
+                     if (Maybe<RefPtr<Promise>> p =
+                             self->mPendingFlushPromises.Take(flushPromiseId)) {
+                       LOG("%s %p, resolving the promise for flush %" PRId64,
+                           EncoderType::Name.get(), self.get(), flushPromiseId);
+                       p.value()->MaybeResolveWithUndefined();
+                     }
+                   });
+               self->mProcessingMessage = nullptr;
+               self->ProcessControlMessageQueue();
+             })
       ->Track(aMessage->Request());
 
   return MessageProcessedResult::Processed;

@@ -91,8 +91,8 @@
     <command id="Browser:NewUserContextTab" oncommand="openNewUserContextTab(event.sourceEvent);"/>
     <command id="Browser:OpenAboutContainers" oncommand="openPreferences('paneContainers');"/>
     <command id="Tools:Search" oncommand="BrowserSearch.webSearch();"/>
-    <command id="Tools:Downloads" oncommand="BrowserDownloadsUI();"/>
-    <command id="Tools:Addons" oncommand="BrowserOpenAddonsMgr();"/>
+    <command id="Tools:Downloads" oncommand="BrowserCommands.downloadsUI();"/>
+    <command id="Tools:Addons" oncommand="BrowserAddonUI.openAddonsMgr();"/>
     <command id="Tools:Sanitize" oncommand="Sanitizer.showUI(window);"/>
     <command id="Tools:PrivateBrowsing"
       oncommand="OpenBrowserWindow({private: true});"/>
@@ -276,7 +276,7 @@
     <key id="viewBookmarksSidebarKb"
          data-l10n-id="bookmark-show-sidebar-shortcut"
          modifiers="accel"
-         oncommand="SidebarUI.toggle('viewBookmarksSidebar');"/>
+         oncommand="SidebarController.toggle('viewBookmarksSidebar');"/>
     <key id="viewBookmarksToolbarKb"
          data-l10n-id="bookmark-show-toolbar-shortcut"
          oncommand="BookmarkingUI.toggleBookmarksToolbar('shortcut');"
@@ -295,7 +295,7 @@
 #else
          modifiers="accel"
 #endif
-         oncommand="SidebarUI.toggle('viewHistorySidebar');"/>
+         oncommand="SidebarController.toggle('viewHistorySidebar');"/>
 
     <key id="key_fullZoomReduce" data-l10n-id="full-zoom-reduce-shortcut" command="cmd_fullZoomReduce"  modifiers="accel"/>
     <key                         data-l10n-id="full-zoom-reduce-shortcut-alt-a" command="cmd_fullZoomReduce"  modifiers="accel"/>

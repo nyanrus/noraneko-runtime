@@ -228,6 +228,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetRequestSucceeded(bool* aValue) override;
   NS_IMETHOD RedirectTo(nsIURI* newURI) override;
   NS_IMETHOD UpgradeToSecure() override;
+  NS_IMETHOD GetRequestObserversCalled(bool* aCalled) override;
+  NS_IMETHOD SetRequestObserversCalled(bool aCalled) override;
   NS_IMETHOD GetRequestContextID(uint64_t* aRCID) override;
   NS_IMETHOD GetTransferSize(uint64_t* aTransferSize) override;
   NS_IMETHOD GetRequestSize(uint64_t* aRequestSize) override;
@@ -690,6 +692,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void SetChannelBlockedByOpaqueResponse();
   bool Http3Allowed() const;
 
+  virtual void ExplicitSetUploadStreamLength(uint64_t aContentLength,
+                                             bool aSetContentLengthHeader);
+
   friend class OpaqueResponseBlocker;
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
@@ -720,9 +725,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
  private:
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
-
-  void ExplicitSetUploadStreamLength(uint64_t aContentLength,
-                                     bool aSetContentLengthHeader);
 
   void MaybeResumeAsyncOpen();
 

@@ -7,6 +7,7 @@ requestLongerTimeout(2);
 let extData = {
   manifest: {
     sidebar_action: {
+      default_icon: "default.png",
       default_panel: "sidebar.html",
     },
   },
@@ -29,6 +30,9 @@ let extData = {
         browser.test.sendMessage("sidebar");
       };
     },
+
+    "default.png": imageBuffer,
+    "1.png": imageBuffer,
   },
 
   background: function () {
@@ -44,6 +48,8 @@ let extData = {
         let { arg = {}, result } = data;
         let isOpen = await browser.sidebarAction.isOpen(arg);
         browser.test.assertEq(result, isOpen, "expected value from isOpen");
+      } else if (msg === "set-icon") {
+        await browser.sidebarAction.setIcon({ path: data });
       }
       browser.test.sendMessage("done");
     });
@@ -148,7 +154,7 @@ add_task(async function sidebar_isOpen() {
   info("Test extension1's sidebar is opened on install");
   await extension1.awaitMessage("sidebar");
   await sendMessage(extension1, "isOpen", { result: true });
-  let sidebar1ID = SidebarUI.currentID;
+  let sidebar1ID = SidebarController.currentID;
 
   info("Load extension2");
   let extension2 = ExtensionTestUtils.loadExtension(getExtData());
@@ -160,7 +166,7 @@ add_task(async function sidebar_isOpen() {
   await sendMessage(extension2, "isOpen", { result: true });
 
   info("Switch back to extension1's sidebar");
-  SidebarUI.show(sidebar1ID);
+  SidebarController.show(sidebar1ID);
   await extension1.awaitMessage("sidebar");
   await sendMessage(extension1, "isOpen", { result: true });
   await sendMessage(extension2, "isOpen", { result: false });
@@ -195,7 +201,7 @@ add_task(async function sidebar_isOpen() {
   newWin.close();
 
   info("Close the sidebar in the original window");
-  SidebarUI.hide();
+  SidebarController.hide();
   await sendMessage(extension1, "isOpen", { result: false });
   await sendMessage(extension2, "isOpen", { result: false });
 
@@ -223,11 +229,15 @@ add_task(async function testShortcuts() {
 
   async function toggleSwitcherPanel(win = window) {
     // Open and close the switcher panel to trigger shortcut content rendering.
-    let switcherPanelShown = promisePopupShown(win.SidebarUI._switcherPanel);
-    win.SidebarUI.showSwitcherPanel();
+    let switcherPanelShown = promisePopupShown(
+      win.SidebarController._switcherPanel
+    );
+    win.SidebarController.showSwitcherPanel();
     await switcherPanelShown;
-    let switcherPanelHidden = promisePopupHidden(win.SidebarUI._switcherPanel);
-    win.SidebarUI.hideSwitcherPanel();
+    let switcherPanelHidden = promisePopupHidden(
+      win.SidebarController._switcherPanel
+    );
+    win.SidebarController.hideSwitcherPanel();
     await switcherPanelHidden;
   }
 
@@ -300,4 +310,40 @@ add_task(async function testShortcuts() {
   await extension2.unload();
 
   await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function sidebar_switcher_panel_icon_update() {
+  info("Load extension");
+  const extension = ExtensionTestUtils.loadExtension(getExtData());
+  await extension.startup();
+
+  info("Test extension's sidebar is opened on install");
+  await extension.awaitMessage("sidebar");
+  await sendMessage(extension, "isOpen", { result: true });
+  const sidebarID = SidebarController.currentID;
+
+  const item = SidebarController._switcherPanel.querySelector(
+    ".webextension-menuitem"
+  );
+  let iconUrl = `moz-extension://${extension.uuid}/default.png`;
+  is(
+    item.style.getPropertyValue("--webextension-menuitem-image"),
+    `image-set(url("${iconUrl}"), url("${iconUrl}") 2x)`,
+    "Extension has the correct icon."
+  );
+  SidebarController.hide();
+  await sendMessage(extension, "isOpen", { result: false });
+
+  await sendMessage(extension, "set-icon", "1.png");
+  await SidebarController.show(sidebarID);
+  await extension.awaitMessage("sidebar");
+  await sendMessage(extension, "isOpen", { result: true });
+  iconUrl = `moz-extension://${extension.uuid}/1.png`;
+  is(
+    item.style.getPropertyValue("--webextension-menuitem-image"),
+    `image-set(url("${iconUrl}"), url("${iconUrl}") 2x)`,
+    "Extension has updated icon."
+  );
+
+  await extension.unload();
 });

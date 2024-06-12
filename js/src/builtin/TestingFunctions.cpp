@@ -2121,11 +2121,16 @@ static bool WasmDumpIon(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().set(StringValue(out.release(cx)));
+  JSString* str = out.release(cx);
+  if (!str) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  args.rval().set(StringValue(str));
   return true;
 }
 
-enum class Flag { Tier2Complete, Deserialized };
+enum class Flag { Tier2Complete, Deserialized, ParsedBranchHints };
 
 static bool WasmReturnFlag(JSContext* cx, unsigned argc, Value* vp, Flag flag) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2149,6 +2154,9 @@ static bool WasmReturnFlag(JSContext* cx, unsigned argc, Value* vp, Flag flag) {
       break;
     case Flag::Deserialized:
       b = module->module().loggingDeserialized();
+      break;
+    case Flag::ParsedBranchHints:
+      b = module->module().metadata().parsedBranchHints;
       break;
   }
 
@@ -2220,6 +2228,12 @@ static bool WasmHasTier2CompilationCompleted(JSContext* cx, unsigned argc,
 static bool WasmLoadedFromCache(JSContext* cx, unsigned argc, Value* vp) {
   return WasmReturnFlag(cx, argc, vp, Flag::Deserialized);
 }
+
+#ifdef ENABLE_WASM_BRANCH_HINTING
+static bool WasmParsedBranchHints(JSContext* cx, unsigned argc, Value* vp) {
+  return WasmReturnFlag(cx, argc, vp, Flag::ParsedBranchHints);
+}
+#endif  // ENABLE_WASM_BRANCH_HINTING
 
 static bool WasmBuiltinI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
   if (!wasm::HasSupport(cx)) {
@@ -3773,10 +3787,14 @@ static bool NewDependentString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   if (requiredHeap.isSome()) {
-    MOZ_ASSERT_IF(*requiredHeap == gc::Heap::Tenured, result->isTenured());
-    if ((*requiredHeap == gc::Heap::Default) && result->isTenured()) {
-      JS_ReportErrorASCII(cx, "nursery string created in tenured heap");
-      return false;
+    if ((*requiredHeap == gc::Heap::Tenured) != result->isTenured()) {
+      if (result->isTenured()) {
+        JS_ReportErrorASCII(cx, "nursery string created in tenured heap");
+        return false;
+      } else {
+        JS_ReportErrorASCII(cx, "tenured string created in nursery heap");
+        return false;
+      }
     }
   }
 
@@ -6246,7 +6264,7 @@ void ShapeSnapshot::check(JSContext* cx, const ShapeSnapshot& later) const {
     if (object_->is<NativeObject>()) {
       NativeObject* nobj = &object_->as<NativeObject>();
       if (nobj->inDictionaryMode()) {
-        MOZ_RELEASE_ASSERT(shape_ != later.shape_);
+        MOZ_RELEASE_ASSERT(nobj->shape() != later.shape_);
       }
     }
     return;
@@ -9955,6 +9973,14 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "wasmGcArrayLength(arr)",
 "  Gets the length of a WebAssembly GC array."),
 #endif // ENABLE_WASM_GC
+
+#ifdef ENABLE_WASM_BRANCH_HINTING
+    JS_FN_HELP("wasmParsedBranchHints", WasmParsedBranchHints, 1, 0,
+"wasmParsedBranchHints(module)",
+"  Returns a boolean indicating whether a given module has successfully parsed a\n"
+"  custom branch hinting section."),
+
+#endif // ENABLE_WASM_BRANCH_HINTING
 
     JS_FN_HELP("largeArrayBufferSupported", LargeArrayBufferSupported, 0, 0,
 "largeArrayBufferSupported()",

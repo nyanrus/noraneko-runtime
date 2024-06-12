@@ -48,6 +48,8 @@ import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsList
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
 import org.mozilla.fenix.theme.FirefoxTheme
 import mozilla.components.browser.storage.sync.Tab as SyncTab
+import org.mozilla.fenix.tabstray.syncedtabs.OnTabClick as OnSyncedTabClick
+import org.mozilla.fenix.tabstray.syncedtabs.OnTabCloseClick as OnSyncedTabClose
 
 /**
  * Top-level UI for displaying the Tabs Tray feature.
@@ -75,6 +77,7 @@ import mozilla.components.browser.storage.sync.Tab as SyncTab
  * @param onInactiveTabClick Invoked when the user clicks on an inactive tab.
  * @param onInactiveTabClose Invoked when the user clicks on an inactive tab's close button.
  * @param onSyncedTabClick Invoked when the user clicks on a synced tab.
+ * @param onSyncedTabClose Invoked when the user clicks on a synced tab's close button.
  * @param onSaveToCollectionClick Invoked when the user clicks on the save to collection button from
  * the multi select banner.
  * @param onShareSelectedTabsClick Invoked when the user clicks on the share button from the
@@ -92,6 +95,10 @@ import mozilla.components.browser.storage.sync.Tab as SyncTab
  * @param onTabAutoCloseBannerDismiss Invoked when the user clicks to dismiss the auto close banner.
  * @param onTabAutoCloseBannerShown Invoked when the auto close banner has been shown to the user.
  * @param onMove Invoked after the drag and drop gesture completed. Swaps positions of two tabs.
+ * @param shouldShowInactiveTabsCFR Returns whether the inactive tabs CFR should be displayed.
+ * @param onInactiveTabsCFRShown Invoked when the inactive tabs CFR is displayed.
+ * @param onInactiveTabsCFRClick Invoked when the inactive tabs CFR is clicked.
+ * @param onInactiveTabsCFRDismiss Invoked when the inactive tabs CFR is dismissed.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongMethod", "LongParameterList", "ComplexMethod")
@@ -116,7 +123,8 @@ fun TabsTray(
     onEnableInactiveTabAutoCloseClick: () -> Unit,
     onInactiveTabClick: (TabSessionState) -> Unit,
     onInactiveTabClose: (TabSessionState) -> Unit,
-    onSyncedTabClick: (SyncTab) -> Unit,
+    onSyncedTabClick: OnSyncedTabClick,
+    onSyncedTabClose: OnSyncedTabClose,
     onSaveToCollectionClick: () -> Unit,
     onShareSelectedTabsClick: () -> Unit,
     onShareAllTabsClick: () -> Unit,
@@ -132,6 +140,10 @@ fun TabsTray(
     onTabAutoCloseBannerDismiss: () -> Unit,
     onTabAutoCloseBannerShown: () -> Unit,
     onMove: (String, String?, Boolean) -> Unit,
+    shouldShowInactiveTabsCFR: () -> Boolean,
+    onInactiveTabsCFRShown: () -> Unit,
+    onInactiveTabsCFRClick: () -> Unit,
+    onInactiveTabsCFRDismiss: () -> Unit,
 ) {
     val multiselectMode = tabsTrayStore
         .observeAsComposableState { state -> state.mode }.value ?: TabsTrayState.Mode.Normal
@@ -210,6 +222,10 @@ fun TabsTray(
                             onInactiveTabClick = onInactiveTabClick,
                             onInactiveTabClose = onInactiveTabClose,
                             onMove = onMove,
+                            shouldShowInactiveTabsCFR = shouldShowInactiveTabsCFR,
+                            onInactiveTabsCFRShown = onInactiveTabsCFRShown,
+                            onInactiveTabsCFRClick = onInactiveTabsCFRClick,
+                            onInactiveTabsCFRDismiss = onInactiveTabsCFRDismiss,
                         )
                     }
 
@@ -230,6 +246,7 @@ fun TabsTray(
                         SyncedTabsPage(
                             tabsTrayStore = tabsTrayStore,
                             onTabClick = onSyncedTabClick,
+                            onTabClose = onSyncedTabClose,
                         )
                     }
                 }
@@ -258,6 +275,10 @@ private fun NormalTabsPage(
     onInactiveTabClick: (TabSessionState) -> Unit,
     onInactiveTabClose: (TabSessionState) -> Unit,
     onMove: (String, String?, Boolean) -> Unit,
+    shouldShowInactiveTabsCFR: () -> Boolean,
+    onInactiveTabsCFRShown: () -> Unit,
+    onInactiveTabsCFRClick: () -> Unit,
+    onInactiveTabsCFRDismiss: () -> Unit,
 ) {
     val inactiveTabsExpanded = appStore
         .observeAsComposableState { state -> state.inactiveTabsExpanded }.value ?: false
@@ -283,6 +304,7 @@ private fun NormalTabsPage(
                     inactiveTabs = inactiveTabs,
                     expanded = inactiveTabsExpanded,
                     showAutoCloseDialog = showAutoCloseDialog,
+                    showCFR = shouldShowInactiveTabsCFR(),
                     onHeaderClick = onInactiveTabsHeaderClick,
                     onDeleteAllButtonClick = onDeleteAllInactiveTabsClick,
                     onAutoCloseDismissClick = {
@@ -295,6 +317,9 @@ private fun NormalTabsPage(
                     },
                     onTabClick = onInactiveTabClick,
                     onTabCloseClick = onInactiveTabClose,
+                    onCFRShown = onInactiveTabsCFRShown,
+                    onCFRClick = onInactiveTabsCFRClick,
+                    onCFRDismiss = onInactiveTabsCFRDismiss,
                 )
             }
         }
@@ -366,7 +391,8 @@ private fun PrivateTabsPage(
 @Composable
 private fun SyncedTabsPage(
     tabsTrayStore: TabsTrayStore,
-    onTabClick: (SyncTab) -> Unit,
+    onTabClick: OnSyncedTabClick,
+    onTabClose: OnSyncedTabClose,
 ) {
     val syncedTabs = tabsTrayStore
         .observeAsComposableState { state -> state.syncedTabs }.value ?: emptyList()
@@ -374,6 +400,7 @@ private fun SyncedTabsPage(
     SyncedTabsList(
         syncedTabs = syncedTabs,
         onTabClick = onTabClick,
+        onTabCloseClick = onTabClose,
     )
 }
 
@@ -565,6 +592,7 @@ private fun TabsTrayPreviewRoot(
             onInactiveTabClick = {},
             onInactiveTabClose = inactiveTabsState::remove,
             onSyncedTabClick = {},
+            onSyncedTabClose = { _, _ -> },
             onSaveToCollectionClick = {},
             onShareSelectedTabsClick = {},
             onShareAllTabsClick = {},
@@ -580,6 +608,10 @@ private fun TabsTrayPreviewRoot(
             onTabAutoCloseBannerDismiss = {},
             onTabAutoCloseBannerShown = {},
             onMove = { _, _, _ -> },
+            shouldShowInactiveTabsCFR = { false },
+            onInactiveTabsCFRShown = {},
+            onInactiveTabsCFRClick = {},
+            onInactiveTabsCFRDismiss = {},
         )
     }
 }
@@ -607,10 +639,15 @@ private fun generateFakeSyncedTabsList(deviceCount: Int = 1): List<SyncedTabsLis
         )
     }
 
-private fun generateFakeSyncedTab(tabName: String, tabUrl: String): SyncedTabsListItem.Tab =
+private fun generateFakeSyncedTab(
+    tabName: String,
+    tabUrl: String,
+    action: SyncedTabsListItem.Tab.Action = SyncedTabsListItem.Tab.Action.None,
+): SyncedTabsListItem.Tab =
     SyncedTabsListItem.Tab(
         tabName.ifEmpty { tabUrl },
         tabUrl,
+        action,
         SyncTab(
             history = listOf(TabEntry(tabName, tabUrl, null)),
             active = 0,

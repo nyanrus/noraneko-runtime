@@ -751,9 +751,9 @@ DCSurface* DCExternalSurfaceWrapper::EnsureSurfaceForExternalImage(
     auto cprofileOut = mDCLayerTree->OutputColorProfile();
     bool pretendSrgb = true;
     if (pretendSrgb) {
-      cprofileOut = color::ColorProfileDesc::From({
-          color::Chromaticities::Srgb(),
-          color::PiecewiseGammaDesc::Srgb(),
+      cprofileOut = color::ColorProfileDesc::From(color::ColorspaceDesc{
+          .chrom = color::Chromaticities::Srgb(),
+          .tf = color::PiecewiseGammaDesc::Srgb(),
       });
     }
     const auto conversion = color::ColorProfileConversionDesc::From({
@@ -1355,7 +1355,7 @@ bool DCSurfaceVideo::CalculateSwapChainSize(gfx::Matrix& aTransform) {
   MOZ_ASSERT(mDCLayerTree->GetVideoProcessor());
 
   const UINT vendorId = GetVendorId(mDCLayerTree->GetVideoDevice());
-  const bool driverSupportsTrueHDR =
+  const bool driverSupportsAutoHDR =
       GetVpAutoHDRSupported(vendorId, mDCLayerTree->GetVideoContext(),
                             mDCLayerTree->GetVideoProcessor());
   const bool contentIsHDR = false;  // XXX for now, only non-HDR is supported.
@@ -1364,8 +1364,17 @@ bool DCSurfaceVideo::CalculateSwapChainSize(gfx::Matrix& aTransform) {
   const bool powerIsCharging = RenderThread::Get()->GetPowerIsCharging();
 
   bool useVpAutoHDR = gfx::gfxVars::WebRenderOverlayVpAutoHDR() &&
-                      !contentIsHDR && monitorIsHDR && driverSupportsTrueHDR &&
+                      !contentIsHDR && monitorIsHDR && driverSupportsAutoHDR &&
                       powerIsCharging && !mVpAutoHDRFailed;
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString str(
+        "useVpAutoHDR %d gfxVars %d contentIsHDR %d monitor %d driver %d "
+        "charging %d failed %d",
+        useVpAutoHDR, gfx::gfxVars::WebRenderOverlayVpAutoHDR(), contentIsHDR,
+        monitorIsHDR, driverSupportsAutoHDR, powerIsCharging, mVpAutoHDRFailed);
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, str);
+  }
 
   if (!mVideoSwapChain || mSwapChainSize != swapChainSize || mIsDRM != isDRM ||
       mUseVpAutoHDR != useVpAutoHDR) {
@@ -1791,8 +1800,22 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
 
   const UINT vendorId = GetVendorId(videoDevice);
   const auto powerIsCharging = RenderThread::Get()->GetPowerIsCharging();
-  if (gfx::gfxVars::WebRenderOverlayVpSuperResolution() &&
-      !mVpSuperResolutionFailed && powerIsCharging) {
+  const bool useSuperResolution =
+      gfx::gfxVars::WebRenderOverlayVpSuperResolution() && powerIsCharging &&
+      !mVpSuperResolutionFailed;
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString str(
+        "useSuperResolution %d gfxVars %d charging %d failed %d",
+        useSuperResolution, gfx::gfxVars::WebRenderOverlayVpSuperResolution(),
+        powerIsCharging, mVpSuperResolutionFailed);
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, str);
+  }
+
+  if (useSuperResolution) {
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {},
+                         "SetVpSuperResolution"_ns);
+
     hr = SetVpSuperResolution(vendorId, videoContext, videoProcessor, true);
     if (FAILED(hr)) {
       if (hr != E_NOTIMPL) {
@@ -1803,6 +1826,8 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
   }
 
   if (mUseVpAutoHDR) {
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, "SetVpAutoHDR"_ns);
+
     hr = SetVpAutoHDR(vendorId, videoContext, videoProcessor, true);
     if (FAILED(hr)) {
       gfxCriticalNoteOnce << "SetVpAutoHDR failed: " << gfx::hexa(hr);
@@ -2072,7 +2097,10 @@ void DCLayerTree::DestroyEGLSurface() {
 
 // -
 
-color::ColorProfileDesc DCLayerTree::QueryOutputColorProfile() {
+}  // namespace wr
+namespace gfx {
+
+color::ColorProfileDesc QueryOutputColorProfile() {
   // GPU process can't simply init gfxPlatform, (and we don't need most of it)
   // but we do need gfxPlatform::GetCMSOutputProfile().
   // So we steal what we need through the window:
@@ -2125,6 +2153,9 @@ color::ColorProfileDesc DCLayerTree::QueryOutputColorProfile() {
 
   return ret;
 }
+
+}  // namespace gfx
+namespace wr {
 
 inline D2D1_MATRIX_5X4_F to_D2D1_MATRIX_5X4_F(const color::mat4& m) {
   return D2D1_MATRIX_5X4_F{{{

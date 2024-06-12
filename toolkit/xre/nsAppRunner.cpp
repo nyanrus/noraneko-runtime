@@ -784,11 +784,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetLiveWin32kLockdownState() {
     }
   }
 
-  // Non-native theming is required as well
-  if (!StaticPrefs::widget_non_native_theme_enabled()) {
-    return nsIXULRuntime::ContentWin32kLockdownState::MissingNonNativeTheming;
-  }
-
   // Win32k Lockdown requires Remote WebGL, but it may be disabled on
   // certain hardware or virtual machines.
   if (!gfx::gfxVars::AllowWebglOop() || !StaticPrefs::webgl_out_of_process()) {
@@ -2635,8 +2630,8 @@ static nsresult ProfileMissingDialog(nsINativeAppSupport* aNative) {
 #  ifdef MOZ_BACKGROUNDTASKS
   if (BackgroundTasks::IsBackgroundTaskMode()) {
     // We should never get to this point in background task mode.
-    Output(false,
-           "Could not determine any profile running in backgroundtask mode!\n");
+    printf_stderr(
+        "Could not determine any profile running in backgroundtask mode!\n");
     return NS_ERROR_ABORT;
   }
 #  endif  // MOZ_BACKGROUNDTASKS

@@ -104,14 +104,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_count_partitioned:
     type: custom_distribution
@@ -124,14 +126,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_count_unpartitioned:
     type: custom_distribution
@@ -144,14 +148,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_count_part_by_key:
     type: custom_distribution
@@ -165,14 +171,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_count_unpart_by_key:
     type: custom_distribution
@@ -186,14 +194,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_purge_max:
     type: custom_distribution
@@ -208,14 +218,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   cookie_purge_entry_max:
     type: custom_distribution
@@ -230,14 +242,16 @@ networking:
     unit: integer
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 128
+    expires: 134
 
   set_cookie:
     type: counter
@@ -367,6 +381,22 @@ networking:
       - acreskey@mozilla.com
     expires: never
     telemetry_mirror: DNS_FAILED_LOOKUP_TIME
+
+  dns_native_https_call_time:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time spent in the call to the native OS DNS resolution.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885529
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885529
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
 
   dns_native_count:
     type: labeled_counter

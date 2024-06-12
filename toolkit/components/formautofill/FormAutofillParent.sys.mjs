@@ -48,8 +48,11 @@ ChromeUtils.defineLazyGetter(lazy, "log", () =>
   FormAutofill.defineLogGetter(lazy, "FormAutofillParent")
 );
 
-const { ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF } =
-  FormAutofill;
+const {
+  ENABLED_AUTOFILL_ADDRESSES_PREF,
+  ENABLED_AUTOFILL_CREDITCARDS_PREF,
+  AUTOFILL_CREDITCARDS_REAUTH_PREF,
+} = FormAutofill;
 
 const { ADDRESSES_COLLECTION_NAME, CREDITCARDS_COLLECTION_NAME } =
   FormAutofillUtils;
@@ -267,17 +270,8 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:GetRecords": {
-        const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
-          formOrigin: this.formOrigin,
-          scenarioName: data.scenarioName,
-          hasInput: !!data.searchString?.length,
-        });
-        const recordsPromise = FormAutofillParent.getRecords(data);
-        const [records, externalEntries] = await Promise.all([
-          recordsPromise,
-          relayPromise,
-        ]);
-        return { records, externalEntries };
+        const records = await FormAutofillParent.getRecords(data);
+        return { records };
       }
       case "FormAutofill:OnFormSubmit": {
         this.notifyMessageObservers("onFormSubmitted", data);
@@ -291,7 +285,9 @@ export class FormAutofillParent extends JSWindowActorParent {
       }
       case "FormAutofill:GetDecryptedString": {
         let { cipherText, reauth } = data;
-        if (!FormAutofillUtils._reauthEnabledByUser) {
+        if (
+          !FormAutofillUtils.getOSAuthEnabled(AUTOFILL_CREDITCARDS_REAUTH_PREF)
+        ) {
           lazy.log.debug("Reauth is disabled");
           reauth = false;
         }
@@ -327,7 +323,9 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:SaveCreditCard": {
-        if (!(await FormAutofillUtils.ensureLoggedIn()).authenticated) {
+        // Setting the first parameter of OSKeyStore.ensurLoggedIn as false
+        // since this case only called in tests. Also the reason why we're not calling FormAutofill.verifyUserOSAuth.
+        if (!(await lazy.OSKeyStore.ensureLoggedIn(false)).authenticated) {
           lazy.log.warn("User canceled encryption login");
           return undefined;
         }
@@ -399,6 +397,43 @@ export class FormAutofillParent extends JSWindowActorParent {
         console.error(ex);
       }
     }
+  }
+
+  /**
+   * Retrieves autocomplete entries for a given search string and data context.
+   *
+   * @param {string} searchString
+   *                 The search string used to filter autocomplete entries.
+   * @param {object} options
+   * @param {string} options.fieldName
+   *                 The name of the field for which autocomplete entries are being fetched.
+   * @param {string} options.scenarioName
+   *                 The scenario name used in the autocomplete operation to fetch external entries.
+   * @returns {Promise<object>} A promise that resolves to an object containing two properties: `records` and `externalEntries`.
+   *         `records` is an array of autofill records from the form's internal data, sorted by `timeLastUsed`.
+   *         `externalEntries` is an array of external autocomplete items fetched based on the scenario.
+   */
+  async searchAutoCompleteEntries(searchString, options) {
+    const { fieldName, scenarioName } = options;
+    const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
+      formOrigin: this.formOrigin,
+      scenarioName,
+      hasInput: !!searchString?.length,
+    });
+
+    const recordsPromise = FormAutofillParent.getRecords({
+      searchString,
+      fieldName,
+    });
+    const [records, externalEntries] = await Promise.all([
+      recordsPromise,
+      relayPromise,
+    ]);
+
+    // Sort addresses by timeLastUsed for showing the lastest used address at top.
+    records.sort((a, b) => b.timeLastUsed - a.timeLastUsed);
+
+    return { records, externalEntries };
   }
 
   /**
@@ -667,5 +702,26 @@ export class FormAutofillParent extends JSWindowActorParent {
     }
 
     return true;
+  }
+
+  previewFields(result) {
+    try {
+      const profile =
+        result.style == "autofill" ? JSON.parse(result.comment) : null;
+      this.sendAsyncMessage("FormAutofill:PreviewProfile", profile);
+    } catch (e) {
+      lazy.log.debug("Fail to get preview profile: ", e.message);
+    }
+  }
+
+  autofillFields(result) {
+    if (result.style == "autofill") {
+      try {
+        const profile = JSON.parse(result.comment);
+        this.sendAsyncMessage("FormAutofill:FillForm", profile);
+      } catch (e) {
+        lazy.log.debug("Fail to get autofill profile.");
+      }
+    }
   }
 }

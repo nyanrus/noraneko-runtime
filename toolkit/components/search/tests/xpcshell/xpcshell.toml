@@ -180,6 +180,7 @@ tags = "remotesettings searchmain"
 ["test_migrateWebExtensionEngine.js"]
 
 ["test_missing_engine.js"]
+prefs = ["browser.search.newSearchConfig.enabled=false"]
 
 ["test_nodb_pluschanges.js"]
 
@@ -322,6 +323,8 @@ support-files = ["data/search-migration.json"]
 ["test_webextensions_startup_duplicate.js"]
 
 ["test_webextensions_startup_remove.js"]
+
+["test_webextensions_startup.js"]
 
 ["test_webextensions_upgrade.js"]
 

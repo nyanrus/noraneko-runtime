@@ -829,15 +829,19 @@ export class LoginManagerParent extends JSWindowActorParent {
         }))
       );
     }
-    autocompleteItems.push(
-      ...(await lazy.WebAuthnFeature.autocompleteItemsAsync(
-        this._overrideBrowsingContextId ??
-          this.getRootBrowser().browsingContext.id,
-        formOrigin,
-        scenarioName,
-        isWebAuthn
-      ))
-    );
+    // This check is only used to init webauthn in tests, which causes
+    // intermittent like Bug 1890419.
+    if (LoginManagerParent._webAuthnAutoComplete) {
+      autocompleteItems.push(
+        ...(await lazy.WebAuthnFeature.autocompleteItemsAsync(
+          this._overrideBrowsingContextId ??
+            this.getRootBrowser().browsingContext.id,
+          formOrigin,
+          scenarioName,
+          isWebAuthn
+        ))
+      );
+    }
 
     return {
       generatedPassword,
@@ -1541,6 +1545,27 @@ export class LoginManagerParent extends JSWindowActorParent {
 
     return gRecipeManager.initializationPromise;
   }
+
+  async searchAutoCompleteEntries(searchString, data) {
+    return this.doAutocompleteSearch(data.formOrigin, data);
+  }
+
+  previewFields(_result) {
+    // Logins do not show previews
+  }
+
+  autofillFields(result) {
+    if (result.style == "login" || result.style == "loginWithOrigin") {
+      try {
+        const profile = JSON.parse(result.comment);
+        this.sendAsyncMessage("PasswordManager:fillFields", profile.login);
+      } catch (e) {
+        lazy.log("Fail to get autofill profile: ", e.message);
+      }
+    } else if (result.style == "generatedPassword") {
+      this.sendAsyncMessage("PasswordManager:fillGeneratedPassword");
+    }
+  }
 }
 
 LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS = 10000;
@@ -1551,3 +1576,10 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "signon.masterPasswordReprompt.timeout_ms",
   900000
 ); // 15 Minutes
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  LoginManagerParent,
+  "_webAuthnAutoComplete",
+  "signon.webauthn.autocomplete",
+  true
+);

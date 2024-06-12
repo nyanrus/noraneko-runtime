@@ -2039,7 +2039,7 @@ nsDOMWindowUtils::GetBoundsWithoutFlushing(Element* aElement,
   if (frame) {
     nsRect r = nsLayoutUtils::GetAllInFlowRectsUnion(
         frame, nsLayoutUtils::GetContainingBlockForClientRect(frame),
-        nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+        nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms);
     rect->SetLayoutRect(r);
   }
 
@@ -3329,12 +3329,6 @@ nsDOMWindowUtils::IsPartOfOpaqueLayer(Element* aElement, bool* aResult) {
     return NS_ERROR_FAILURE;
   }
 
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::NumberOfAssignedPaintedLayers(
-    const nsTArray<RefPtr<Element>>& aElements, uint32_t* aResult) {
   return NS_ERROR_FAILURE;
 }
 

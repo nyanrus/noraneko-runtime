@@ -166,7 +166,6 @@
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "nsNativeAppSupportWin.h"
-#include "mozilla/browser/NimbusFeatures.h"
 
 #include "nsIGfxInfo.h"
 #include "nsUXThemeConstants.h"
@@ -188,7 +187,6 @@
 #  include "mozilla/a11y/DocAccessible.h"
 #  include "mozilla/a11y/LazyInstantiator.h"
 #  include "mozilla/a11y/Platform.h"
-#  include "mozilla/StaticPrefs_accessibility.h"
 #  if !defined(WINABLEAPI)
 #    include <winable.h>
 #  endif  // !defined(WINABLEAPI)
@@ -347,6 +345,12 @@ static SystemTimeConverter<DWORD>& TimeConverter() {
   static SystemTimeConverter<DWORD> timeConverterSingleton;
   return timeConverterSingleton;
 }
+
+static const wchar_t* GetMainWindowClass();
+static const wchar_t* ChooseWindowClass(mozilla::widget::WindowType);
+// This method registers the given window class, and returns the class name.
+static void RegisterWindowClass(const wchar_t* aClassName, UINT aExtraStyle,
+                                LPWSTR aIconID);
 
 // Global event hook for window cloaking. Never deregistered.
 //  - `Nothing` if not yet set.
@@ -990,13 +994,11 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
   }
 
   if (aInitData->mIsPrivate) {
-    if (NimbusFeatures::GetBool("majorRelease2022"_ns,
-                                "feltPrivacyWindowSeparation"_ns, true) &&
-        // Although permanent Private Browsing mode is indeed Private Browsing,
-        // we choose to make it look like regular Firefox in terms of the icon
-        // it uses (which also means we shouldn't use the Private Browsing
-        // AUMID).
-        !StaticPrefs::browser_privatebrowsing_autostart()) {
+    // Although permanent Private Browsing mode is indeed Private Browsing,
+    // we choose to make it look like regular Firefox in terms of the icon
+    // it uses (which also means we shouldn't use the Private Browsing
+    // AUMID).
+    if (!StaticPrefs::browser_privatebrowsing_autostart()) {
       RefPtr<IPropertyStore> pPropStore;
       if (!FAILED(SHGetPropertyStoreForWindow(mWnd, IID_IPropertyStore,
                                               getter_AddRefs(pPropStore)))) {
@@ -1189,40 +1191,28 @@ void nsWindow::Destroy() {
  *
  **************************************************************/
 
-/* static */
-const wchar_t* nsWindow::RegisterWindowClass(const wchar_t* aClassName,
-                                             UINT aExtraStyle, LPWSTR aIconID) {
-  WNDCLASSW wc;
+static void RegisterWindowClass(const wchar_t* aClassName, UINT aExtraStyle,
+                                LPWSTR aIconID) {
+  WNDCLASSW wc = {};
   if (::GetClassInfoW(nsToolkit::mDllInstance, aClassName, &wc)) {
     // already registered
-    return aClassName;
+    return;
   }
 
   wc.style = CS_DBLCLKS | aExtraStyle;
   wc.lpfnWndProc = WinUtils::NonClientDpiScalingDefWindowProcW;
-  wc.cbClsExtra = 0;
-  wc.cbWndExtra = 0;
   wc.hInstance = nsToolkit::mDllInstance;
   wc.hIcon =
       aIconID ? ::LoadIconW(::GetModuleHandleW(nullptr), aIconID) : nullptr;
-  wc.hCursor = nullptr;
-  wc.hbrBackground = nullptr;
-  wc.lpszMenuName = nullptr;
   wc.lpszClassName = aClassName;
 
-  if (!::RegisterClassW(&wc)) {
-    // For older versions of Win32 (i.e., not XP), the registration may
-    // fail with aExtraStyle, so we have to re-register without it.
-    wc.style = CS_DBLCLKS;
-    ::RegisterClassW(&wc);
-  }
-  return aClassName;
+  // Failures are ignored as they are handled when ::CreateWindow fails
+  ::RegisterClassW(&wc);
 }
 
 static LPWSTR const gStockApplicationIcon = MAKEINTRESOURCEW(32512);
 
-/* static */
-const wchar_t* nsWindow::ChooseWindowClass(WindowType aWindowType) {
+static const wchar_t* ChooseWindowClass(WindowType aWindowType) {
   const wchar_t* className = [aWindowType] {
     switch (aWindowType) {
       case WindowType::Invisible:
@@ -1235,7 +1225,8 @@ const wchar_t* nsWindow::ChooseWindowClass(WindowType aWindowType) {
         return GetMainWindowClass();
     }
   }();
-  return RegisterWindowClass(className, 0, gStockApplicationIcon);
+  RegisterWindowClass(className, 0, gStockApplicationIcon);
+  return className;
 }
 
 /**************************************************************
@@ -1246,24 +1237,62 @@ const wchar_t* nsWindow::ChooseWindowClass(WindowType aWindowType) {
  *
  **************************************************************/
 
+const DWORD kTitlebarItemsWindowStyles =
+    WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+const DWORD kAllBorderStyles =
+    kTitlebarItemsWindowStyles | WS_THICKFRAME | WS_DLGFRAME;
+
+static DWORD WindowStylesRemovedForBorderStyle(BorderStyle aStyle) {
+  if (aStyle == BorderStyle::Default || aStyle == BorderStyle::All) {
+    return 0;
+  }
+  if (aStyle == BorderStyle::None) {
+    return kAllBorderStyles;
+  }
+  DWORD toRemove = 0;
+  if (!(aStyle & BorderStyle::Border)) {
+    toRemove |= WS_BORDER;
+  }
+  if (!(aStyle & BorderStyle::Title)) {
+    toRemove |= WS_DLGFRAME;
+  }
+  if (!(aStyle & (BorderStyle::Menu | BorderStyle::Close))) {
+    // Looks like getting rid of the system menu also does away with the close
+    // box. So, we only get rid of the system menu and the close box if you
+    // want neither. How does the Windows "Dialog" window class get just
+    // closebox and no sysmenu? Who knows.
+    toRemove |= WS_SYSMENU;
+  }
+  if (!(aStyle & BorderStyle::ResizeH)) {
+    toRemove |= WS_THICKFRAME;
+  }
+  if (!(aStyle & BorderStyle::Minimize)) {
+    toRemove |= WS_MINIMIZEBOX;
+  }
+  if (!(aStyle & BorderStyle::Maximize)) {
+    toRemove |= WS_MAXIMIZEBOX;
+  }
+  return toRemove;
+}
+
 // Return nsWindow styles
 DWORD nsWindow::WindowStyle() {
   DWORD style;
-
   switch (mWindowType) {
     case WindowType::Child:
       style = WS_OVERLAPPED;
       break;
 
     case WindowType::Dialog:
-      style = WS_OVERLAPPED | WS_BORDER | WS_DLGFRAME | WS_SYSMENU | DS_3DLOOK |
+      style = WS_OVERLAPPED | WS_BORDER | WS_DLGFRAME | WS_SYSMENU |
               DS_MODALFRAME | WS_CLIPCHILDREN;
-      if (mBorderStyle != BorderStyle::Default)
+      if (mBorderStyle != BorderStyle::Default) {
         style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+      }
       break;
 
     case WindowType::Popup:
-      style = WS_POPUP | WS_OVERLAPPED;
+      style = WS_OVERLAPPED | WS_POPUP;
       break;
 
     default:
@@ -1272,48 +1301,12 @@ DWORD nsWindow::WindowStyle() {
 
     case WindowType::TopLevel:
     case WindowType::Invisible:
-      style = WS_OVERLAPPED | WS_BORDER | WS_DLGFRAME | WS_SYSMENU |
-              WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CLIPCHILDREN;
+      style = WS_OVERLAPPED | WS_CLIPCHILDREN | WS_DLGFRAME | WS_BORDER |
+              WS_THICKFRAME | kTitlebarItemsWindowStyles;
       break;
   }
 
-  if (mBorderStyle != BorderStyle::Default &&
-      mBorderStyle != BorderStyle::All) {
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::Border))
-      style &= ~WS_BORDER;
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::Title)) {
-      style &= ~WS_DLGFRAME;
-    }
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::Close))
-      style &= ~0;
-    // XXX The close box can only be removed by changing the window class,
-    // as far as I know   --- roc+moz@cs.cmu.edu
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & (BorderStyle::Menu | BorderStyle::Close)))
-      style &= ~WS_SYSMENU;
-    // Looks like getting rid of the system menu also does away with the
-    // close box. So, we only get rid of the system menu if you want neither it
-    // nor the close box. How does the Windows "Dialog" window class get just
-    // closebox and no sysmenu? Who knows.
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::ResizeH))
-      style &= ~WS_THICKFRAME;
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::Minimize))
-      style &= ~WS_MINIMIZEBOX;
-
-    if (mBorderStyle == BorderStyle::None ||
-        !(mBorderStyle & BorderStyle::Maximize))
-      style &= ~WS_MAXIMIZEBOX;
-  }
+  style &= ~WindowStylesRemovedForBorderStyle(mBorderStyle);
 
   if (mIsChildWindow) {
     style |= WS_CLIPCHILDREN;
@@ -2471,46 +2464,6 @@ void nsWindow::ResetLayout() {
   Invalidate();
 }
 
-// Internally track the caption status via a window property. Required
-// due to our internal handling of WM_NCACTIVATE when custom client
-// margins are set.
-static const wchar_t kManageWindowInfoProperty[] = L"ManageWindowInfoProperty";
-typedef BOOL(WINAPI* GetWindowInfoPtr)(HWND hwnd, PWINDOWINFO pwi);
-static WindowsDllInterceptor::FuncHookType<GetWindowInfoPtr>
-    sGetWindowInfoPtrStub;
-
-BOOL WINAPI GetWindowInfoHook(HWND hWnd, PWINDOWINFO pwi) {
-  if (!sGetWindowInfoPtrStub) {
-    NS_ASSERTION(FALSE, "Something is horribly wrong in GetWindowInfoHook!");
-    return FALSE;
-  }
-  int windowStatus =
-      reinterpret_cast<LONG_PTR>(GetPropW(hWnd, kManageWindowInfoProperty));
-  // No property set, return the default data.
-  if (!windowStatus) return sGetWindowInfoPtrStub(hWnd, pwi);
-  // Call GetWindowInfo and update dwWindowStatus with our
-  // internally tracked value.
-  BOOL result = sGetWindowInfoPtrStub(hWnd, pwi);
-  if (result && pwi)
-    pwi->dwWindowStatus = (windowStatus == 1 ? 0 : WS_ACTIVECAPTION);
-  return result;
-}
-
-void nsWindow::UpdateGetWindowInfoCaptionStatus(bool aActiveCaption) {
-  if (!mWnd) return;
-
-  sUser32Intercept.Init("user32.dll");
-  sGetWindowInfoPtrStub.Set(sUser32Intercept, "GetWindowInfo",
-                            &GetWindowInfoHook);
-  if (!sGetWindowInfoPtrStub) {
-    return;
-  }
-
-  // Update our internally tracked caption status
-  SetPropW(mWnd, kManageWindowInfoProperty,
-           reinterpret_cast<HANDLE>(static_cast<INT_PTR>(aActiveCaption) + 1));
-}
-
 #define DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 19
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 
@@ -2703,6 +2656,8 @@ bool nsWindow::UpdateNonClientMargins(bool aReflowWindow) {
     mNonClientOffset = NormalWindowNonClientOffset();
   }
 
+  UpdateOpaqueRegionInternal();
+
   if (aReflowWindow) {
     // Force a reflow of content based on the new client
     // dimensions.
@@ -2713,8 +2668,9 @@ bool nsWindow::UpdateNonClientMargins(bool aReflowWindow) {
 }
 
 nsresult nsWindow::SetNonClientMargins(const LayoutDeviceIntMargin& margins) {
-  if (!mIsTopWidgetWindow || mBorderStyle == BorderStyle::None)
+  if (!mIsTopWidgetWindow || mBorderStyle == BorderStyle::None) {
     return NS_ERROR_INVALID_ARG;
+  }
 
   if (mHideChrome) {
     mFutureMarginsOnceChromeShows = margins;
@@ -2731,19 +2687,13 @@ nsresult nsWindow::SetNonClientMargins(const LayoutDeviceIntMargin& margins) {
     // Force a reflow of content based on the new client
     // dimensions.
     ResetLayout();
-
-    int windowStatus =
-        reinterpret_cast<LONG_PTR>(GetPropW(mWnd, kManageWindowInfoProperty));
-    if (windowStatus) {
-      ::SendMessageW(mWnd, WM_NCACTIVATE, 1 != windowStatus, 0);
-    }
-
     return NS_OK;
   }
 
   if (margins.top < -1 || margins.bottom < -1 || margins.left < -1 ||
-      margins.right < -1)
+      margins.right < -1) {
     return NS_ERROR_INVALID_ARG;
+  }
 
   mNonClientMargins = margins;
   mCustomNonClient = true;
@@ -3999,10 +3949,8 @@ uint32_t nsWindow::GetMaxTouchPoints() const {
   return WinUtils::GetMaxTouchPoints();
 }
 
-void nsWindow::SetWindowClass(const nsAString& xulWinType,
-                              const nsAString& xulWinClass,
-                              const nsAString& xulWinName) {
-  mIsEarlyBlankWindow = xulWinType.EqualsLiteral("navigator:blank");
+void nsWindow::SetIsEarlyBlankWindow(bool aIsEarlyBlankWindow) {
+  mIsEarlyBlankWindow = aIsEarlyBlankWindow;
 }
 
 /**************************************************************
@@ -5194,8 +5142,6 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
        * WM_NCACTIVATE paints nc areas. Avoid this and re-route painting
        * through WM_NCPAINT via InvalidateNonClientRegion.
        */
-      UpdateGetWindowInfoCaptionStatus(FALSE != wParam);
-
       if (!mCustomNonClient) {
         break;
       }
@@ -5684,9 +5630,6 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
         if (WinUtils::LogToPhysFactor(mWnd) != mDefaultScale) {
           ChangedDPI();
           ResetLayout();
-          if (mWidgetListener) {
-            mWidgetListener->UIResolutionChanged();
-          }
         }
       }
       break;
@@ -5724,9 +5667,6 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_DISPLAYCHANGE: {
       ScreenHelperWin::RefreshScreens();
-      if (mWidgetListener) {
-        mWidgetListener->UIResolutionChanged();
-      }
       break;
     }
 
@@ -5925,19 +5865,12 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
           a11y::LazyInstantiator::EnableBlindAggregation(mWnd);
           result = true;
         }
-      } else if (objId == UiaRootObjectId &&
-                 StaticPrefs::accessibility_uia_enable()) {
-        if (a11y::LocalAccessible* acc = GetAccessible()) {
-          RefPtr<IAccessible> ia;
-          acc->GetNativeInterface(getter_AddRefs(ia));
-          MOZ_ASSERT(ia);
-          RefPtr<IRawElementProviderSimple> uia;
-          ia->QueryInterface(IID_IRawElementProviderSimple,
-                             getter_AddRefs(uia));
-          if (uia) {
-            *aRetValue = UiaReturnRawElementProvider(mWnd, wParam, lParam, uia);
-            result = true;
-          }
+      } else if (objId == UiaRootObjectId) {
+        if (RefPtr<IRawElementProviderSimple> root =
+                a11y::LazyInstantiator::GetRootUia(mWnd)) {
+          *aRetValue = UiaReturnRawElementProvider(mWnd, wParam, lParam, root);
+          a11y::LazyInstantiator::EnableBlindAggregation(mWnd);
+          result = true;
         }
       }
     } break;
@@ -7420,7 +7353,9 @@ a11y::LocalAccessible* nsWindow::GetAccessible() {
  **************************************************************/
 
 void nsWindow::SetWindowTranslucencyInner(TransparencyMode aMode) {
-  if (aMode == mTransparencyMode) return;
+  if (aMode == mTransparencyMode) {
+    return;
+  }
 
   // stop on dialogs and popups!
   HWND hWnd = WinUtils::GetTopLevelHWND(mWnd, true);
@@ -7458,10 +7393,11 @@ void nsWindow::SetWindowTranslucencyInner(TransparencyMode aMode) {
     }
   }
 
-  if (aMode == TransparencyMode::Transparent)
+  if (aMode == TransparencyMode::Transparent) {
     exStyle |= WS_EX_LAYERED;
-  else
+  } else {
     exStyle &= ~WS_EX_LAYERED;
+  }
 
   VERIFY_WINDOW_STYLE(style);
   ::SetWindowLongPtrW(hWnd, GWL_STYLE, style);
@@ -7469,9 +7405,45 @@ void nsWindow::SetWindowTranslucencyInner(TransparencyMode aMode) {
 
   mTransparencyMode = aMode;
 
+  UpdateOpaqueRegionInternal();
+
   if (mCompositorWidgetDelegate) {
     mCompositorWidgetDelegate->UpdateTransparency(aMode);
   }
+}
+
+void nsWindow::UpdateOpaqueRegion(const LayoutDeviceIntRegion& aRegion) {
+  if (aRegion == mOpaqueRegion) {
+    return;
+  }
+  mOpaqueRegion = aRegion;
+  UpdateOpaqueRegionInternal();
+}
+
+void nsWindow::UpdateOpaqueRegionInternal() {
+  MARGINS margins{0};
+  if (mTransparencyMode == TransparencyMode::Transparent) {
+    // If there is no opaque region, set margins to support a full sheet of
+    // glass. Comments in MSDN indicate all values must be set to -1 to get a
+    // full sheet of glass.
+    margins = {-1, -1, -1, -1};
+    if (!mOpaqueRegion.IsEmpty()) {
+      LayoutDeviceIntRect clientBounds = GetClientBounds();
+      // Find the largest rectangle and use that to calculate the inset.
+      LayoutDeviceIntRect largest = mOpaqueRegion.GetLargestRectangle();
+      margins.cxLeftWidth = largest.X();
+      margins.cxRightWidth = clientBounds.Width() - largest.XMost();
+      margins.cyBottomHeight = clientBounds.Height() - largest.YMost();
+      margins.cyTopHeight = largest.Y();
+
+      auto ncmargin = NonClientSizeMargin();
+      margins.cxLeftWidth += ncmargin.left;
+      margins.cyTopHeight += ncmargin.top;
+      margins.cxRightWidth += ncmargin.right;
+      margins.cyBottomHeight += ncmargin.bottom;
+    }
+  }
+  DwmExtendFrameIntoClientArea(mWnd, &margins);
 }
 
 /**************************************************************
@@ -8200,7 +8172,7 @@ bool nsWindow::CanTakeFocus() {
   return false;
 }
 
-/* static */ const wchar_t* nsWindow::GetMainWindowClass() {
+static const wchar_t* GetMainWindowClass() {
   static const wchar_t* sMainWindowClass = nullptr;
   if (!sMainWindowClass) {
     nsAutoString className;

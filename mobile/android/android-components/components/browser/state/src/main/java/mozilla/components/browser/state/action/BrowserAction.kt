@@ -1048,6 +1048,30 @@ sealed class TranslationsAction : BrowserAction() {
     ) : TranslationsAction(), ActionWithTab
 
     /**
+     * Sets the translations offer setting on the global store.
+     * The translations offer setting controls when to offer a translation on a page.
+     *
+     * See [SetPageSettingsAction] for setting the offer setting on the session store.
+     *
+     * @property offerTranslation The offer setting to set.
+     */
+    data class SetGlobalOfferTranslateSettingAction(
+        val offerTranslation: Boolean,
+    ) : TranslationsAction()
+
+    /**
+     * Updates the specified translation offer setting on the translation engine and ensures the final
+     * state on the global store remains in-sync.
+     *
+     * See [UpdatePageSettingAction] for updating the offer setting on the session store.
+     *
+     * @property offerTranslation The offer setting to set.
+     */
+    data class UpdateGlobalOfferTranslateSettingAction(
+        val offerTranslation: Boolean,
+    ) : TranslationsAction()
+
+    /**
      * Sets the map of BCP 47 language codes (key) and the [LanguageSetting] option (value).
      *
      * @property languageSettings A map containing a key of BCP 47 language code and its
@@ -1058,26 +1082,36 @@ sealed class TranslationsAction : BrowserAction() {
     ) : TranslationsAction()
 
     /**
+     * Updates the specified translation language setting on the translation engine and ensures the
+     * final state on the global store remains in-sync.
+     *
+     * See [UpdatePageSettingAction] for updating the language setting on the session store.
+     *
+     * @property languageCode The BCP-47 language code to update.
+     * @property setting The [LanguageSetting] for the language.
+     */
+    data class UpdateLanguageSettingsAction(
+        val languageCode: String,
+        val setting: LanguageSetting,
+    ) : TranslationsAction()
+
+    /**
      * Sets the list of sites that the user has opted to never translate.
      *
-     * @property tabId The ID of the tab the [EngineSession] that requested the list.
      * @property neverTranslateSites The never translate sites.
      */
     data class SetNeverTranslateSitesAction(
-        override val tabId: String,
         val neverTranslateSites: List<String>,
-    ) : TranslationsAction(), ActionWithTab
+    ) : TranslationsAction()
 
     /**
      * Remove from the list of sites the user has opted to never translate.
      *
-     * @property tabId The ID of the tab the [EngineSession] that requested the removal.
      * @property origin A site origin URI that will have the specified never translate permission set.
      */
     data class RemoveNeverTranslateSiteAction(
-        override val tabId: String,
         val origin: String,
-    ) : TranslationsAction(), ActionWithTab
+    ) : TranslationsAction()
 
     /**
      * Sets the list of language machine learning translation models the translation engine has available.
@@ -1255,6 +1289,7 @@ sealed class EngineAction : BrowserAction() {
         override val tabId: String,
         val skipLoading: Boolean = false,
         val followupAction: BrowserAction? = null,
+        val includeParent: Boolean = false,
     ) : EngineAction(), ActionWithTab
 
     /**
@@ -1265,6 +1300,7 @@ sealed class EngineAction : BrowserAction() {
         val url: String,
         val flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
         val additionalHeaders: Map<String, String>? = null,
+        val includeParent: Boolean = false,
     ) : EngineAction(), ActionWithTab
 
     /**
@@ -1402,6 +1438,7 @@ sealed class EngineAction : BrowserAction() {
         val engineSession: EngineSession,
         val timestamp: Long = Clock.elapsedRealtime(),
         val skipLoading: Boolean = false,
+        val includeParent: Boolean = false,
     ) : EngineAction(), ActionWithTab
 
     /**

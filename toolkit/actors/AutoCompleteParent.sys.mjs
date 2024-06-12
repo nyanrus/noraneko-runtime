@@ -143,9 +143,13 @@ var AutoCompleteResultView = {
     this.results = [];
   },
 
-  setResults(actor, results) {
+  setResults(actor, results, providerActorName) {
     this.currentActor = actor;
     this.results = results;
+
+    if (providerActorName) {
+      this.providerActor = actor.manager.getActor(providerActorName);
+    }
   },
 };
 
@@ -203,7 +207,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
   }
 
-  showPopupWithResults({ rect, dir, results }) {
+  showPopupWithResults({ rect, dir, results, actorName }) {
     if (!results.length || this.openedPopup) {
       // We shouldn't ever be showing an empty popup, and if we
       // already have a popup open, the old one needs to close before
@@ -237,7 +241,8 @@ export class AutoCompleteParent extends JSWindowActorParent {
     );
     this.openedPopup.style.direction = dir;
 
-    AutoCompleteResultView.setResults(this, results);
+    AutoCompleteResultView.setResults(this, results, actorName);
+
     this.openedPopup.view = AutoCompleteResultView;
     this.openedPopup.selectedIndex = -1;
 
@@ -376,7 +381,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
   }
 
-  receiveMessage(message) {
+  async receiveMessage(message) {
     let browser = this.browsingContext.top.embedderElement;
 
     if (
@@ -394,6 +399,13 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
 
     switch (message.name) {
+      case "AutoComplete:SelectEntry": {
+        if (this.openedPopup) {
+          this.autofillProfile(this.openedPopup.selectedIndex);
+        }
+        break;
+      }
+
       case "AutoComplete:SetSelectedIndex": {
         let { index } = message.data;
         if (this.openedPopup) {
@@ -403,8 +415,14 @@ export class AutoCompleteParent extends JSWindowActorParent {
       }
 
       case "AutoComplete:MaybeOpenPopup": {
-        let { results, rect, dir, inputElementIdentifier, formOrigin } =
-          message.data;
+        let {
+          results,
+          rect,
+          dir,
+          inputElementIdentifier,
+          formOrigin,
+          actorName,
+        } = message.data;
         if (lazy.DELEGATE_AUTOCOMPLETE) {
           lazy.GeckoViewAutocomplete.delegateSelection({
             browsingContext: this.browsingContext,
@@ -413,7 +431,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
             formOrigin,
           });
         } else {
-          this.showPopupWithResults({ results, rect, dir });
+          this.showPopupWithResults({ results, rect, dir, actorName });
           this.notifyListeners();
         }
         break;
@@ -432,6 +450,12 @@ export class AutoCompleteParent extends JSWindowActorParent {
         }
         this.closePopup();
         break;
+      }
+
+      case "AutoComplete:StartSearch": {
+        const { searchString, data } = message.data;
+        const result = await this.#startSearch(searchString, data);
+        return Promise.resolve(result);
       }
     }
     // Returning false to pacify ESLint, but this return value is
@@ -493,7 +517,76 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
   }
 
+  // This defines the supported autocomplete providers and the prioity to show the autocomplete
+  // entry.
+  #AUTOCOMPLETE_PROVIDERS = ["FormAutofill", "LoginManager", "FormHistory"];
+
+  /**
+   * Search across multiple module to gather autocomplete entries for a given search string.
+   *
+   * @param {string} searchString
+   *                 The input string used to query autocomplete entries across different
+   *                 autocomplete providers.
+   * @param {Array<Object>} providers
+   *                        An array of objects where each object has a `name` used to identify the actor
+   *                        name of the provider and `options` that are passed to the `searchAutoCompleteEntries`
+   *                        method of the actor.
+   * @returns {Array<Object>} An array of results objects with `name` of the provider and `entries`
+   *          that are returned from the provider module's `searchAutoCompleteEntries` method.
+   */
+  async #startSearch(searchString, providers) {
+    for (const name of this.#AUTOCOMPLETE_PROVIDERS) {
+      const provider = providers.find(p => p.actorName == name);
+      if (!provider) {
+        continue;
+      }
+      const { actorName, options } = provider;
+      const actor =
+        this.browsingContext.currentWindowGlobal.getActor(actorName);
+      const entries = await actor?.searchAutoCompleteEntries(
+        searchString,
+        options
+      );
+
+      // We have not yet supported showing autocomplete entries from multiple providers,
+      if (entries) {
+        return [{ actorName, ...entries }];
+      }
+    }
+    return [];
+  }
+
   stopSearch() {}
+
+  previewAutofillProfile(index) {
+    const actor = AutoCompleteResultView.providerActor;
+    if (!actor) {
+      return;
+    }
+
+    // Clear preview when the selected index is not valid
+    if (index < 0) {
+      actor.previewFields(null);
+      return;
+    }
+
+    const result = AutoCompleteResultView.results[index];
+    actor.previewFields(result);
+  }
+
+  /**
+   * When a field is autocompleted, fill relevant fields
+   */
+  autofillProfile(index) {
+    // Find the provider of this autocomplete
+    const actor = AutoCompleteResultView.providerActor;
+    if (index < 0 || !actor) {
+      return;
+    }
+
+    const result = AutoCompleteResultView.results[index];
+    actor.autofillFields(result);
+  }
 
   /**
    * Sends a message to the browser that is requesting the input

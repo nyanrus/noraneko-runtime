@@ -34,7 +34,6 @@ Please note that some targeting attributes require stricter controls on the tele
 * [hasMigratedPasswords](#hasmigratedpasswords)
 * [hasPinnedTabs](#haspinnedtabs)
 * [homePageSettings](#homepagesettings)
-* [inMr2022Holdback](#inmr2022holdback)
 * [isBackgroundTaskMode](#isbackgroundtaskmode)
 * [isChinaRepack](#ischinarepack)
 * [isDefaultBrowser](#isdefaultbrowser)
@@ -43,6 +42,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [isFxAEnabled](#isfxaenabled)
 * [isFxASignedIn](#isFxASignedIn)
 * [isMajorUpgrade](#ismajorupgrade)
+* [isMSIX](#ismsix)
 * [isRTAMO](#isrtamo)
 * [launchOnLoginEnabled](#launchonloginenabled)
 * [locale](#locale)
@@ -972,10 +972,6 @@ mode, or `null` if this invocation is not running in background task mode.
 
 Checks if user prefers reduced motion as indicated by the value of a media query for `prefers-reduced-motion`.
 
-### `inMr2022Holdback`
-
-A boolean. `true` when the user is in the Major Release 2022 holdback study.
-
 ### `distributionId`
 
 A string containing the id of the distribution, or the empty string if there
@@ -1008,6 +1004,10 @@ A boolean. `true` if the user is configured to use the embedded Migration Wizard
 ### `isRTAMO`
 
 A boolean. `true` when [RTAMO](first-run.md#return-to-amo-rtamo) has been used to download Firefox, `false` otherwise.
+
+### `isMSIX`
+
+A boolean. `true` when hasPackageId is `true` on Windows, `false` otherwise.
 
 ### `isDeviceMigration`
 

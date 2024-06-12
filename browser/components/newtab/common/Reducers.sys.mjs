@@ -104,6 +104,12 @@ export const INITIAL_STATE = {
   Wallpapers: {
     wallpaperList: [],
   },
+  Weather: {
+    // do we have the data from WeatherFeed yet?
+    initialized: false,
+    suggestions: [],
+    lastUpdated: null,
+  },
 };
 
 function App(prevState = INITIAL_STATE.App, action) {
@@ -853,6 +859,20 @@ function Wallpapers(prevState = INITIAL_STATE.Wallpapers, action) {
   }
 }
 
+function Weather(prevState = INITIAL_STATE.Weather, action) {
+  switch (action.type) {
+    case at.WEATHER_UPDATE:
+      return {
+        ...prevState,
+        suggestions: action.data.suggestions,
+        lastUpdated: action.data.date,
+        initialized: true,
+      };
+    default:
+      return prevState;
+  }
+}
+
 export const reducers = {
   TopSites,
   App,
@@ -865,4 +885,5 @@ export const reducers = {
   DiscoveryStream,
   Search,
   Wallpapers,
+  Weather,
 };

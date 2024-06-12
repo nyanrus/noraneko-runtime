@@ -113,6 +113,7 @@ skip-if = [
 ["test_auth_proxy.js"]
 
 ["test_authentication.js"]
+requesttimeoutfactor = 2
 
 ["test_authpromptwrapper.js"]
 
@@ -484,7 +485,6 @@ skip-if = ["os == 'linux' && bits == 64 && !debug"] #Bug 1553353
 ["test_cookies_partition_counting.js"]
 
 ["test_cookies_privatebrowsing.js"]
-skip-if = ["os == 'android' && fission"] # Bug 1888227
 
 ["test_cookies_profile_close.js"]
 skip-if = ["os == 'android'"] # Bug 1700483

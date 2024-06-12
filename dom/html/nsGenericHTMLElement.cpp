@@ -9,6 +9,7 @@
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/IMEContentObserver.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
@@ -286,7 +287,7 @@ static bool IsOffsetParent(nsIFrame* aFrame) {
 
 struct OffsetResult {
   Element* mParent = nullptr;
-  CSSIntRect mRect;
+  nsRect mRect;
 };
 
 static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
@@ -303,6 +304,7 @@ static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
   nsIContent* offsetParent = nullptr;
   Element* docElement = aElement.GetComposedDoc()->GetRootElement();
   nsIContent* content = frame->GetContent();
+  const auto effectiveZoom = frame->Style()->EffectiveZoom();
 
   if (content &&
       (content->IsHTMLElement(nsGkAtoms::body) || content == docElement)) {
@@ -317,6 +319,13 @@ static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
 
       // Stop at the first ancestor that is positioned.
       if (parent->IsAbsPosContainingBlock()) {
+        offsetParent = content;
+        break;
+      }
+
+      // WebKit-ism: offsetParent stops at zoom changes.
+      // See https://github.com/w3c/csswg-drafts/issues/10252
+      if (effectiveZoom != parent->Style()->EffectiveZoom()) {
         offsetParent = content;
         break;
       }
@@ -370,8 +379,7 @@ static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
   // we only care about the size. We just have to use something non-null.
   nsRect rcFrame = nsLayoutUtils::GetAllInFlowRectsUnion(frame, frame);
   rcFrame.MoveTo(origin);
-  return {Element::FromNodeOrNull(offsetParent),
-          CSSIntRect::FromAppUnitsRounded(rcFrame)};
+  return {Element::FromNodeOrNull(offsetParent), rcFrame};
 }
 
 static bool ShouldBeRetargeted(const Element& aReferenceElement,
@@ -393,20 +401,22 @@ static bool ShouldBeRetargeted(const Element& aReferenceElement,
 Element* nsGenericHTMLElement::GetOffsetRect(CSSIntRect& aRect) {
   aRect = CSSIntRect();
 
-  if (!GetPrimaryFrame(FlushType::Layout)) {
+  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
+  if (!frame) {
     return nullptr;
   }
 
   OffsetResult thisResult = GetUnretargetedOffsetsFor(*this);
-  aRect = thisResult.mRect;
-
+  nsRect rect = thisResult.mRect;
   Element* parent = thisResult.mParent;
   while (parent && ShouldBeRetargeted(*this, *parent)) {
     OffsetResult result = GetUnretargetedOffsetsFor(*parent);
-    aRect += result.mRect.TopLeft();
+    rect += result.mRect.TopLeft();
     parent = result.mParent;
   }
 
+  aRect = CSSIntRect::FromAppUnitsRounded(
+      frame->Style()->EffectiveZoom().Unzoom(rect));
   return parent;
 }
 
@@ -1757,8 +1767,8 @@ bool nsGenericHTMLElement::LegacyTouchAPIEnabled(JSContext* aCx,
 }
 
 bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
-    bool aWithMouse) const {
-  if (!aWithMouse) {
+    IsFocusableFlags aFlags) const {
+  if (!(aFlags & IsFocusableFlags::WithMouse)) {
     return true;
   }
   switch (StaticPrefs::accessibility_mouse_focuses_formcontrol()) {
@@ -2303,7 +2313,8 @@ void nsGenericHTMLElement::Click(CallerType aCallerType) {
   ClearHandlingClick();
 }
 
-bool nsGenericHTMLElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+bool nsGenericHTMLElement::IsHTMLFocusable(IsFocusableFlags aFlags,
+                                           bool* aIsFocusable,
                                            int32_t* aTabIndex) {
   MOZ_ASSERT(aIsFocusable);
   MOZ_ASSERT(aTabIndex);
@@ -2589,15 +2600,15 @@ void nsGenericHTMLFormControlElement::GetAutocapitalize(
   }
 }
 
-bool nsGenericHTMLFormControlElement::IsHTMLFocusable(bool aWithMouse,
+bool nsGenericHTMLFormControlElement::IsHTMLFocusable(IsFocusableFlags aFlags,
                                                       bool* aIsFocusable,
                                                       int32_t* aTabIndex) {
-  if (nsGenericHTMLFormElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
+  if (nsGenericHTMLFormElement::IsHTMLFocusable(aFlags, aIsFocusable,
                                                 aTabIndex)) {
     return true;
   }
 
-  *aIsFocusable = *aIsFocusable && IsFormControlDefaultFocusable(aWithMouse);
+  *aIsFocusable = *aIsFocusable && IsFormControlDefaultFocusable(aFlags);
   return false;
 }
 
@@ -3552,8 +3563,7 @@ void nsGenericHTMLElement::FocusPopover() {
 
   RefPtr<Element> control = GetBoolAttr(nsGkAtoms::autofocus)
                                 ? this
-                                : GetAutofocusDelegate(false /* aWithMouse */);
-
+                                : GetAutofocusDelegate(IsFocusableFlags(0));
   if (!control) {
     return;
   }

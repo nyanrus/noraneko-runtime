@@ -343,7 +343,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
 
 #define PREF(suffix_, key_)                                          \
   {                                                                  \
-    nsLiteralCString(PREF_MEM_OPTIONS_PREFIX suffix_),               \
+    nsLiteralCString(suffix_),                                       \
         PREF_JS_OPTIONS_PREFIX PREF_MEM_OPTIONS_PREFIX suffix_, key_ \
   }
   constexpr WorkerGCPref kWorkerPrefs[] = {
@@ -372,6 +372,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       PREF("gc_parallel_marking", JSGC_PARALLEL_MARKING_ENABLED),
       PREF("gc_parallel_marking_threshold_mb",
            JSGC_PARALLEL_MARKING_THRESHOLD_MB),
+      PREF("gc_max_parallel_marking_threads", JSGC_MAX_MARKING_THREADS),
 #ifdef NIGHTLY_BUILD
       PREF("gc_experimental_semispace_nursery", JSGC_SEMISPACE_NURSERY_ENABLED),
 #endif
@@ -454,6 +455,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       case JSGC_MAX_EMPTY_CHUNK_COUNT:
       case JSGC_HEAP_GROWTH_FACTOR:
       case JSGC_PARALLEL_MARKING_THRESHOLD_MB:
+      case JSGC_MAX_MARKING_THREADS:
         UpdateCommonJSGCMemoryOption(rts, pref->fullName, pref->key);
         break;
       default:
@@ -596,7 +598,7 @@ void CTypesActivityCallback(JSContext* aCx, JS::CTypesActivityType aType) {
 // do. Moreover, JS_DestroyContext() does *not* block on JS::Dispatchable::run
 // being called, DispatchToEventLoopCallback failure is expected to happen
 // during shutdown.
-class JSDispatchableRunnable final : public WorkerRunnable {
+class JSDispatchableRunnable final : public WorkerThreadRunnable {
   JS::Dispatchable* mDispatchable;
 
   ~JSDispatchableRunnable() { MOZ_ASSERT(!mDispatchable); }
@@ -617,21 +619,19 @@ class JSDispatchableRunnable final : public WorkerRunnable {
  public:
   JSDispatchableRunnable(WorkerPrivate* aWorkerPrivate,
                          JS::Dispatchable* aDispatchable)
-      : WorkerRunnable(aWorkerPrivate, "JSDispatchableRunnable",
-                       WorkerRunnable::WorkerThread),
+      : WorkerThreadRunnable("JSDispatchableRunnable"),
         mDispatchable(aDispatchable) {
     MOZ_ASSERT(mDispatchable);
   }
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
-    MOZ_ASSERT(aWorkerPrivate == mWorkerPrivate);
-    MOZ_ASSERT(aCx == mWorkerPrivate->GetJSContext());
+    MOZ_ASSERT(aCx == aWorkerPrivate->GetJSContext());
     MOZ_ASSERT(mDispatchable);
 
     AutoJSAPI jsapi;
     jsapi.Init();
 
-    mDispatchable->run(mWorkerPrivate->GetJSContext(),
+    mDispatchable->run(aWorkerPrivate->GetJSContext(),
                        JS::Dispatchable::NotShuttingDown);
     mDispatchable = nullptr;  // mDispatchable may delete itself
 
@@ -644,7 +644,7 @@ class JSDispatchableRunnable final : public WorkerRunnable {
     AutoJSAPI jsapi;
     jsapi.Init();
 
-    mDispatchable->run(mWorkerPrivate->GetJSContext(),
+    mDispatchable->run(GetCurrentThreadWorkerPrivate()->GetJSContext(),
                        JS::Dispatchable::ShuttingDown);
     mDispatchable = nullptr;  // mDispatchable may delete itself
 
@@ -665,7 +665,7 @@ static bool DispatchToEventLoop(void* aClosure,
   // the JSDispatchableRunnable comment above.
   RefPtr<JSDispatchableRunnable> r =
       new JSDispatchableRunnable(workerPrivate, aDispatchable);
-  return r->Dispatch();
+  return r->Dispatch(workerPrivate);
 }
 
 static bool ConsumeStream(JSContext* aCx, JS::Handle<JSObject*> aObj,
@@ -1482,9 +1482,9 @@ namespace {
 class DumpCrashInfoRunnable final : public WorkerControlRunnable {
  public:
   explicit DumpCrashInfoRunnable(WorkerPrivate* aWorkerPrivate)
-      : WorkerControlRunnable(aWorkerPrivate, "DumpCrashInfoRunnable",
-                              WorkerThread),
-        mMonitor("DumpCrashInfoRunnable::mMonitor") {}
+      : WorkerControlRunnable("DumpCrashInfoRunnable"),
+        mMonitor("DumpCrashInfoRunnable::mMonitor"),
+        mWorkerPrivate(aWorkerPrivate) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     MonitorAutoLock lock(mMonitor);
@@ -1510,7 +1510,7 @@ class DumpCrashInfoRunnable final : public WorkerControlRunnable {
   bool DispatchAndWait() {
     MonitorAutoLock lock(mMonitor);
 
-    if (!Dispatch()) {
+    if (!Dispatch(mWorkerPrivate)) {
       // The worker is already dead but the main thread still didn't remove it
       // from RuntimeService's registry.
       return false;
@@ -1537,6 +1537,7 @@ class DumpCrashInfoRunnable final : public WorkerControlRunnable {
   Monitor mMonitor MOZ_UNANNOTATED;
   nsCString mMsg;
   FlippedOnce<false> mHasMsg;
+  WorkerPrivate* mWorkerPrivate;
 };
 
 struct ActiveWorkerStats {
@@ -2066,21 +2067,24 @@ WorkerThreadPrimaryRunnable::Run() {
                                    url.get());
 
   using mozilla::ipc::BackgroundChild;
-
   {
+    bool runLoopRan = false;
     auto failureCleanup = MakeScopeExit([&]() {
-      // The creation of threadHelper above is the point at which a worker is
-      // considered to have run, because the `mPreStartRunnables` are all
-      // re-dispatched after `mThread` is set.  We need to let the WorkerPrivate
-      // know so it can clean up the various event loops and delete the worker.
-      mWorkerPrivate->RunLoopNeverRan();
+      // If Worker initialization fails, call WorkerPrivate::ScheduleDeletion()
+      // to release the WorkerPrivate in the parent thread.
+      mWorkerPrivate->ScheduleDeletion(WorkerPrivate::WorkerRan);
     });
 
     mWorkerPrivate->SetWorkerPrivateInWorkerThread(mThread.unsafeGetRawPtr());
 
     const auto threadCleanup = MakeScopeExit([&] {
-      // This must be called before ScheduleDeletion, which is either called
-      // from failureCleanup leaving scope, or from the outer scope.
+      // If Worker initialization fails, such as creating a BackgroundChild or
+      // the worker's JSContext initialization failing, call
+      // WorkerPrivate::RunLoopNeverRan() to set the Worker to the correct
+      // status, which means "Dead," to forbid WorkerThreadRunnable dispatching.
+      if (!runLoopRan) {
+        mWorkerPrivate->RunLoopNeverRan();
+      }
       mWorkerPrivate->ResetWorkerPrivateInWorkerThread();
     });
 
@@ -2117,6 +2121,7 @@ WorkerThreadPrimaryRunnable::Run() {
       }
 
       failureCleanup.release();
+      runLoopRan = true;
 
       {
         PROFILER_SET_JS_CONTEXT(cx);

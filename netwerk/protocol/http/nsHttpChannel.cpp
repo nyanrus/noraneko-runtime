@@ -637,6 +637,32 @@ nsresult nsHttpChannel::OnBeforeConnect() {
   return MaybeUseHTTPSRRForUpgrade(shouldUpgrade, NS_OK);
 }
 
+// Returns true if the network connectivity checker indicated
+// that HTTPS records can be resolved on this network - false otherwise.
+// When TRR is enabled, we always return true, as resolving HTTPS
+// records don't depend on the network.
+static bool canUseHTTPSRRonNetwork() {
+  if (nsCOMPtr<nsIDNSService> dns = mozilla::components::DNS::Service()) {
+    nsIDNSService::ResolverMode mode;
+    // If the browser is currently using TRR/DoH, then it can
+    // definitely resolve HTTPS records.
+    if (NS_SUCCEEDED(dns->GetCurrentTrrMode(&mode)) &&
+        (mode == nsIDNSService::MODE_TRRFIRST ||
+         mode == nsIDNSService::MODE_TRRONLY)) {
+      return true;
+    }
+  }
+  if (RefPtr<NetworkConnectivityService> ncs =
+          NetworkConnectivityService::GetSingleton()) {
+    nsINetworkConnectivityService::ConnectivityState state;
+    if (NS_SUCCEEDED(ncs->GetDNS_HTTPS(&state)) &&
+        state == nsINetworkConnectivityService::NOT_AVAILABLE) {
+      return false;
+    }
+  }
+  return true;
+}
+
 nsresult nsHttpChannel::MaybeUseHTTPSRRForUpgrade(bool aShouldUpgrade,
                                                   nsresult aStatus) {
   if (NS_FAILED(aStatus)) {
@@ -654,6 +680,13 @@ nsresult nsHttpChannel::MaybeUseHTTPSRRForUpgrade(bool aShouldUpgrade,
          ExtContentPolicy::TYPE_DOCUMENT) &&
         (mLoadInfo->GetLoadingPrincipal() &&
          mLoadInfo->GetLoadingPrincipal()->SchemeIs("http"))) {
+      return true;
+    }
+
+    // If the network connectivity checker indicates the network is
+    // blocking HTTPS requests, then we should skip them so we don't
+    // needlessly wait for a timeout.
+    if (!canUseHTTPSRRonNetwork()) {
       return true;
     }
 
@@ -1022,11 +1055,22 @@ nsresult nsHttpChannel::DoConnectActual(
   LOG(("nsHttpChannel::DoConnectActual [this=%p, aTransWithStickyConn=%p]\n",
        this, aTransWithStickyConn));
 
-  nsresult rv = SetupTransaction();
+  nsresult rv = SetupChannelForTransaction();
   if (NS_FAILED(rv)) {
     return rv;
   }
 
+  return DispatchTransaction(aTransWithStickyConn);
+}
+
+nsresult nsHttpChannel::DispatchTransaction(
+    HttpTransactionShell* aTransWithStickyConn) {
+  LOG(("nsHttpChannel::DispatchTransaction [this=%p, aTransWithStickyConn=%p]",
+       this, aTransWithStickyConn));
+  nsresult rv = InitTransaction();
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
   if (aTransWithStickyConn) {
     rv = gHttpHandler->InitiateTransactionWithStickyConn(
         mTransaction, mPriority, aTransWithStickyConn);
@@ -1212,10 +1256,11 @@ void nsHttpChannel::HandleAsyncNotModified() {
   if (mLoadGroup) mLoadGroup->RemoveRequest(this, nullptr, mStatus);
 }
 
-nsresult nsHttpChannel::SetupTransaction() {
-  LOG(("nsHttpChannel::SetupTransaction [this=%p, cos=%lu, inc=%d prio=%d]\n",
-       this, mClassOfService.Flags(), mClassOfService.Incremental(),
-       mPriority));
+nsresult nsHttpChannel::SetupChannelForTransaction() {
+  LOG((
+      "nsHttpChannel::SetupChannelForTransaction [this=%p, cos=%lu, inc=%d "
+      "prio=%d]\n",
+      this, mClassOfService.Flags(), mClassOfService.Incremental(), mPriority));
 
   NS_ENSURE_TRUE(!mTransaction, NS_ERROR_ALREADY_INITIALIZED);
 
@@ -1340,24 +1385,37 @@ nsresult nsHttpChannel::SetupTransaction() {
     // We need to send 'Pragma:no-cache' to inhibit proxy caching even if
     // no proxy is configured since we might be talking with a transparent
     // proxy, i.e. one that operates at the network level.  See bug #14772.
-    rv = mRequestHead.SetHeaderOnce(nsHttp::Pragma, "no-cache", true);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    // But we should not touch Pragma if Cache-Control is already set
+    // (https://fetch.spec.whatwg.org/#ref-for-concept-request-cache-mode%E2%91%A3)
+    if (!mRequestHead.HasHeader(nsHttp::Pragma)) {
+      rv = mRequestHead.SetHeaderOnce(nsHttp::Pragma, "no-cache", true);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
     // If we're configured to speak HTTP/1.1 then also send 'Cache-control:
-    // no-cache'
-    if (mRequestHead.Version() >= HttpVersion::v1_1) {
+    // no-cache'. But likewise don't touch Cache-Control if it's already set.
+    if (mRequestHead.Version() >= HttpVersion::v1_1 &&
+        !mRequestHead.HasHeader(nsHttp::Cache_Control)) {
       rv = mRequestHead.SetHeaderOnce(nsHttp::Cache_Control, "no-cache", true);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
-  } else if ((mLoadFlags & VALIDATE_ALWAYS) && !LoadCacheEntryIsWriteOnly()) {
+  } else if (mLoadFlags & VALIDATE_ALWAYS) {
     // We need to send 'Cache-Control: max-age=0' to force each cache along
     // the path to the origin server to revalidate its own entry, if any,
     // with the next cache or server.  See bug #84847.
     //
     // If we're configured to speak HTTP/1.0 then just send 'Pragma: no-cache'
+    //
+    // But don't send the headers if they're already set:
+    // https://fetch.spec.whatwg.org/#ref-for-concept-request-cache-mode%E2%91%A2
     if (mRequestHead.Version() >= HttpVersion::v1_1) {
-      rv = mRequestHead.SetHeaderOnce(nsHttp::Cache_Control, "max-age=0", true);
+      if (!mRequestHead.HasHeader(nsHttp::Cache_Control)) {
+        rv = mRequestHead.SetHeaderOnce(nsHttp::Cache_Control, "max-age=0",
+                                        true);
+      }
     } else {
-      rv = mRequestHead.SetHeaderOnce(nsHttp::Pragma, "no-cache", true);
+      if (!mRequestHead.HasHeader(nsHttp::Pragma)) {
+        rv = mRequestHead.SetHeaderOnce(nsHttp::Pragma, "no-cache", true);
+      }
     }
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
@@ -1395,6 +1453,30 @@ nsresult nsHttpChannel::SetupTransaction() {
     }
   }
 
+  // See bug #466080. Transfer LOAD_ANONYMOUS flag to socket-layer.
+  if (mLoadFlags & LOAD_ANONYMOUS) mCaps |= NS_HTTP_LOAD_ANONYMOUS;
+
+  if (LoadTimingEnabled()) mCaps |= NS_HTTP_TIMING_ENABLED;
+
+  if (mUpgradeProtocolCallback) {
+    rv = mRequestHead.SetHeader(nsHttp::Upgrade, mUpgradeProtocol, false);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    rv = mRequestHead.SetHeaderOnce(nsHttp::Connection, nsHttp::Upgrade.get(),
+                                    true);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    mCaps |= NS_HTTP_STICKY_CONNECTION;
+    mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
+  }
+
+  if (mWebTransportSessionEventListener) {
+    mCaps |= NS_HTTP_STICKY_CONNECTION;
+  }
+
+  return NS_OK;
+}
+
+nsresult nsHttpChannel::InitTransaction() {
+  nsresult rv;
   // create wrapper for this channel's notification callbacks
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   NS_NewNotificationCallbacksAggregation(mCallbacks, mLoadGroup,
@@ -1444,25 +1526,6 @@ nsresult nsHttpChannel::SetupTransaction() {
   // Save the mapping of channel id and the channel. We need this mapping for
   // nsIHttpActivityObserver.
   gHttpHandler->AddHttpChannel(mChannelId, ToSupports(this));
-
-  // See bug #466080. Transfer LOAD_ANONYMOUS flag to socket-layer.
-  if (mLoadFlags & LOAD_ANONYMOUS) mCaps |= NS_HTTP_LOAD_ANONYMOUS;
-
-  if (LoadTimingEnabled()) mCaps |= NS_HTTP_TIMING_ENABLED;
-
-  if (mUpgradeProtocolCallback) {
-    rv = mRequestHead.SetHeader(nsHttp::Upgrade, mUpgradeProtocol, false);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    rv = mRequestHead.SetHeaderOnce(nsHttp::Connection, nsHttp::Upgrade.get(),
-                                    true);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    mCaps |= NS_HTTP_STICKY_CONNECTION;
-    mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
-  }
-
-  if (mWebTransportSessionEventListener) {
-    mCaps |= NS_HTTP_STICKY_CONNECTION;
-  }
 
   nsCOMPtr<nsIHttpPushListener> pushListener;
   NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
@@ -6566,7 +6629,7 @@ nsresult nsHttpChannel::BeginConnect() {
       !(mLoadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
         mLoadInfo->GetExternalContentPolicyType() !=
             ExtContentPolicy::TYPE_DOCUMENT) &&
-      !mConnectionInfo->UsingConnect();
+      !mConnectionInfo->UsingConnect() && canUseHTTPSRRonNetwork();
   if (!httpsRRAllowed) {
     mCaps |= NS_HTTP_DISALLOW_HTTPS_RR;
   }
@@ -6611,8 +6674,10 @@ nsresult nsHttpChannel::BeginConnect() {
   Unused << gHttpHandler->AddConnectionHeader(&mRequestHead, mCaps);
 
   if (!LoadIsTRRServiceChannel() &&
-      (mLoadFlags & VALIDATE_ALWAYS ||
-       BYPASS_LOCAL_CACHE(mLoadFlags, LoadPreferCacheLoadOverBypass()))) {
+      ((mLoadFlags & LOAD_FRESH_CONNECTION) ||
+       (!StaticPrefs::network_dns_only_refresh_on_fresh_connection() &&
+        (mLoadFlags & VALIDATE_ALWAYS ||
+         BYPASS_LOCAL_CACHE(mLoadFlags, LoadPreferCacheLoadOverBypass()))))) {
     mCaps |= NS_HTTP_REFRESH_DNS;
   }
 
@@ -6753,7 +6818,7 @@ nsresult nsHttpChannel::MaybeStartDNSPrefetch() {
     }
 
     if (gHttpHandler->UseHTTPSRRAsAltSvcEnabled() && !mHTTPSSVCRecord &&
-        !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR)) {
+        !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR) && canUseHTTPSRRonNetwork()) {
       MOZ_ASSERT(!mHTTPSSVCRecord);
 
       OriginAttributes originAttributes;

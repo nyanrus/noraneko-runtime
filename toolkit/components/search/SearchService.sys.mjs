@@ -1801,9 +1801,9 @@ export class SearchService {
         this.#addEngineToStore(engine);
       } catch (ex) {
         console.error(
-          `Could not load engine ${
-            "webExtension" in config ? config.webExtension.id : "unknown"
-          }: ${ex}`
+          "Could not load engine",
+          "webExtension" in config ? config.webExtension.id : "unknown",
+          ex
         );
       }
     }
@@ -1839,7 +1839,8 @@ export class SearchService {
         });
       } catch (ex) {
         lazy.logConsole.error(
-          `#createAndAddAddonEngine failed for ${extension.id}`,
+          "#createAndAddAddonEngine failed for",
+          extension.id,
           ex
         );
       }
@@ -2499,6 +2500,19 @@ export class SearchService {
         } else if (loadPath?.startsWith("[user]")) {
           engine = new lazy.UserSearchEngine({ json: engineJSON });
         } else if (engineJSON.extensionID ?? engineJSON._extensionID) {
+          let existingEngine = this.#getEngineByName(engineJSON._name);
+          let extensionId = engineJSON.extensionID ?? engineJSON._extensionID;
+
+          if (existingEngine && existingEngine._extensionID == extensionId) {
+            // We assume that this WebExtension was already loaded as part of
+            // #loadStartupEngines, and therefore do not try to add it again.
+            lazy.logConsole.log(
+              "Ignoring already added WebExtension",
+              extensionId
+            );
+            continue;
+          }
+
           engine = new lazy.AddonSearchEngine({
             isAppProvided: false,
             json: engineJSON,
@@ -2587,7 +2601,7 @@ export class SearchService {
   async _fetchEngineSelectorEngines() {
     let searchEngineSelectorProperties = {
       locale: Services.locale.appLocaleAsBCP47,
-      region: lazy.Region.home || "default",
+      region: lazy.Region.home || "unknown",
       channel: lazy.SearchUtils.MODIFIED_APP_CHANNEL,
       experiment:
         lazy.NimbusFeatures.searchConfiguration.getVariable("experiment") ?? "",

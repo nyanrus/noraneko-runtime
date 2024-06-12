@@ -16,10 +16,12 @@
 class AudioDeviceInfo;
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(cubeb_stream_prefs)
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(cubeb_input_processing_params)
 
 namespace mozilla {
 
 class CallbackThreadRegistry;
+class SharedThreadPool;
 
 namespace CubebUtils {
 
@@ -34,6 +36,8 @@ template <>
 struct ToCubebFormat<AUDIO_FORMAT_S16> {
   static const cubeb_sample_format value = CUBEB_SAMPLE_S16NE;
 };
+
+nsCString ProcessingParamsToString(cubeb_input_processing_params aParams);
 
 class CubebHandle {
  public:
@@ -61,6 +65,11 @@ void InitLibrary();
 void ShutdownLibrary();
 
 bool SandboxEnabled();
+
+// A thread pool containing only one thread to execute the cubeb operations. We
+// should always use this thread to init, destroy, start, or stop cubeb streams,
+// to avoid data racing or deadlock issues across platforms.
+already_AddRefed<SharedThreadPool> GetCubebOperationThread();
 
 // Returns the maximum number of channels supported by the audio hardware.
 uint32_t MaxNumberOfChannels();

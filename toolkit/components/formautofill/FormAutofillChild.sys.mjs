@@ -8,15 +8,18 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddressResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
   AutoCompleteChild: "resource://gre/actors/AutoCompleteChild.sys.mjs",
   AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
+  CreditCardResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
+  GenericAutocompleteItem: "resource://gre/modules/FillHelpers.sys.mjs",
+  InsecurePasswordUtils: "resource://gre/modules/InsecurePasswordUtils.sys.mjs",
   FormAutofill: "resource://autofill/FormAutofill.sys.mjs",
   FormAutofillContent: "resource://autofill/FormAutofillContent.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
+  FormScenarios: "resource://gre/modules/FormScenarios.sys.mjs",
   FormStateManager: "resource://gre/modules/shared/FormStateManager.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ProfileAutocomplete:
-    "resource://autofill/AutofillProfileAutoComplete.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   FORM_SUBMISSION_REASON: "resource://gre/actors/FormHandlerChild.sys.mjs",
 });
@@ -94,6 +97,9 @@ const observer = {
  * Handles content's interactions for the frame.
  */
 export class FormAutofillChild extends JSWindowActorChild {
+  // Flag indicating whether the form is waiting to be filled by Autofill.
+  #autofillPending = false;
+
   constructor() {
     super();
 
@@ -103,9 +109,6 @@ export class FormAutofillChild extends JSWindowActorChild {
     this._nextHandleElement = null;
     this._hasDOMContentLoadedHandler = false;
     this._hasPendingTask = false;
-
-    // Flag indicating whether the form is waiting to be filled by Autofill.
-    this._autofillPending = false;
 
     /**
      * @type {FormAutofillFieldDetailsManager} handling state management of current forms and handlers.
@@ -473,14 +476,14 @@ export class FormAutofillChild extends JSWindowActorChild {
     this.unregisterProgressListener();
   }
 
-  receiveMessage(message) {
+  async receiveMessage(message) {
     if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
     switch (message.name) {
       case "FormAutofill:PreviewProfile": {
-        this.previewProfile(message.data.selectedIndex);
+        this.previewProfile(message.data);
         break;
       }
       case "FormAutofill:ClearForm": {
@@ -488,7 +491,7 @@ export class FormAutofillChild extends JSWindowActorChild {
         break;
       }
       case "FormAutofill:FillForm": {
-        this.activeHandler.autofillFormFields(message.data);
+        await this.autofillFields(message.data);
         break;
       }
     }
@@ -610,7 +613,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     this.debug("updateActiveElement: checking for popup-on-focus");
     // We know this element just received focus. If it's a credit card field,
     // open its popup.
-    if (this._autofillPending) {
+    if (this.#autofillPending) {
       this.debug("updateActiveElement: skipping check; autofill is imminent");
     } else if (element.value?.length !== 0) {
       this.debug(
@@ -631,16 +634,8 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
-  set autofillPending(flag) {
-    this.debug("Setting autofillPending to", flag);
-    this._autofillPending = flag;
-  }
-
   clearForm() {
-    let focusedInput =
-      this.activeInput ||
-      lazy.ProfileAutocomplete._lastAutoCompleteFocusedInput;
-    if (!focusedInput) {
+    if (!this.activeSection) {
       return;
     }
 
@@ -656,26 +651,41 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
-  previewProfile(selectedIndex) {
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
+  get lastProfileAutoCompleteResult() {
+    return this.manager.getActor("AutoComplete")?.lastProfileAutoCompleteResult;
+  }
 
-    if (
-      selectedIndex === -1 ||
-      !focusedInput ||
-      !lastAutoCompleteResult ||
-      lastAutoCompleteResult.getStyleAt(selectedIndex) != "autofill"
-    ) {
-      lazy.ProfileAutocomplete._clearProfilePreview();
+  get lastProfileAutoCompleteFocusedInput() {
+    return this.manager.getActor("AutoComplete")
+      ?.lastProfileAutoCompleteFocusedInput;
+  }
+
+  previewProfile(profile) {
+    if (profile && this.activeSection) {
+      const adaptedProfile = this.activeSection.getAdaptedProfiles([
+        profile,
+      ])[0];
+      this.activeSection.previewFormFields(adaptedProfile);
     } else {
-      lazy.ProfileAutocomplete._previewSelectedProfile(selectedIndex);
+      this.activeSection.clearPreviewedFormFields();
+    }
+  }
+
+  async autofillFields(profile) {
+    this.#autofillPending = true;
+    Services.obs.notifyObservers(null, "autofill-fill-starting");
+    try {
+      Services.obs.notifyObservers(null, "autofill-fill-starting");
+      await this.activeHandler.autofillFormFields(profile);
+      Services.obs.notifyObservers(null, "autofill-fill-complete");
+    } finally {
+      this.#autofillPending = false;
     }
   }
 
   onPopupClosed() {
     this.debug("Popup has closed.");
-    lazy.ProfileAutocomplete._clearProfilePreview();
+    this.activeSection?.clearPreviewedFormFields();
   }
 
   onPopupOpened() {
@@ -701,6 +711,149 @@ export class FormAutofillChild extends JSWindowActorChild {
       return;
     }
 
-    formFillController.markAsAutofillField(field);
+    this.manager
+      .getActor("AutoComplete")
+      ?.markAsAutoCompletableField(field, this);
+  }
+
+  get actorName() {
+    return "FormAutofill";
+  }
+
+  /**
+   * Get the search options when searching for autocomplete entries in the parent
+   *
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @returns {object} the search options for the input
+   */
+  getAutoCompleteSearchOption(input) {
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+
+    const scenarioName = lazy.FormScenarios.detect({ input }).signUpForm
+      ? "SignUpFormScenario"
+      : "";
+    return { fieldName: fieldDetail?.fieldName, scenarioName };
+  }
+
+  /**
+   * Ask the provider whether it might have autocomplete entry to show
+   * for the given input.
+   *
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @returns {boolean} true if we shold search for autocomplete entries
+   */
+  shouldSearchForAutoComplete(input) {
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+    if (!fieldDetail) {
+      return false;
+    }
+    const fieldName = fieldDetail.fieldName;
+    const isAddressField = lazy.FormAutofillUtils.isAddressField(fieldName);
+    const searchPermitted = isAddressField
+      ? lazy.FormAutofill.isAutofillAddressesEnabled
+      : lazy.FormAutofill.isAutofillCreditCardsEnabled;
+    // If the specified autofill feature is pref off, do not search
+    if (!searchPermitted) {
+      return false;
+    }
+
+    // No profile can fill the currently-focused input.
+    if (!lazy.FormAutofillContent.savedFieldNames.has(fieldName)) {
+      return false;
+    }
+
+    // The current form has already been populated and the field is not
+    // an empty credit card field.
+    const isCreditCardField =
+      lazy.FormAutofillUtils.isCreditCardField(fieldName);
+    const isInputAutofilled =
+      this.activeHandler.getFilledStateByElement(input) ==
+      lazy.FormAutofillUtils.FIELD_STATES.AUTO_FILLED;
+    const filledRecordGUID = this.activeSection.filledRecordGUID;
+    if (
+      !isInputAutofilled &&
+      filledRecordGUID &&
+      !(isCreditCardField && this.activeInput.value === "")
+    ) {
+      return false;
+    }
+
+    // (address only) less than 3 inputs are covered by all saved fields in the storage.
+    if (
+      isAddressField &&
+      this.activeSection.allFieldNames.filter(field =>
+        lazy.FormAutofillContent.savedFieldNames.has(field)
+      ).length < lazy.FormAutofillUtils.AUTOFILL_FIELDS_THRESHOLD
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Convert the search result to autocomplete results
+   *
+   * @param {string} searchString - The string to search for
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @param {Array<object>} records - autocomplete records
+   * @returns {AutocompleteResult}
+   */
+  searchResultToAutoCompleteResult(searchString, input, records) {
+    if (!records) {
+      return null;
+    }
+
+    const entries = records.records;
+    const externalEntries = records.externalEntries;
+
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+    if (!fieldDetail) {
+      return null;
+    }
+
+    const adaptedRecords = this.activeSection.getAdaptedProfiles(entries);
+    const isSecure = lazy.InsecurePasswordUtils.isFormSecure(
+      this.activeHandler.form
+    );
+    const isInputAutofilled =
+      this.activeHandler.getFilledStateByElement(input) ==
+      lazy.FormAutofillUtils.FIELD_STATES.AUTO_FILLED;
+    const allFieldNames = this.activeSection.allFieldNames;
+
+    const AutocompleteResult = lazy.FormAutofillUtils.isAddressField(
+      fieldDetail.fieldName
+    )
+      ? lazy.AddressResult
+      : lazy.CreditCardResult;
+
+    const acResult = new AutocompleteResult(
+      searchString,
+      fieldDetail.fieldName,
+      allFieldNames,
+      adaptedRecords,
+      { isSecure, isInputAutofilled }
+    );
+
+    acResult.externalEntries.push(
+      ...externalEntries.map(
+        entry =>
+          new lazy.GenericAutocompleteItem(
+            entry.image,
+            entry.title,
+            entry.subtitle,
+            entry.fillMessageName,
+            entry.fillMessageData
+          )
+      )
+    );
+
+    return acResult;
   }
 }

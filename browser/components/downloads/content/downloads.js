@@ -97,8 +97,6 @@ var DownloadsPanel = {
 
     window.addEventListener("unload", this.onWindowUnload);
 
-    window.ensureCustomElements("moz-button-group");
-
     // Load and resume active downloads if required.  If there are downloads to
     // be shown in the panel, they will be loaded asynchronously.
     DownloadsCommon.initializeAllDataLinks();
@@ -327,7 +325,7 @@ var DownloadsPanel = {
     // to the browser window when the panel closes automatically.
     this.hidePanel();
 
-    BrowserDownloadsUI();
+    BrowserCommands.downloadsUI();
   },
 
   // Internal functions
@@ -868,7 +866,7 @@ var DownloadsView = {
       } else if (aEvent.shiftKey || aEvent.ctrlKey || aEvent.metaKey) {
         // We adjust the command for supported modifiers to suggest where the download
         // may be opened
-        let openWhere = target.ownerGlobal.whereToOpenLink(aEvent, false, true);
+        let openWhere = BrowserUtils.whereToOpenLink(aEvent, false, true);
         if (["tab", "window", "tabshifted"].includes(openWhere)) {
           command += ":" + openWhere;
         }

@@ -24,7 +24,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ShellService: "resource:///modules/ShellService.sys.mjs",
 });
 
@@ -52,7 +51,6 @@ const L10N = new Localization([
   "branding/brand.ftl",
   "browser/newtab/onboarding.ftl",
   "toolkit/branding/brandings.ftl",
-  "toolkit/branding/accounts.ftl",
 ]);
 
 const HOMEPAGE_PREF = "browser.startup.homepage";
@@ -872,7 +870,7 @@ const BASE_MESSAGES = () => [
       ],
       lifetime: 12,
     },
-    targeting: "!inMr2022Holdback && doesAppNeedPrivatePin",
+    targeting: "doesAppNeedPrivatePin",
   },
   {
     id: "PB_NEWTAB_COOKIE_BANNERS_PROMO",
@@ -988,7 +986,7 @@ const BASE_MESSAGES = () => [
     targeting: `source == 'newtab'
     && 'browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt'|preferenceValue == false
     && 'browser.startup.windowsLaunchOnLogin.enabled'|preferenceValue == true && isDefaultBrowser && !activeNotifications
-    && !launchOnLoginEnabled`,
+    && !launchOnLoginEnabled && !isMSIX`,
   },
   {
     id: "INFOBAR_LAUNCH_ON_LOGIN_FINAL",
@@ -1056,7 +1054,7 @@ const BASE_MESSAGES = () => [
     && messageImpressions.INFOBAR_LAUNCH_ON_LOGIN[messageImpressions.INFOBAR_LAUNCH_ON_LOGIN | length - 1]
     && messageImpressions.INFOBAR_LAUNCH_ON_LOGIN[messageImpressions.INFOBAR_LAUNCH_ON_LOGIN | length - 1] <
       currentDate|date - ${FOURTEEN_DAYS_IN_MS}
-    && !launchOnLoginEnabled`,
+    && !launchOnLoginEnabled && !isMSIX`,
   },
   {
     id: "FOX_DOODLE_SET_DEFAULT",
@@ -1375,9 +1373,8 @@ export const OnboardingMessageProvider = {
     return checkDefault && !isDefault;
   },
   _shouldShowPrivacySegmentationScreen() {
-    // Fall back to pref: browser.privacySegmentation.preferences.show
-    return lazy.NimbusFeatures.majorRelease2022.getVariable(
-      "feltPrivacyShowPreferencesSection"
+    return Services.prefs.getBoolPref(
+      "browser.privacySegmentation.preferences.show"
     );
   },
   _doesHomepageNeedReset() {

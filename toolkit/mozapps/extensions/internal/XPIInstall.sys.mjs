@@ -97,7 +97,6 @@ const PREF_XPI_FILE_WHITELISTED = "xpinstall.whitelist.fileRequest";
 const PREF_XPI_WHITELIST_REQUIRED = "xpinstall.whitelist.required";
 const PREF_XPI_WEAK_SIGNATURES_ALLOWED =
   "xpinstall.signatures.weakSignaturesTemporarilyAllowed";
-const PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT = true;
 
 const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
@@ -543,8 +542,9 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
   // WebExtensions don't use iconURLs
   addon.iconURL = null;
   addon.icons = manifest.icons || {};
-  addon.userPermissions = extension.manifestPermissions;
+  addon.userPermissions = extension.getRequiredPermissions();
   addon.optionalPermissions = extension.manifestOptionalPermissions;
+  addon.requestedPermissions = extension.getRequestedPermissions();
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
 
   function getLocale(aLocale) {
@@ -1664,12 +1664,13 @@ class AddonInstall {
           this.addon.signedDate &&
           !hasStrongSignature(this.addon)
         ) {
-          const addonAllowedByPolicies = Services.policies.getExtensionSettings(
-            this.addon.id
-          )?.temporarily_allow_weak_signatures;
+          const addonAllowedByPolicies =
+            Services.policies?.getExtensionSettings(
+              this.addon.id
+            )?.temporarily_allow_weak_signatures;
 
           const globallyAllowedByPolicies =
-            Services.policies.getExtensionSettings(
+            Services.policies?.getExtensionSettings(
               "*"
             )?.temporarily_allow_weak_signatures;
 
@@ -4411,10 +4412,7 @@ export var XPIInstall = {
   },
 
   isWeakSignatureInstallAllowed() {
-    return Services.prefs.getBoolPref(
-      PREF_XPI_WEAK_SIGNATURES_ALLOWED,
-      PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT
-    );
+    return Services.prefs.getBoolPref(PREF_XPI_WEAK_SIGNATURES_ALLOWED, false);
   },
 
   getWeakSignatureInstallPrefName() {

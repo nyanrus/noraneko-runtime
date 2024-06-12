@@ -900,7 +900,7 @@ void nsLayoutUtils::GetMarkerSpokenText(const nsIContent* aContent,
     return;
   }
 
-  if (frame->StyleContent()->ContentCount() > 0) {
+  if (!frame->StyleContent()->NonAltContentItems().IsEmpty()) {
     for (nsIFrame* child : frame->PrincipalChildList()) {
       nsIFrame::RenderedText text = child->GetRenderedText();
       aText += text.mString;
@@ -2131,6 +2131,7 @@ const nsIFrame* nsLayoutUtils::FindNearestCommonAncestorFrameWithinBlock(
 bool nsLayoutUtils::AuthorSpecifiedBorderBackgroundDisablesTheming(
     StyleAppearance aAppearance) {
   return aAppearance == StyleAppearance::NumberInput ||
+         aAppearance == StyleAppearance::PasswordInput ||
          aAppearance == StyleAppearance::Button ||
          aAppearance == StyleAppearance::Textfield ||
          aAppearance == StyleAppearance::Textarea ||
@@ -3498,7 +3499,7 @@ nsIFrame* nsLayoutUtils::GetFirstNonAnonymousFrame(nsIFrame* aFrame) {
 struct BoxToRect : public nsLayoutUtils::BoxCallback {
   const nsIFrame* mRelativeTo;
   RectCallback* mCallback;
-  uint32_t mFlags;
+  nsLayoutUtils::GetAllInFlowRectsFlags mFlags;
   // If the frame we're measuring relative to is the root, we know all frames
   // are descendants of it, so we don't need to compute the common ancestor
   // between a frame and mRelativeTo.
@@ -3510,7 +3511,8 @@ struct BoxToRect : public nsLayoutUtils::BoxCallback {
   bool mRelativeToIsTarget;
 
   BoxToRect(const nsIFrame* aTargetFrame, const nsIFrame* aRelativeTo,
-            RectCallback* aCallback, uint32_t aFlags)
+            RectCallback* aCallback,
+            nsLayoutUtils::GetAllInFlowRectsFlags aFlags)
       : mRelativeTo(aRelativeTo),
         mCallback(aCallback),
         mFlags(aFlags),
@@ -3523,21 +3525,34 @@ struct BoxToRect : public nsLayoutUtils::BoxCallback {
     const bool usingSVGOuterFrame = !!outer;
     if (!outer) {
       outer = aFrame;
-      switch (mFlags & nsLayoutUtils::RECTS_WHICH_BOX_MASK) {
-        case nsLayoutUtils::RECTS_USE_CONTENT_BOX:
-          r = aFrame->GetContentRectRelativeToSelf();
-          break;
-        case nsLayoutUtils::RECTS_USE_PADDING_BOX:
-          r = aFrame->GetPaddingRectRelativeToSelf();
-          break;
-        case nsLayoutUtils::RECTS_USE_MARGIN_BOX:
-          r = aFrame->GetMarginRectRelativeToSelf();
-          break;
-        default:  // Use the border box
-          r = aFrame->GetRectRelativeToSelf();
+      if (mFlags.contains(
+              nsLayoutUtils::GetAllInFlowRectsFlag::UseContentBox)) {
+        r = aFrame->GetContentRectRelativeToSelf();
+      } else if (mFlags.contains(
+                     nsLayoutUtils::GetAllInFlowRectsFlag::UsePaddingBox)) {
+        r = aFrame->GetPaddingRectRelativeToSelf();
+      } else if (mFlags.contains(
+                     nsLayoutUtils::GetAllInFlowRectsFlag::UseMarginBox)) {
+        r = aFrame->GetMarginRectRelativeToSelf();
+      } else if (mFlags.contains(nsLayoutUtils::GetAllInFlowRectsFlag::
+                                     UseMarginBoxWithAutoResolvedAsZero)) {
+        r = aFrame->GetRectRelativeToSelf();
+        const auto& styleMargin = aFrame->StyleMargin()->mMargin;
+        nsMargin usedMargin =
+            aFrame->GetUsedMargin().ApplySkipSides(aFrame->GetSkipSides());
+        for (const Side side : AllPhysicalSides()) {
+          if (styleMargin.Get(side).IsAuto()) {
+            usedMargin.Side(side) = 0;
+          }
+        }
+        r.Inflate(usedMargin);
+      } else {
+        // Use the border-box.
+        r = aFrame->GetRectRelativeToSelf();
       }
     }
-    if (mFlags & nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS) {
+    if (mFlags.contains(
+            nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms)) {
       const bool isAncestorKnown = [&] {
         if (mRelativeToIsRoot) {
           return true;
@@ -3568,7 +3583,7 @@ struct MOZ_RAII BoxToRectAndText : public BoxToRect {
 
   BoxToRectAndText(const nsIFrame* aTargetFrame, const nsIFrame* aRelativeTo,
                    RectCallback* aCallback, Sequence<nsString>* aTextList,
-                   uint32_t aFlags)
+                   nsLayoutUtils::GetAllInFlowRectsFlags aFlags)
       : BoxToRect(aTargetFrame, aRelativeTo, aCallback, aFlags),
         mTextList(aTextList) {}
 
@@ -3609,7 +3624,7 @@ struct MOZ_RAII BoxToRectAndText : public BoxToRect {
 void nsLayoutUtils::GetAllInFlowRects(nsIFrame* aFrame,
                                       const nsIFrame* aRelativeTo,
                                       RectCallback* aCallback,
-                                      uint32_t aFlags) {
+                                      GetAllInFlowRectsFlags aFlags) {
   BoxToRect converter(aFrame, aRelativeTo, aCallback, aFlags);
   GetAllInFlowBoxes(aFrame, &converter);
 }
@@ -3618,7 +3633,7 @@ void nsLayoutUtils::GetAllInFlowRectsAndTexts(nsIFrame* aFrame,
                                               const nsIFrame* aRelativeTo,
                                               RectCallback* aCallback,
                                               Sequence<nsString>* aTextList,
-                                              uint32_t aFlags) {
+                                              GetAllInFlowRectsFlags aFlags) {
   BoxToRectAndText converter(aFrame, aRelativeTo, aCallback, aTextList, aFlags);
   GetAllInFlowBoxes(aFrame, &converter);
 }
@@ -3649,7 +3664,7 @@ nsIFrame* nsLayoutUtils::GetContainingBlockForClientRect(nsIFrame* aFrame) {
 
 nsRect nsLayoutUtils::GetAllInFlowRectsUnion(nsIFrame* aFrame,
                                              const nsIFrame* aRelativeTo,
-                                             uint32_t aFlags) {
+                                             GetAllInFlowRectsFlags aFlags) {
   RectAccumulator accumulator;
   GetAllInFlowRects(aFrame, aRelativeTo, &accumulator, aFlags);
   return accumulator.mResultRect.IsEmpty() ? accumulator.mFirstRect
@@ -4610,7 +4625,7 @@ static nscoord AddIntrinsicSizeOffset(
     LayoutDeviceIntSize devSize = pc->Theme()->GetMinimumWidgetSize(
         pc, aFrame, disp->EffectiveAppearance());
     nscoord themeSize = pc->DevPixelsToAppUnits(
-        aAxis == eAxisVertical ? devSize.height : devSize.width);
+        aAxis == PhysicalAxis::Vertical ? devSize.height : devSize.width);
     // GetMinimumWidgetSize() returns a border-box width.
     themeSize += aOffsets.margin;
     if (themeSize > result) {
@@ -4641,7 +4656,7 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
                  aPercentageBasis.isSome(),
              "grid layout should always pass a percentage basis");
 
-  const bool horizontalAxis = MOZ_LIKELY(aAxis == eAxisHorizontal);
+  const bool horizontalAxis = MOZ_LIKELY(aAxis == PhysicalAxis::Horizontal);
 #ifdef DEBUG_INTRINSIC_WIDTH
   nsIFrame::IndentBy(stderr, gNoiseIndent);
   aFrame->ListTag(stderr);
@@ -5048,10 +5063,11 @@ nscoord nsLayoutUtils::MinSizeContributionForAxis(
 
   // Note: this method is only meant for grid/flex items.
   const nsStylePosition* const stylePos = aFrame->StylePosition();
-  StyleSize size =
-      aAxis == eAxisHorizontal ? stylePos->mMinWidth : stylePos->mMinHeight;
-  StyleMaxSize maxSize =
-      aAxis == eAxisHorizontal ? stylePos->mMaxWidth : stylePos->mMaxHeight;
+  StyleSize size = aAxis == PhysicalAxis::Horizontal ? stylePos->mMinWidth
+                                                     : stylePos->mMinHeight;
+  StyleMaxSize maxSize = aAxis == PhysicalAxis::Horizontal
+                             ? stylePos->mMaxWidth
+                             : stylePos->mMaxHeight;
   auto childWM = aFrame->GetWritingMode();
   PhysicalAxis ourInlineAxis = childWM.PhysicalAxis(LogicalAxis::Inline);
   // According to the spec, max-content and min-content should behave as the
@@ -5077,7 +5093,8 @@ nscoord nsLayoutUtils::MinSizeContributionForAxis(
       minSize = 0;
       fixedMinSize = &minSize;
     } else {
-      size = aAxis == eAxisHorizontal ? stylePos->mWidth : stylePos->mHeight;
+      size = aAxis == PhysicalAxis::Horizontal ? stylePos->mWidth
+                                               : stylePos->mHeight;
       // This is same as above: keywords should behaves as property's initial
       // values in block axis.
       if (aAxis != ourInlineAxis && size.BehavesLikeInitialValueOnBlockAxis()) {
@@ -8896,13 +8913,7 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
   }
   if (primaryFrame) {
     WritingMode writingModeOfRootScrollFrame = primaryFrame->GetWritingMode();
-    WritingMode::BlockDir blockDirOfRootScrollFrame =
-        writingModeOfRootScrollFrame.GetBlockDir();
-    WritingMode::InlineDir inlineDirOfRootScrollFrame =
-        writingModeOfRootScrollFrame.GetInlineDir();
-    if (blockDirOfRootScrollFrame == WritingMode::BlockDir::eBlockRL ||
-        (blockDirOfRootScrollFrame == WritingMode::BlockDir::eBlockTB &&
-         inlineDirOfRootScrollFrame == WritingMode::InlineDir::eInlineRTL)) {
+    if (writingModeOfRootScrollFrame.IsPhysicalRTL()) {
       metadata.SetIsAutoDirRootContentRTL(true);
     }
   }
@@ -9223,7 +9234,8 @@ CSSRect nsLayoutUtils::GetBoundingFrameRect(
   CSSRect result;
   nsIFrame* relativeTo = aRootScrollFrame->GetScrolledFrame();
   result = CSSRect::FromAppUnits(nsLayoutUtils::GetAllInFlowRectsUnion(
-      aFrame, relativeTo, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS));
+      aFrame, relativeTo,
+      nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms));
 
   // If the element is contained in a scrollable frame that is not
   // the root scroll frame, make sure to clip the result so that it is

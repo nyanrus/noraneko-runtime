@@ -63,7 +63,30 @@ export class DataSourceBase {
     this.#aggregatorApi.refreshAllLinesOnScreen();
   }
 
+  setLayout(layout) {
+    this.#aggregatorApi.setLayout(layout);
+  }
+
   formatMessages = createFormatMessages("preview/megalist.ftl");
+  static ftl = new Localization(["preview/megalist.ftl"]);
+
+  async localizeStrings(strings) {
+    const keys = Object.keys(strings);
+    const localisationIds = Object.values(strings).map(id => ({ id }));
+    const messages = await DataSourceBase.ftl.formatMessages(localisationIds);
+
+    for (let i = 0; i < messages.length; i++) {
+      let { attributes, value } = messages[i];
+      if (attributes) {
+        value = attributes.reduce(
+          (result, { name, value }) => ({ ...result, [name]: value }),
+          {}
+        );
+      }
+      strings[keys[i]] = value;
+    }
+    return strings;
+  }
 
   /**
    * Prototype for the each line.
@@ -92,6 +115,10 @@ export class DataSourceBase {
      */
     lineIsReady() {
       return true;
+    },
+
+    isEditing() {
+      return this.editingValue !== undefined;
     },
 
     copyToClipboard(text) {
@@ -135,6 +162,9 @@ export class DataSourceBase {
     refreshOnScreen() {
       this.source.refreshSingleLineOnScreen(this);
     },
+    setLayout(data) {
+      this.source.setLayout(data);
+    },
   };
 
   /**
@@ -144,7 +174,6 @@ export class DataSourceBase {
    * @returns {object} section header line
    */
   createHeaderLine(label) {
-    const toggleCommand = { id: "Toggle", label: "" };
     const result = {
       label,
       value: "",
@@ -164,17 +193,13 @@ export class DataSourceBase {
 
       lineIsReady: () => true,
 
-      commands: [toggleCommand],
+      commands: [{ id: "Toggle", label: "command-toggle" }],
 
       executeToggle() {
         this.collapsed = !this.collapsed;
         this.source.refreshAllLinesOnScreen();
       },
     };
-
-    this.formatMessages("command-toggle").then(([toggleLabel]) => {
-      toggleCommand.label = toggleLabel;
-    });
 
     return result;
   }
@@ -242,6 +267,10 @@ export class DataSourceBase {
     }
     this.lines[index].record = record;
     return this.lines[index];
+  }
+
+  cancelDialog() {
+    this.setLayout(null);
   }
 
   *enumerateLinesForMatchingRecords(searchText, stats, match) {

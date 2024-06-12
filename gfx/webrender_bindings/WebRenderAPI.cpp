@@ -537,7 +537,25 @@ bool WebRenderAPI::CheckIsRemoteTextureReady(
     layers::CompositorThread()->Dispatch(runnable.forget());
   };
 
+  bool isReady = true;
+  while (!aList->mList.empty() && isReady) {
+    auto& front = aList->mList.front();
+    isReady &= layers::RemoteTextureMap::Get()->CheckRemoteTextureReady(
+        front, callback);
+    if (isReady) {
+      aList->mList.pop();
+    }
+  }
+
+  if (isReady) {
+    return true;
+  }
+
+#ifndef DEBUG
   const auto maxWaitDurationMs = 10000;
+#else
+  const auto maxWaitDurationMs = 30000;
+#endif
   const auto now = TimeStamp::Now();
   const auto waitDurationMs =
       static_cast<uint32_t>((now - aTimeStamp).ToMilliseconds());
@@ -548,20 +566,7 @@ bool WebRenderAPI::CheckIsRemoteTextureReady(
     gfxCriticalNote << "RemoteTexture ready timeout";
   }
 
-  bool isReady = true;
-  while (!aList->mList.empty() && isReady) {
-    auto& front = aList->mList.front();
-    isReady &= layers::RemoteTextureMap::Get()->CheckRemoteTextureReady(
-        front, callback);
-    if (isTimeout) {
-      isReady = true;
-    }
-    if (isReady) {
-      aList->mList.pop();
-    }
-  }
-
-  return isReady;
+  return false;
 }
 
 void WebRenderAPI::WaitRemoteTextureReady(
@@ -1256,11 +1261,12 @@ wr::WrSpatialId DisplayListBuilder::DefineStickyFrame(
     const float* aRightMargin, const float* aBottomMargin,
     const float* aLeftMargin, const StickyOffsetBounds& aVerticalBounds,
     const StickyOffsetBounds& aHorizontalBounds,
-    const wr::LayoutVector2D& aAppliedOffset, wr::SpatialTreeItemKey aKey) {
+    const wr::LayoutVector2D& aAppliedOffset, wr::SpatialTreeItemKey aKey,
+    const WrAnimationProperty* aAnimation) {
   auto spatialId = wr_dp_define_sticky_frame(
       mWrState, mCurrentSpaceAndClipChain.space, aContentRect, aTopMargin,
       aRightMargin, aBottomMargin, aLeftMargin, aVerticalBounds,
-      aHorizontalBounds, aAppliedOffset, aKey);
+      aHorizontalBounds, aAppliedOffset, aKey, aAnimation);
 
   WRDL_LOG("DefineSticky id=%zu c=%s t=%s r=%s b=%s l=%s v=%s h=%s a=%s\n",
            mWrState, spatialId.id, ToString(aContentRect).c_str(),

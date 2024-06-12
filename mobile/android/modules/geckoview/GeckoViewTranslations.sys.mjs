@@ -50,8 +50,11 @@ export class GeckoViewTranslations extends GeckoViewModule {
               aData.toLanguage
             );
           try {
-            this.getActor("Translations").translate(fromLanguage, toLanguage);
-            aCallback.onSuccess();
+            this.getActor("Translations")
+              .translate(fromLanguage, toLanguage)
+              .then(() => {
+                aCallback.onSuccess();
+              });
           } catch (error) {
             aCallback.onError(`Could not translate: ${error}`);
           }
@@ -101,10 +104,11 @@ export class GeckoViewTranslations extends GeckoViewModule {
           type: "GeckoView:Translations:Offer",
         });
         break;
-      case "TranslationsParent:LanguageState":
+      case "TranslationsParent:LanguageState": {
         const {
           detectedLanguages,
           requestedTranslationPair,
+          hasVisibleChange,
           error,
           isEngineReady,
         } = aEvent.detail.actor.languageState;
@@ -112,6 +116,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
         const data = {
           detectedLanguages,
           requestedTranslationPair,
+          hasVisibleChange,
           error,
           isEngineReady,
         };
@@ -120,7 +125,9 @@ export class GeckoViewTranslations extends GeckoViewModule {
           type: "GeckoView:Translations:StateChange",
           data,
         });
+
         break;
+      }
     }
   }
 }

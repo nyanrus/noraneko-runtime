@@ -39,6 +39,7 @@ pref("security.signed_app_signatures.policy", 2);
 
 pref("security.xfocsp.errorReporting.enabled", true);
 pref("security.xfocsp.errorReporting.automatic", false);
+pref("security.xfocsp.hideOpenInNewWindow", true);
 
 // Issuer we use to detect MitM proxies. Set to the issuer of the cert of the
 // Firefox update service. The string format is whatever NSS uses to print a DN.
@@ -290,7 +291,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.navigator.video.h264.max_mbps", 0);
   pref("media.peerconnection.video.vp9_enabled", true);
   pref("media.peerconnection.video.vp9_preferred", false);
-  pref("media.getusermedia.channels", 0);
+  pref("media.getusermedia.audio.max_channels", 0);
   #if defined(ANDROID)
     pref("media.getusermedia.camera.off_while_disabled.enabled", false);
     pref("media.getusermedia.microphone.off_while_disabled.enabled", false);
@@ -344,32 +345,34 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   #endif
 
   // 770 = DTLS 1.0, 771 = DTLS 1.2, 772 = DTLS 1.3
-pref("media.peerconnection.dtls.version.min", 771);
-#ifdef NIGHTLY_BUILD
+  pref("media.peerconnection.dtls.version.min", 771);
   pref("media.peerconnection.dtls.version.max", 772);
-#else
-  pref("media.peerconnection.dtls.version.max", 771);
-#endif
 
+#if defined(XP_MACOSX)
+  // Disabled on macOS until we can address bug 1895787.
+  pref("media.getusermedia.audio.processing.platform.enabled", false);
+#else
+  pref("media.getusermedia.audio.processing.platform.enabled", false);
+#endif
   // These values (aec, agc, and noise) are from:
   // third_party/libwebrtc/modules/audio_processing/include/audio_processing.h
-  pref("media.getusermedia.aec_enabled", true);
-  pref("media.getusermedia.aec", 1); // kModerateSuppression
-  pref("media.getusermedia.use_aec_mobile", false);
-  pref("media.getusermedia.noise_enabled", true);
-  pref("media.getusermedia.noise", 2); // kHigh
-  pref("media.getusermedia.agc_enabled", true);
-  pref("media.getusermedia.agc", 1); // kAdaptiveDigital
-  pref("media.getusermedia.agc2_forced", true);
-  pref("media.getusermedia.hpf_enabled", true);
-  pref("media.getusermedia.transient_enabled", true);
+  pref("media.getusermedia.audio.processing.aec.enabled", true);
+  pref("media.getusermedia.audio.processing.aec", 1); // kModerateSuppression
+  pref("media.getusermedia.audio.processing.aec.mobile", false);
+  pref("media.getusermedia.audio.processing.noise.enabled", true);
+  pref("media.getusermedia.audio.processing.noise", 2); // kHigh
+  pref("media.getusermedia.audio.processing.agc.enabled", true);
+  pref("media.getusermedia.audio.processing.agc", 1); // kAdaptiveDigital
+  pref("media.getusermedia.audio.processing.agc2.forced", true);
+  pref("media.getusermedia.audio.processing.hpf.enabled", true);
+  pref("media.getusermedia.audio.processing.transient.enabled", true);
 #endif // MOZ_WEBRTC
 
 #if !defined(ANDROID)
   pref("media.getusermedia.screensharing.enabled", true);
 #endif
 
-pref("media.getusermedia.audiocapture.enabled", false);
+pref("media.getusermedia.audio.capture.enabled", false);
 
 // WebVTT debug logging.
 pref("media.webvtt.debug.logging", false);
@@ -474,20 +477,6 @@ pref("gfx.webrender.draw-calls-for-texture-copy", false);
 pref("accessibility.warn_on_browsewithcaret", true);
 
 pref("accessibility.browsewithcaret_shortcut.enabled", true);
-
-#ifndef XP_MACOSX
-  // Tab focus model bit field:
-  // 1 focuses text controls, 2 focuses other form elements, 4 adds links.
-  // Most users will want 1, 3, or 7.
-  // On OS X, we use Full Keyboard Access system preference,
-  // unless accessibility.tabfocus is set by the user.
-  pref("accessibility.tabfocus", 7);
-  pref("accessibility.tabfocus_applies_to_xul", false);
-#else
-  // Only on mac tabfocus is expected to handle UI widgets as well as web
-  // content.
-  pref("accessibility.tabfocus_applies_to_xul", true);
-#endif
 
 // We follow the "Click in the scrollbar to:" system preference on OS X and
 // "gtk-primary-button-warps-slider" property with GTK (since 2.24 / 3.6),
@@ -711,8 +700,8 @@ pref("devtools.performance.recording.duration.remote", 0);
 // explanations. Remote profiling also includes the java feature by default.
 // If the remote debuggee isn't an Android phone, then this feature will
 // be ignored.
-pref("devtools.performance.recording.features", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\"]");
-pref("devtools.performance.recording.features.remote", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"java\"]");
+pref("devtools.performance.recording.features", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"memory\"]");
+pref("devtools.performance.recording.features.remote", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"memory\",\"java\"]");
 // Threads to be captured by the profiler.
 pref("devtools.performance.recording.threads", "[\"GeckoMain\",\"Compositor\",\"Renderer\"]");
 pref("devtools.performance.recording.threads.remote", "[\"GeckoMain\",\"Compositor\",\"Renderer\"]");
@@ -928,7 +917,7 @@ pref("javascript.options.mem.max", -1);
 
 // JSGC_MIN_NURSERY_BYTES / JSGC_MAX_NURSERY_BYTES
 pref("javascript.options.mem.nursery.min_kb", 256);
-pref("javascript.options.mem.nursery.max_kb", 16384);
+pref("javascript.options.mem.nursery.max_kb", 65536);
 
 // JSGC_MODE
 pref("javascript.options.mem.gc_per_zone", true);
@@ -968,6 +957,9 @@ pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 16);
 #elif defined(XP_UNIX)
 pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 16);
 #endif
+
+// JSGC_MAX_MARKING_THREADS
+pref("javascript.options.mem.gc_max_parallel_marking_threads", 2);
 
 // JSGC_HIGH_FREQUENCY_TIME_LIMIT
 pref("javascript.options.mem.gc_high_frequency_time_limit_ms", 1000);
@@ -1084,8 +1076,6 @@ pref("network.protocol-handler.external.disk", false);
 pref("network.protocol-handler.external.disks", false);
 pref("network.protocol-handler.external.afp", false);
 pref("network.protocol-handler.external.moz-icon", false);
-pref("network.protocol-handler.external.firefox-bridge", false);
-pref("network.protocol-handler.external.firefox-private-bridge", false);
 
 // Don't allow  external protocol handlers for common typos
 pref("network.protocol-handler.external.ttp", false);  // http
@@ -1872,12 +1862,7 @@ pref("services.settings.poll_interval", 86400); // 24H
 pref("services.common.uptake.sampleRate", 1);   // 1%
 
 pref("extensions.abuseReport.enabled", false);
-// Whether abuse report originated from AMO should use the Firefox integrated dialog.
-pref("extensions.abuseReport.amWebAPI.enabled", false);
-pref("extensions.abuseReport.url", "https://services.addons.mozilla.org/api/v4/abuse/report/addon/");
-pref("extensions.abuseReport.amoDetailsURL", "https://services.addons.mozilla.org/api/v4/addons/addon/");
 // Whether Firefox integrated abuse reporting feature should be opening the new abuse report form hosted on AMO.
-pref("extensions.abuseReport.amoFormEnabled", false);
 pref("extensions.abuseReport.amoFormURL", "https://addons.mozilla.org/%LOCALE%/%APP%/feedback/addon/%addonID%/");
 
 // Blocklist preferences
@@ -3154,6 +3139,9 @@ pref("extensions.webextensions.restrictedDomains", "accounts-static.cdn.mozilla.
 pref("extensions.quarantinedDomains.enabled", true);
 pref("extensions.quarantinedDomains.list", "");
 
+// Include origin permissions in the install prompt for MV3 extensions.
+pref("extensions.originControls.grantByDefault", true);
+
 // Whether or not the moz-extension resource loads are remoted. For debugging
 // purposes only. Setting this to false will break moz-extension URI loading
 // unless other process sandboxing and extension remoting prefs are changed.
@@ -3301,6 +3289,7 @@ pref("network.captive-portal-service.enabled", false);
 pref("network.connectivity-service.enabled", true);
 pref("network.connectivity-service.DNSv4.domain", "example.org");
 pref("network.connectivity-service.DNSv6.domain", "example.org");
+pref("network.connectivity-service.DNS_HTTPS.domain", "cloudflare-dns.com");
 pref("network.connectivity-service.IPv4.url", "http://detectportal.firefox.com/success.txt?ipv4");
 pref("network.connectivity-service.IPv6.url", "http://detectportal.firefox.com/success.txt?ipv6");
 
@@ -3555,6 +3544,18 @@ pref("reader.content_width", 3);
 // The default relative line height in reader mode (1-9)
 pref("reader.line_height", 4);
 
+// Determines if improved text and layout menu is enabled in reader mode.
+pref("reader.improved_text_menu.enabled", false);
+
+// The default character spacing in reader mode (1-9)
+pref("reader.character_spacing", "");
+
+// The default word spacing in reader mode (1-9)
+pref("reader.word_spacing", "");
+
+// The default text alignment direction in reader mode
+pref("reader.text_alignment", "start");
+
 // The default color scheme in reader mode (light, dark, sepia, auto)
 // auto = color automatically adjusts according to ambient light level
 // (auto only works on platforms where the 'devicelight' event is enabled)
@@ -3671,6 +3672,12 @@ pref("browser.translations.chaos.timeoutMS", 0);
 pref("browser.ml.enable", false);
 // Set to "All" to see all logs, which are useful for debugging.
 pref("browser.ml.logLevel", "Error");
+// Model hub root URL used to download models.
+pref("browser.ml.modelHubRootUrl", "https://model-hub.mozilla.org/");
+// Model URL template
+pref("browser.ml.modelHubUrlTemplate", "{model}/{revision}");
+// Model cache timeout in ms
+pref("browser.ml.modelCacheTimeout", 120000);
 
 // When a user cancels this number of authentication dialogs coming from
 // a single web page in a row, all following authentication dialogs will

@@ -419,26 +419,20 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-122",
                 "win32-chromedriver-123",
             ],
-            "windows.*-32.*": [
-                "win32-chromedriver-122",
-                "win32-chromedriver-123",
-                "win32-chromedriver-124",
-            ],
             "windows.*-64.*": [
-                "win32-chromedriver-122",
-                "win32-chromedriver-123",
+                "win64-chromedriver-123",
                 "win64-chromedriver-124",
             ],
         }
 
         chromium_fetches = {
-            "linux.*": ["linux64-chromium"],
-            "macosx1015.*": ["mac-chromium"],
-            "macosx1400.*": ["mac-chromium-arm"],
-            "windows.*aarch64.*": ["win32-chromium"],
-            "windows.*-32.*": ["win32-chromium"],
-            "windows.*-64.*": ["win64-chromium"],
-            "android.*": ["linux64-chromium"],
+            "linux.*": ["linux64-chromiumdriver"],
+            "macosx1015.*": ["mac-chromiumdriver"],
+            "macosx1400.*": ["mac-chromiumdriver-arm"],
+            "windows.*aarch64.*": ["win32-chromiumdriver"],
+            "windows.*-32.*": ["win32-chromiumdriver"],
+            "windows.*-64.*": ["win64-chromiumdriver"],
+            "android.*": ["linux64-chromiumdriver"],
         }
 
         cd_extracted_name = {
@@ -581,7 +575,9 @@ def enable_code_coverage(config, tasks):
                 yield task
                 continue
             task["mozharness"].setdefault("extra-options", []).append("--code-coverage")
-            task["instance-size"] = "xlarge"
+            task["instance-size"] = "xlarge-noscratch"
+            if "jittest" in task["test-name"]:
+                task["instance-size"] = "xlarge"
 
             # Temporarily disable Mac tests on mozilla-central
             if "mac" in task["build-platform"]:

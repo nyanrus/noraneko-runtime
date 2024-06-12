@@ -2237,6 +2237,7 @@ static bool AppearanceValueAffectsFrames(StyleAppearance aAppearance,
       // We need to reframe since this affects the spinbox creation in
       // nsNumber/SearchControlFrame::CreateAnonymousContent.
       return aDefaultAppearance == StyleAppearance::NumberInput ||
+             aDefaultAppearance == StyleAppearance::PasswordInput ||
              aDefaultAppearance == StyleAppearance::Searchfield;
     case StyleAppearance::Menulist:
       // This affects the menulist button creation.
@@ -2697,12 +2698,11 @@ void nsStyleContent::TriggerImageLoads(Document& aDoc,
   }
 
   Span<const StyleContentItem> oldItems;
-  if (aOld && aOld->mContent.IsItems()) {
-    oldItems = aOld->mContent.AsItems().AsSpan();
+  if (aOld) {
+    oldItems = aOld->NonAltContentItems();
   }
 
-  auto items = mContent.AsItems().AsSpan();
-
+  auto items = NonAltContentItems();
   for (size_t i = 0; i < items.Length(); ++i) {
     const auto& item = items[i];
     if (!item.IsImage()) {

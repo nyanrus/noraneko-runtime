@@ -114,15 +114,17 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
 
   RefPtr<VideoData> v = r.unwrap();
   MOZ_ASSERT(v);
-  mPerformanceRecorder.Record(static_cast<int64_t>(decodedFrame->Timestamp()),
-                              [&](DecodeStage& aStage) {
-                                aStage.SetImageFormat(DecodeStage::YUV420P);
-                                aStage.SetResolution(decodedFrame->Width(),
-                                                     decodedFrame->Height());
-                                aStage.SetYUVColorSpace(b.mYUVColorSpace);
-                                aStage.SetColorDepth(b.mColorDepth);
-                                aStage.SetColorRange(b.mColorRange);
-                              });
+  mPerformanceRecorder.Record(
+      static_cast<int64_t>(decodedFrame->Timestamp()),
+      [&](DecodeStage& aStage) {
+        aStage.SetImageFormat(DecodeStage::YUV420P);
+        aStage.SetResolution(decodedFrame->Width(), decodedFrame->Height());
+        aStage.SetYUVColorSpace(b.mYUVColorSpace);
+        aStage.SetColorDepth(b.mColorDepth);
+        aStage.SetColorRange(b.mColorRange);
+        aStage.SetStartTimeAndEndTime(v->mTime.ToMicroseconds(),
+                                      v->GetEndTime().ToMicroseconds());
+      });
 
   if (mReorderFrames) {
     mReorderQueue.Push(std::move(v));
@@ -130,11 +132,11 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
     mUnorderedData.AppendElement(std::move(v));
   }
 
-    if (mSamples.IsEmpty()) {
-      // If we have no remaining samples in the table, then we have processed
-      // all outstanding decode requests.
-      ProcessReorderQueue(mDecodePromise, __func__);
-    }
+  if (mSamples.IsEmpty()) {
+    // If we have no remaining samples in the table, then we have processed
+    // all outstanding decode requests.
+    ProcessReorderQueue(mDecodePromise, __func__);
+  }
 }
 
 void GMPVideoDecoder::ReceivedDecodedReferenceFrame(const uint64_t aPictureId) {
@@ -201,7 +203,7 @@ void GMPVideoDecoder::Terminated() {
 }
 
 void GMPVideoDecoder::ProcessReorderQueue(
-    MozPromiseHolder<DecodePromise>& aPromise, const char* aMethodName) {
+    MozPromiseHolder<DecodePromise>& aPromise, StaticString aMethodName) {
   if (aPromise.IsEmpty()) {
     return;
   }

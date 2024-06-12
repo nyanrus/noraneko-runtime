@@ -282,7 +282,7 @@ impl Default for Options {
 }
 
 /// A subset of options meant to be changed per pipeline.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub struct PipelineOptions {
@@ -497,6 +497,8 @@ pub enum Error {
     ImageMultipleSamplers,
     #[error("{0}")]
     Custom(String),
+    #[error("overrides should not be present at this stage")]
+    Override,
 }
 
 /// Binary operation with a different logic on the GLSL side.
@@ -565,6 +567,10 @@ impl<'a, W: Write> Writer<'a, W> {
         pipeline_options: &'a PipelineOptions,
         policies: proc::BoundsCheckPolicies,
     ) -> Result<Self, Error> {
+        if !module.overrides.is_empty() {
+            return Err(Error::Override);
+        }
+
         // Check if the requested version is supported
         if !options.version.is_supported() {
             log::error!("Version {}", options.version);
@@ -2384,6 +2390,125 @@ impl<'a, W: Write> Writer<'a, W> {
                 writeln!(self.out, ");")?;
             }
             Statement::RayQuery { .. } => unreachable!(),
+            Statement::SubgroupBallot { result, predicate } => {
+                write!(self.out, "{level}")?;
+                let res_name = format!("{}{}", back::BAKE_PREFIX, result.index());
+                let res_ty = ctx.info[result].ty.inner_with(&self.module.types);
+                self.write_value_type(res_ty)?;
+                write!(self.out, " {res_name} = ")?;
+                self.named_expressions.insert(result, res_name);
+
+                write!(self.out, "subgroupBallot(")?;
+                match predicate {
+                    Some(predicate) => self.write_expr(predicate, ctx)?,
+                    None => write!(self.out, "true")?,
+                }
+                writeln!(self.out, ");")?;
+            }
+            Statement::SubgroupCollectiveOperation {
+                op,
+                collective_op,
+                argument,
+                result,
+            } => {
+                write!(self.out, "{level}")?;
+                let res_name = format!("{}{}", back::BAKE_PREFIX, result.index());
+                let res_ty = ctx.info[result].ty.inner_with(&self.module.types);
+                self.write_value_type(res_ty)?;
+                write!(self.out, " {res_name} = ")?;
+                self.named_expressions.insert(result, res_name);
+
+                match (collective_op, op) {
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::All) => {
+                        write!(self.out, "subgroupAll(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Any) => {
+                        write!(self.out, "subgroupAny(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Add) => {
+                        write!(self.out, "subgroupAdd(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Mul) => {
+                        write!(self.out, "subgroupMul(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Max) => {
+                        write!(self.out, "subgroupMax(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Min) => {
+                        write!(self.out, "subgroupMin(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::And) => {
+                        write!(self.out, "subgroupAnd(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Or) => {
+                        write!(self.out, "subgroupOr(")?
+                    }
+                    (crate::CollectiveOperation::Reduce, crate::SubgroupOperation::Xor) => {
+                        write!(self.out, "subgroupXor(")?
+                    }
+                    (crate::CollectiveOperation::ExclusiveScan, crate::SubgroupOperation::Add) => {
+                        write!(self.out, "subgroupExclusiveAdd(")?
+                    }
+                    (crate::CollectiveOperation::ExclusiveScan, crate::SubgroupOperation::Mul) => {
+                        write!(self.out, "subgroupExclusiveMul(")?
+                    }
+                    (crate::CollectiveOperation::InclusiveScan, crate::SubgroupOperation::Add) => {
+                        write!(self.out, "subgroupInclusiveAdd(")?
+                    }
+                    (crate::CollectiveOperation::InclusiveScan, crate::SubgroupOperation::Mul) => {
+                        write!(self.out, "subgroupInclusiveMul(")?
+                    }
+                    _ => unimplemented!(),
+                }
+                self.write_expr(argument, ctx)?;
+                writeln!(self.out, ");")?;
+            }
+            Statement::SubgroupGather {
+                mode,
+                argument,
+                result,
+            } => {
+                write!(self.out, "{level}")?;
+                let res_name = format!("{}{}", back::BAKE_PREFIX, result.index());
+                let res_ty = ctx.info[result].ty.inner_with(&self.module.types);
+                self.write_value_type(res_ty)?;
+                write!(self.out, " {res_name} = ")?;
+                self.named_expressions.insert(result, res_name);
+
+                match mode {
+                    crate::GatherMode::BroadcastFirst => {
+                        write!(self.out, "subgroupBroadcastFirst(")?;
+                    }
+                    crate::GatherMode::Broadcast(_) => {
+                        write!(self.out, "subgroupBroadcast(")?;
+                    }
+                    crate::GatherMode::Shuffle(_) => {
+                        write!(self.out, "subgroupShuffle(")?;
+                    }
+                    crate::GatherMode::ShuffleDown(_) => {
+                        write!(self.out, "subgroupShuffleDown(")?;
+                    }
+                    crate::GatherMode::ShuffleUp(_) => {
+                        write!(self.out, "subgroupShuffleUp(")?;
+                    }
+                    crate::GatherMode::ShuffleXor(_) => {
+                        write!(self.out, "subgroupShuffleXor(")?;
+                    }
+                }
+                self.write_expr(argument, ctx)?;
+                match mode {
+                    crate::GatherMode::BroadcastFirst => {}
+                    crate::GatherMode::Broadcast(index)
+                    | crate::GatherMode::Shuffle(index)
+                    | crate::GatherMode::ShuffleDown(index)
+                    | crate::GatherMode::ShuffleUp(index)
+                    | crate::GatherMode::ShuffleXor(index) => {
+                        write!(self.out, ", ")?;
+                        self.write_expr(index, ctx)?;
+                    }
+                }
+                writeln!(self.out, ");")?;
+            }
         }
 
         Ok(())
@@ -2402,7 +2527,7 @@ impl<'a, W: Write> Writer<'a, W> {
     fn write_const_expr(&mut self, expr: Handle<crate::Expression>) -> BackendResult {
         self.write_possibly_const_expr(
             expr,
-            &self.module.const_expressions,
+            &self.module.global_expressions,
             |expr| &self.info[expr],
             |writer, expr| writer.write_const_expr(expr),
         )
@@ -2536,6 +2661,7 @@ impl<'a, W: Write> Writer<'a, W> {
                     |writer, expr| writer.write_expr(expr, ctx),
                 )?;
             }
+            Expression::Override(_) => return Err(Error::Override),
             // `Access` is applied to arrays, vectors and matrices and is written as indexing
             Expression::Access { base, index } => {
                 self.write_expr(base, ctx)?;
@@ -3411,7 +3537,8 @@ impl<'a, W: Write> Writer<'a, W> {
                         let scalar_bits = ctx
                             .resolve_type(arg, &self.module.types)
                             .scalar_width()
-                            .unwrap();
+                            .unwrap()
+                            * 8;
 
                         write!(self.out, "bitfieldExtract(")?;
                         self.write_expr(arg, ctx)?;
@@ -3430,7 +3557,8 @@ impl<'a, W: Write> Writer<'a, W> {
                         let scalar_bits = ctx
                             .resolve_type(arg, &self.module.types)
                             .scalar_width()
-                            .unwrap();
+                            .unwrap()
+                            * 8;
 
                         write!(self.out, "bitfieldInsert(")?;
                         self.write_expr(arg, ctx)?;
@@ -3649,7 +3777,9 @@ impl<'a, W: Write> Writer<'a, W> {
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
             | Expression::RayQueryProceedResult
-            | Expression::WorkGroupUniformLoadResult { .. } => unreachable!(),
+            | Expression::WorkGroupUniformLoadResult { .. }
+            | Expression::SubgroupOperationResult { .. }
+            | Expression::SubgroupBallotResult => unreachable!(),
             // `ArrayLength` is written as `expr.length()` and we convert it to a uint
             Expression::ArrayLength(expr) => {
                 write!(self.out, "uint(")?;
@@ -4218,6 +4348,9 @@ impl<'a, W: Write> Writer<'a, W> {
         if flags.contains(crate::Barrier::WORK_GROUP) {
             writeln!(self.out, "{level}memoryBarrierShared();")?;
         }
+        if flags.contains(crate::Barrier::SUB_GROUP) {
+            writeln!(self.out, "{level}subgroupMemoryBarrier();")?;
+        }
         writeln!(self.out, "{level}barrier();")?;
         Ok(())
     }
@@ -4487,6 +4620,11 @@ const fn glsl_built_in(built_in: crate::BuiltIn, options: VaryingOptions) -> &'s
         Bi::WorkGroupId => "gl_WorkGroupID",
         Bi::WorkGroupSize => "gl_WorkGroupSize",
         Bi::NumWorkGroups => "gl_NumWorkGroups",
+        // subgroup
+        Bi::NumSubgroups => "gl_NumSubgroups",
+        Bi::SubgroupId => "gl_SubgroupID",
+        Bi::SubgroupSize => "gl_SubgroupSize",
+        Bi::SubgroupInvocationId => "gl_SubgroupInvocationID",
     }
 }
 

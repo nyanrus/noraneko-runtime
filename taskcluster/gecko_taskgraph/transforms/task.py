@@ -208,7 +208,7 @@ TC_TREEHERDER_SCHEMA_URL = (
 
 
 UNKNOWN_GROUP_NAME = (
-    "Treeherder group {} (from {}) has no name; " "add it to taskcluster/ci/config.yml"
+    "Treeherder group {} (from {}) has no name; " "add it to taskcluster/config.yml"
 )
 
 V2_ROUTE_TEMPLATES = [
@@ -313,7 +313,7 @@ def index_builder(name):
 
 UNSUPPORTED_INDEX_PRODUCT_ERROR = """\
 The gecko-v2 product {product} is not in the list of configured products in
-`taskcluster/ci/config.yml'.
+`taskcluster/config.yml'.
 """
 
 
@@ -842,6 +842,7 @@ def build_generic_worker_payload(config, task, task_def):
         # behavior for mac iscript
         Optional("mac-behavior"): Any(
             "apple_notarization",
+            "apple_notarization_stacked",
             "mac_sign_and_pkg",
             "mac_sign_and_pkg_hardened",
             "mac_geckodriver",
@@ -1612,7 +1613,7 @@ def task_name_from_label(config, tasks):
 
 UNSUPPORTED_SHIPPING_PRODUCT_ERROR = """\
 The shipping product {product} is not in the list of configured products in
-`taskcluster/ci/config.yml'.
+`taskcluster/config.yml'.
 """
 
 

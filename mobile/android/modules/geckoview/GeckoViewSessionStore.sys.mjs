@@ -117,19 +117,11 @@ export var GeckoViewSessionStore = {
 
     switch (aTopic) {
       case "browsing-context-did-set-embedder": {
-        if (
-          aSubject &&
-          aSubject === aSubject.top &&
-          aSubject.isContent &&
-          aSubject.embedderElement &&
-          aSubject.embedderElement.permanentKey
-        ) {
-          const permanentKey = aSubject.embedderElement.permanentKey;
-          this._browserSHistoryListener
-            .get(permanentKey)
-            ?.unregister(permanentKey);
-
-          this.getOrCreateSHistoryListener(permanentKey, aSubject, true);
+        if (aSubject === aSubject.top && aSubject.isContent) {
+          const permanentKey = aSubject.embedderElement?.permanentKey;
+          if (permanentKey) {
+            this.maybeRecreateSHistoryListener(permanentKey, aSubject);
+          }
         }
         break;
       }
@@ -151,26 +143,34 @@ export var GeckoViewSessionStore = {
     });
   },
 
-  getOrCreateSHistoryListener(
-    permanentKey,
-    browsingContext,
-    collectImmediately = false
-  ) {
+  getOrCreateSHistoryListener(permanentKey, browsingContext) {
     if (!permanentKey || browsingContext !== browsingContext.top) {
       return null;
     }
 
+    const listener = this._browserSHistoryListener.get(permanentKey);
+    if (listener) {
+      return listener;
+    }
+
+    return this.createSHistoryListener(permanentKey, browsingContext, false);
+  },
+
+  maybeRecreateSHistoryListener(permanentKey, browsingContext) {
+    const listener = this._browserSHistoryListener.get(permanentKey);
+    if (!listener || listener._browserId != browsingContext.browserId) {
+      listener?.unregister(permanentKey);
+      this.createSHistoryListener(permanentKey, browsingContext, true);
+    }
+  },
+
+  createSHistoryListener(permanentKey, browsingContext, collectImmediately) {
     const sessionHistory = browsingContext.sessionHistory;
     if (!sessionHistory) {
       return null;
     }
 
-    let listener = this._browserSHistoryListener.get(permanentKey);
-    if (listener) {
-      return listener;
-    }
-
-    listener = new SHistoryListener(browsingContext);
+    const listener = new SHistoryListener(browsingContext);
     sessionHistory.addSHistoryListener(listener);
     this._browserSHistoryListener.set(permanentKey, listener);
 
@@ -183,5 +183,52 @@ export var GeckoViewSessionStore = {
     }
 
     return listener;
+  },
+
+  updateSessionStoreFromTabListener(
+    browser,
+    browsingContext,
+    permanentKey,
+    update,
+    forStorage = false
+  ) {
+    permanentKey = browser?.permanentKey ?? permanentKey;
+    if (!permanentKey) {
+      return;
+    }
+
+    if (browsingContext.isReplaced) {
+      return;
+    }
+
+    const listener = this.getOrCreateSHistoryListener(
+      permanentKey,
+      browsingContext
+    );
+
+    if (listener) {
+      const historychange =
+        // If it is not the scheduled update (tab closed, window closed etc),
+        // try to store the loading non-web-controlled page opened in _blank
+        // first.
+        (forStorage &&
+          lazy.SessionHistory.collectNonWebControlledBlankLoadingSession(
+            browsingContext
+          )) ||
+        listener.collect(permanentKey, browsingContext, {
+          collectFull: !!update.sHistoryNeeded,
+          writeToCache: false,
+        });
+
+      if (historychange) {
+        update.data.historychange = historychange;
+      }
+    }
+
+    const win =
+      browsingContext.embedderElement?.ownerGlobal ||
+      browsingContext.currentWindowGlobal?.browsingContext?.window;
+
+    this.onTabStateUpdate(permanentKey, win, update);
   },
 };

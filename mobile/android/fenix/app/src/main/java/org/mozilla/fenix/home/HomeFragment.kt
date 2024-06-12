@@ -5,6 +5,7 @@
 package org.mozilla.fenix.home
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
@@ -13,6 +14,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -80,10 +82,12 @@ import mozilla.components.lib.state.ext.consumeFlow
 import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.service.glean.private.NoExtras
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.utils.ext.isLandscape
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.GleanMetrics.Homepage
+import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.PrivateBrowsingShortcutCfr
 import org.mozilla.fenix.HomeActivity
@@ -93,10 +97,12 @@ import org.mozilla.fenix.addons.showSnackBar
 import org.mozilla.fenix.browser.BrowserAnimator
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.tabstrip.TabStrip
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.PrivateShortcutCreateManager
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.IncompleteRedesignToolbarFeature
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.navbar.BottomToolbarContainerView
@@ -107,16 +113,19 @@ import org.mozilla.fenix.databinding.FragmentHomeBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.hideToolbar
+import org.mozilla.fenix.ext.isTablet
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.scaleToBottomOfView
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ext.updateNavBarForConfigurationChange
+import org.mozilla.fenix.home.bookmarks.BookmarksFeature
+import org.mozilla.fenix.home.bookmarks.controller.DefaultBookmarksController
 import org.mozilla.fenix.home.pocket.DefaultPocketStoriesController
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.privatebrowsing.controller.DefaultPrivateBrowsingController
-import org.mozilla.fenix.home.recentbookmarks.RecentBookmarksFeature
-import org.mozilla.fenix.home.recentbookmarks.controller.DefaultRecentBookmarksController
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabFeature
 import org.mozilla.fenix.home.recentsyncedtabs.controller.DefaultRecentSyncedTabController
 import org.mozilla.fenix.home.recenttabs.RecentTabsListFeature
@@ -132,6 +141,7 @@ import org.mozilla.fenix.home.toolbar.SearchSelectorBinding
 import org.mozilla.fenix.home.toolbar.SearchSelectorMenuBinding
 import org.mozilla.fenix.home.topsites.DefaultTopSitesView
 import org.mozilla.fenix.messaging.DefaultMessageController
+import org.mozilla.fenix.messaging.FenixMessageSurfaceId
 import org.mozilla.fenix.messaging.MessagingFeature
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.perf.MarkersFragmentLifecycleCallbacks
@@ -233,11 +243,13 @@ class HomeFragment : Fragment() {
     private val messagingFeature = ViewBoundFeatureWrapper<MessagingFeature>()
     private val recentTabsListFeature = ViewBoundFeatureWrapper<RecentTabsListFeature>()
     private val recentSyncedTabFeature = ViewBoundFeatureWrapper<RecentSyncedTabFeature>()
-    private val recentBookmarksFeature = ViewBoundFeatureWrapper<RecentBookmarksFeature>()
+    private val bookmarksFeature = ViewBoundFeatureWrapper<BookmarksFeature>()
     private val historyMetadataFeature = ViewBoundFeatureWrapper<RecentVisitsFeature>()
     private val searchSelectorBinding = ViewBoundFeatureWrapper<SearchSelectorBinding>()
     private val searchSelectorMenuBinding = ViewBoundFeatureWrapper<SearchSelectorMenuBinding>()
     private val navbarIntegration = ViewBoundFeatureWrapper<NavbarIntegration>()
+
+    private lateinit var savedLoginsLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // DO NOT ADD ANYTHING ABOVE THIS getProfilerTime CALL!
@@ -246,6 +258,7 @@ class HomeFragment : Fragment() {
         super.onCreate(savedInstanceState)
 
         bundleArgs = args.toBundle()
+        savedLoginsLauncher = registerForActivityResult { navigateToSavedLoginsFragment() }
 
         // DO NOT MOVE ANYTHING BELOW THIS addMarker CALL!
         requireComponents.core.engine.profiler?.addMarker(
@@ -301,6 +314,7 @@ class HomeFragment : Fragment() {
             messagingFeature.set(
                 feature = MessagingFeature(
                     appStore = requireComponents.appStore,
+                    surface = FenixMessageSurfaceId.HOMESCREEN,
                 ),
                 owner = viewLifecycleOwner,
                 view = binding.root,
@@ -347,9 +361,9 @@ class HomeFragment : Fragment() {
             )
         }
 
-        if (requireContext().settings().showRecentBookmarksFeature) {
-            recentBookmarksFeature.set(
-                feature = RecentBookmarksFeature(
+        if (requireContext().settings().showBookmarksHomeFeature) {
+            bookmarksFeature.set(
+                feature = BookmarksFeature(
                     appStore = components.appStore,
                     bookmarksUseCase = run {
                         requireContext().components.useCases.bookmarksUseCases
@@ -409,7 +423,7 @@ class HomeFragment : Fragment() {
                 accessPoint = TabsTrayAccessPoint.HomeRecentSyncedTab,
                 appStore = components.appStore,
             ),
-            recentBookmarksController = DefaultRecentBookmarksController(
+            bookmarksController = DefaultBookmarksController(
                 activity = activity,
                 navController = findNavController(),
                 appStore = components.appStore,
@@ -451,7 +465,11 @@ class HomeFragment : Fragment() {
             searchEngine = components.core.store.state.search.selectedOrDefaultSearchEngine,
         )
 
-        if (IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled) {
+        // We don't show the navigation bar for tablets and in landscape mode.
+        val shouldAddNavigationBar = IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled &&
+            !requireContext().isLandscape() &&
+            !isTablet()
+        if (shouldAddNavigationBar) {
             initializeNavBar(activity = activity)
         }
 
@@ -478,10 +496,26 @@ class HomeFragment : Fragment() {
         return binding.root
     }
 
+    private fun reinitializeNavBar() {
+        initializeNavBar(activity = requireActivity() as HomeActivity)
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
         homeMenuView?.dismissMenu()
+
+        // If the navbar feature could be visible, we should update it's state.
+        val shouldUpdateNavBarState =
+            IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled && !isTablet()
+        if (shouldUpdateNavBarState) {
+            updateNavBarForConfigurationChange(
+                parent = binding.homeLayout,
+                toolbarView = binding.toolbarLayout,
+                bottomToolbarContainerView = _bottomToolbarContainerView?.toolbarContainerView,
+                reinitializeNavBar = ::reinitializeNavBar,
+            )
+        }
 
         val currentWallpaperName = requireContext().settings().currentWallpaperName
         applyWallpaper(
@@ -511,7 +545,10 @@ class HomeFragment : Fragment() {
             lifecycleOwner = viewLifecycleOwner,
             homeActivity = activity,
             navController = findNavController(),
+            homeFragment = this,
             menuButton = WeakReference(menuButton),
+            onShowPinVerification = { intent -> savedLoginsLauncher.launch(intent) },
+            onBiometricAuthenticationSuccessful = ::navigateToSavedLoginsFragment,
         ).also { it.build() }
 
         _bottomToolbarContainerView = BottomToolbarContainerView(
@@ -559,7 +596,9 @@ class HomeFragment : Fragment() {
                             onMenuButtonClick = {
                                 findNavController().nav(
                                     findNavController().currentDestination?.id,
-                                    HomeFragmentDirections.actionGlobalMenuDialogFragment(),
+                                    HomeFragmentDirections.actionGlobalMenuDialogFragment(
+                                        accesspoint = MenuAccessPoint.Home,
+                                    ),
                                 )
                             },
                         )
@@ -682,7 +721,10 @@ class HomeFragment : Fragment() {
             lifecycleOwner = viewLifecycleOwner,
             homeActivity = activity as HomeActivity,
             navController = findNavController(),
+            homeFragment = this,
             menuButton = WeakReference(binding.menuButton),
+            onShowPinVerification = { intent -> savedLoginsLauncher.launch(intent) },
+            onBiometricAuthenticationSuccessful = { navigateToSavedLoginsFragment() },
         ).also { it.build() }
 
         tabCounterView = TabCounterView(
@@ -693,7 +735,7 @@ class HomeFragment : Fragment() {
         )
 
         toolbarView?.build()
-        if (requireContext().settings().isTabletAndTabStripEnabled) {
+        if (requireContext().isTabStripEnabled()) {
             initTabStrip()
         }
 
@@ -1221,6 +1263,18 @@ class HomeFragment : Fragment() {
                         )
                     }
                 }
+        }
+    }
+
+    /**
+     * Called when authentication succeeds.
+     */
+    private fun navigateToSavedLoginsFragment() {
+        val navController = findNavController()
+        if (navController.currentDestination?.id == R.id.homeFragment) {
+            Logins.openLogins.record(NoExtras())
+            val directions = HomeFragmentDirections.actionLoginsListFragment()
+            navController.navigate(directions)
         }
     }
 

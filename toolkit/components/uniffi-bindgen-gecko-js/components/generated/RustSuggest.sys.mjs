@@ -484,7 +484,7 @@ export class SuggestStore {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                11, // suggest:uniffi_suggest_fn_constructor_suggeststore_new
+                13, // suggest:uniffi_suggest_fn_constructor_suggeststore_new
                 FfiConverterString.lower(path),
                 FfiConverterOptionalTypeRemoteSettingsConfig.lower(settingsConfig),
             )
@@ -496,7 +496,7 @@ export class SuggestStore {
         const liftError = (data) => FfiConverterTypeSuggestApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                12, // suggest:uniffi_suggest_fn_method_suggeststore_clear
+                14, // suggest:uniffi_suggest_fn_method_suggeststore_clear
                 FfiConverterTypeSuggestStore.lower(this),
             )
         }
@@ -512,7 +512,7 @@ export class SuggestStore {
         const liftError = (data) => FfiConverterTypeSuggestApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                13, // suggest:uniffi_suggest_fn_method_suggeststore_clear_dismissed_suggestions
+                15, // suggest:uniffi_suggest_fn_method_suggeststore_clear_dismissed_suggestions
                 FfiConverterTypeSuggestStore.lower(this),
             )
         }
@@ -536,7 +536,7 @@ export class SuggestStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                14, // suggest:uniffi_suggest_fn_method_suggeststore_dismiss_suggestion
+                16, // suggest:uniffi_suggest_fn_method_suggeststore_dismiss_suggestion
                 FfiConverterTypeSuggestStore.lower(this),
                 FfiConverterString.lower(rawSuggestionUrl),
             )
@@ -553,7 +553,7 @@ export class SuggestStore {
         const liftError = (data) => FfiConverterTypeSuggestApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                15, // suggest:uniffi_suggest_fn_method_suggeststore_fetch_global_config
+                17, // suggest:uniffi_suggest_fn_method_suggeststore_fetch_global_config
                 FfiConverterTypeSuggestStore.lower(this),
             )
         }
@@ -577,7 +577,7 @@ export class SuggestStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                16, // suggest:uniffi_suggest_fn_method_suggeststore_fetch_provider_config
+                18, // suggest:uniffi_suggest_fn_method_suggeststore_fetch_provider_config
                 FfiConverterTypeSuggestStore.lower(this),
                 FfiConverterTypeSuggestionProvider.lower(provider),
             )
@@ -602,7 +602,7 @@ export class SuggestStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                17, // suggest:uniffi_suggest_fn_method_suggeststore_ingest
+                19, // suggest:uniffi_suggest_fn_method_suggeststore_ingest
                 FfiConverterTypeSuggestStore.lower(this),
                 FfiConverterTypeSuggestIngestionConstraints.lower(constraints),
             )
@@ -619,7 +619,7 @@ export class SuggestStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                18, // suggest:uniffi_suggest_fn_method_suggeststore_interrupt
+                20, // suggest:uniffi_suggest_fn_method_suggeststore_interrupt
                 FfiConverterTypeSuggestStore.lower(this),
             )
         }
@@ -639,7 +639,7 @@ export class SuggestStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                19, // suggest:uniffi_suggest_fn_method_suggeststore_query
+                21, // suggest:uniffi_suggest_fn_method_suggeststore_query
                 FfiConverterTypeSuggestStore.lower(this),
                 FfiConverterTypeSuggestionQuery.lower(query),
             )
@@ -706,7 +706,7 @@ export class SuggestStoreBuilder {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                21, // suggest:uniffi_suggest_fn_constructor_suggeststorebuilder_new
+                23, // suggest:uniffi_suggest_fn_constructor_suggeststorebuilder_new
             )
         }
         try {
@@ -720,7 +720,7 @@ export class SuggestStoreBuilder {
         const liftError = (data) => FfiConverterTypeSuggestApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                22, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_build
+                24, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_build
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
             )
         }
@@ -744,7 +744,7 @@ export class SuggestStoreBuilder {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                23, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_cache_path
+                25, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_cache_path
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
                 FfiConverterString.lower(path),
             )
@@ -769,7 +769,7 @@ export class SuggestStoreBuilder {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                24, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_data_path
+                26, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_data_path
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
                 FfiConverterString.lower(path),
             )
@@ -794,9 +794,34 @@ export class SuggestStoreBuilder {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                25, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_config
+                27, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_config
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
                 FfiConverterTypeRemoteSettingsConfig.lower(config),
+            )
+        }
+        try {
+            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
+        }  catch (error) {
+            return Promise.reject(error)
+        }
+    }
+
+    remoteSettingsServer(server) {
+        const liftResult = (result) => FfiConverterTypeSuggestStoreBuilder.lift(result);
+        const liftError = null;
+        const functionCall = () => {
+            try {
+                FfiConverterTypeRemoteSettingsServer.checkType(server)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("server");
+                }
+                throw e;
+            }
+            return UniFFIScaffolding.callAsync(
+                28, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_server
+                FfiConverterTypeSuggestStoreBuilder.lower(this),
+                FfiConverterTypeRemoteSettingsServer.lower(server),
             )
         }
         try {
@@ -890,7 +915,7 @@ export class FfiConverterTypeSuggestGlobalConfig extends FfiConverterArrayBuffer
 }
 
 export class SuggestIngestionConstraints {
-    constructor({ maxSuggestions = null, providers = null } = {}) {
+    constructor({ maxSuggestions = null, providers = null, emptyOnly = false } = {}) {
         try {
             FfiConverterOptionalu64.checkType(maxSuggestions)
         } catch (e) {
@@ -907,13 +932,23 @@ export class SuggestIngestionConstraints {
             }
             throw e;
         }
+        try {
+            FfiConverterBool.checkType(emptyOnly)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("emptyOnly");
+            }
+            throw e;
+        }
         this.maxSuggestions = maxSuggestions;
         this.providers = providers;
+        this.emptyOnly = emptyOnly;
     }
     equals(other) {
         return (
             this.maxSuggestions == other.maxSuggestions &&
-            this.providers == other.providers
+            this.providers == other.providers &&
+            this.emptyOnly == other.emptyOnly
         )
     }
 }
@@ -924,17 +959,20 @@ export class FfiConverterTypeSuggestIngestionConstraints extends FfiConverterArr
         return new SuggestIngestionConstraints({
             maxSuggestions: FfiConverterOptionalu64.read(dataStream),
             providers: FfiConverterOptionalSequenceTypeSuggestionProvider.read(dataStream),
+            emptyOnly: FfiConverterBool.read(dataStream),
         });
     }
     static write(dataStream, value) {
         FfiConverterOptionalu64.write(dataStream, value.maxSuggestions);
         FfiConverterOptionalSequenceTypeSuggestionProvider.write(dataStream, value.providers);
+        FfiConverterBool.write(dataStream, value.emptyOnly);
     }
 
     static computeSize(value) {
         let totalSize = 0;
         totalSize += FfiConverterOptionalu64.computeSize(value.maxSuggestions);
         totalSize += FfiConverterOptionalSequenceTypeSuggestionProvider.computeSize(value.providers);
+        totalSize += FfiConverterBool.computeSize(value.emptyOnly);
         return totalSize
     }
 
@@ -956,6 +994,14 @@ export class FfiConverterTypeSuggestIngestionConstraints extends FfiConverterArr
         } catch (e) {
             if (e instanceof UniFFITypeError) {
                 e.addItemDescriptionPart(".providers");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterBool.checkType(value.emptyOnly);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".emptyOnly");
             }
             throw e;
         }
@@ -2078,6 +2124,14 @@ import {
 // Export the FFIConverter object to make external types work.
 export { FfiConverterTypeRemoteSettingsConfig, RemoteSettingsConfig };
 
+import {
+  FfiConverterTypeRemoteSettingsServer,
+  RemoteSettingsServer,
+} from "resource://gre/modules/RustRemoteSettings.sys.mjs";
+
+// Export the FFIConverter object to make external types work.
+export { FfiConverterTypeRemoteSettingsServer, RemoteSettingsServer };
+
 
 
 
@@ -2104,7 +2158,7 @@ export function rawSuggestionUrlMatches(rawUrl,url) {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                26, // suggest:uniffi_suggest_fn_func_raw_suggestion_url_matches
+                29, // suggest:uniffi_suggest_fn_func_raw_suggestion_url_matches
                 FfiConverterString.lower(rawUrl),
                 FfiConverterString.lower(url),
             )

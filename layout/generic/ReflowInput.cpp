@@ -953,21 +953,10 @@ void ReflowInput::ApplyRelativePositioning(nsIFrame* aFrame,
   const nsStyleDisplay* display = aFrame->StyleDisplay();
   if (StylePositionProperty::Relative == display->mPosition) {
     *aPosition += nsPoint(aComputedOffsets.left, aComputedOffsets.top);
-  } else if (StylePositionProperty::Sticky == display->mPosition &&
-             !aFrame->GetNextContinuation() && !aFrame->GetPrevContinuation() &&
-             !aFrame->HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT)) {
-    // Sticky positioning for elements with multiple frames needs to be
-    // computed all at once. We can't safely do that here because we might be
-    // partway through (re)positioning the frames, so leave it until the scroll
-    // container reflows and calls StickyScrollContainer::UpdatePositions.
-    // For single-frame sticky positioned elements, though, go ahead and apply
-    // it now to avoid unnecessary overflow updates later.
-    StickyScrollContainer* ssc =
-        StickyScrollContainer::GetStickyScrollContainerForFrame(aFrame);
-    if (ssc) {
-      *aPosition = ssc->ComputePosition(aFrame);
-    }
   }
+  // For sticky positioned elements, we'll leave them until the scroll container
+  // reflows and calls StickyScrollContainer::UpdatePositions() to update their
+  // positions.
 }
 
 // static
@@ -1123,9 +1112,9 @@ void ReflowInput::CalculateBorderPaddingMargin(
     nscoord* aOutsideBoxSizing) const {
   WritingMode wm = GetWritingMode();
   mozilla::Side startSide =
-      wm.PhysicalSide(MakeLogicalSide(aAxis, eLogicalEdgeStart));
+      wm.PhysicalSide(MakeLogicalSide(aAxis, LogicalEdge::Start));
   mozilla::Side endSide =
-      wm.PhysicalSide(MakeLogicalSide(aAxis, eLogicalEdgeEnd));
+      wm.PhysicalSide(MakeLogicalSide(aAxis, LogicalEdge::End));
 
   nsMargin styleBorder = mStyleBorder->GetComputedBorder();
   nscoord borderStartEnd =
@@ -1228,9 +1217,9 @@ static bool AxisPolarityFlipped(LogicalAxis aThisAxis, WritingMode aThisWm,
       aThisWm.PhysicalAxis(aThisAxis) == aOtherWm.PhysicalAxis(otherAxis),
       "Physical axes must match!");
   Side thisStartSide =
-      aThisWm.PhysicalSide(MakeLogicalSide(aThisAxis, eLogicalEdgeStart));
+      aThisWm.PhysicalSide(MakeLogicalSide(aThisAxis, LogicalEdge::Start));
   Side otherStartSide =
-      aOtherWm.PhysicalSide(MakeLogicalSide(otherAxis, eLogicalEdgeStart));
+      aOtherWm.PhysicalSide(MakeLogicalSide(otherAxis, LogicalEdge::Start));
   return thisStartSide != otherStartSide;
 }
 
@@ -2549,9 +2538,9 @@ void SizeComputationInput::InitOffsets(WritingMode aCBWM, nscoord aPercentBasis,
       NS_ASSERTION(val != nscoord(0), "zero in this property is useless");
       LogicalSide side;
       if (val > 0) {
-        side = MakeLogicalSide(aAxis, eLogicalEdgeStart);
+        side = MakeLogicalSide(aAxis, LogicalEdge::Start);
       } else {
-        side = MakeLogicalSide(aAxis, eLogicalEdgeEnd);
+        side = MakeLogicalSide(aAxis, LogicalEdge::End);
         val = -val;
       }
       mComputedPadding.Side(side, wm) += val;
@@ -2742,27 +2731,28 @@ void ReflowInput::CalculateBlockSideMargins() {
 // zeros, we should compensate this by creating extra (external) leading.
 // This is necessary because without this compensation, normal line height might
 // look too tight.
-constexpr float kNormalLineHeightFactor = 1.2f;
 static nscoord GetNormalLineHeight(nsFontMetrics* aFontMetrics) {
   MOZ_ASSERT(aFontMetrics, "no font metrics");
   nscoord externalLeading = aFontMetrics->ExternalLeading();
   nscoord internalLeading = aFontMetrics->InternalLeading();
   nscoord emHeight = aFontMetrics->EmHeight();
   if (!internalLeading && !externalLeading) {
-    return NSToCoordRound(emHeight * kNormalLineHeightFactor);
+    return NSToCoordRound(static_cast<float>(emHeight) *
+                          ReflowInput::kNormalLineHeightFactor);
   }
   return emHeight + internalLeading + externalLeading;
 }
 
 static inline nscoord ComputeLineHeight(const StyleLineHeight& aLh,
-                                        const nsStyleFont& aRelativeToFont,
+                                        const nsFont& aFont, nsAtom* aLanguage,
+                                        bool aExplicitLanguage,
                                         nsPresContext* aPresContext,
                                         bool aIsVertical, nscoord aBlockBSize,
                                         float aFontSizeInflation) {
   if (aLh.IsLength()) {
     nscoord result = aLh.AsLength().ToAppUnits();
     if (aFontSizeInflation != 1.0f) {
-      result = NSToCoordRound(result * aFontSizeInflation);
+      result = NSToCoordRound(static_cast<float>(result) * aFontSizeInflation);
     }
     return result;
   }
@@ -2771,8 +2761,7 @@ static inline nscoord ComputeLineHeight(const StyleLineHeight& aLh,
     // For factor units the computed value of the line-height property
     // is found by multiplying the factor by the font's computed size
     // (adjusted for min-size prefs and text zoom).
-    return aRelativeToFont.mFont.size
-        .ScaledBy(aLh.AsNumber() * aFontSizeInflation)
+    return aFont.size.ScaledBy(aLh.AsNumber() * aFontSizeInflation)
         .ToAppUnits();
   }
 
@@ -2781,17 +2770,25 @@ static inline nscoord ComputeLineHeight(const StyleLineHeight& aLh,
     return aBlockBSize;
   }
 
-  auto size = aRelativeToFont.mFont.size;
+  auto size = aFont.size;
   size.ScaleBy(aFontSizeInflation);
 
   if (aPresContext) {
-    RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetMetricsFor(
-        aPresContext, aIsVertical, &aRelativeToFont, size,
-        /* aUseUserFontSet = */ true);
+    nsFont font = aFont;
+    font.size = size;
+    nsFontMetrics::Params params;
+    params.language = aLanguage;
+    params.explicitLanguage = aExplicitLanguage;
+    params.orientation =
+        aIsVertical ? nsFontMetrics::eVertical : nsFontMetrics::eHorizontal;
+    params.userFontSet = aPresContext->GetUserFontSet();
+    params.textPerf = aPresContext->GetTextPerfMetrics();
+    params.featureValueLookup = aPresContext->GetFontFeatureValuesLookup();
+    RefPtr<nsFontMetrics> fm = aPresContext->GetMetricsFor(font, params);
     return GetNormalLineHeight(fm);
   }
   // If we don't have a pres context, use a 1.2em fallback.
-  size.ScaleBy(kNormalLineHeightFactor);
+  size.ScaleBy(ReflowInput::kNormalLineHeightFactor);
   return size.ToAppUnits();
 }
 
@@ -2839,8 +2836,9 @@ nscoord ReflowInput::CalcLineHeight(
     nsPresContext* aPresContext, bool aIsVertical, const nsIContent* aContent,
     nscoord aBlockBSize, float aFontSizeInflation) {
   nscoord lineHeight =
-      ComputeLineHeight(aLh, aRelativeToFont, aPresContext, aIsVertical,
-                        aBlockBSize, aFontSizeInflation);
+      ComputeLineHeight(aLh, aRelativeToFont.mFont, aRelativeToFont.mLanguage,
+                        aRelativeToFont.mExplicitLanguage, aPresContext,
+                        aIsVertical, aBlockBSize, aFontSizeInflation);
 
   NS_ASSERTION(lineHeight >= 0, "ComputeLineHeight screwed up");
 
@@ -2850,8 +2848,9 @@ nscoord ReflowInput::CalcLineHeight(
     // have a line-height smaller than 'normal'.
     if (!aLh.IsNormal()) {
       nscoord normal = ComputeLineHeight(
-          StyleLineHeight::Normal(), aRelativeToFont, aPresContext, aIsVertical,
-          aBlockBSize, aFontSizeInflation);
+          StyleLineHeight::Normal(), aRelativeToFont.mFont,
+          aRelativeToFont.mLanguage, aRelativeToFont.mExplicitLanguage,
+          aPresContext, aIsVertical, aBlockBSize, aFontSizeInflation);
       if (lineHeight < normal) {
         lineHeight = normal;
       }
@@ -2859,6 +2858,17 @@ nscoord ReflowInput::CalcLineHeight(
   }
 
   return lineHeight;
+}
+
+nscoord ReflowInput::CalcLineHeightForCanvas(const StyleLineHeight& aLh,
+                                             const nsFont& aRelativeToFont,
+                                             nsAtom* aLanguage,
+                                             bool aExplicitLanguage,
+                                             nsPresContext* aPresContext,
+                                             mozilla::WritingMode aWM) {
+  return ComputeLineHeight(aLh, aRelativeToFont, aLanguage, aExplicitLanguage,
+                           aPresContext, aWM.IsVertical() && !aWM.IsSideways(),
+                           NS_UNCONSTRAINEDSIZE, 1.0f);
 }
 
 bool SizeComputationInput::ComputeMargin(WritingMode aCBWM,

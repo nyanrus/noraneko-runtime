@@ -55,12 +55,14 @@ export class _CustomizeMenu extends React.PureComponent {
             role="dialog"
             data-l10n-id="newtab-personalize-dialog-label"
           >
-            <button
-              onClick={() => this.props.onClose()}
-              className="close-button"
-              data-l10n-id="newtab-custom-close-button"
-              ref={c => (this.closeButton = c)}
-            />
+            <div className="close-button-wrapper">
+              <button
+                onClick={() => this.props.onClose()}
+                className="close-button"
+                data-l10n-id="newtab-custom-close-button"
+                ref={c => (this.closeButton = c)}
+              />
+            </div>
             <ContentSection
               openPreferences={this.props.openPreferences}
               setPref={this.props.setPref}
@@ -71,6 +73,7 @@ export class _CustomizeMenu extends React.PureComponent {
               mayHaveSponsoredTopSites={this.props.mayHaveSponsoredTopSites}
               mayHaveSponsoredStories={this.props.mayHaveSponsoredStories}
               mayHaveRecentSaves={this.props.DiscoveryStream.recentSavesEnabled}
+              mayHaveWeather={this.props.mayHaveWeather}
               spocMessageVariant={this.props.spocMessageVariant}
               dispatch={this.props.dispatch}
             />

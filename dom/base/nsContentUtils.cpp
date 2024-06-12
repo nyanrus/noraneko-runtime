@@ -3011,6 +3011,18 @@ nsINode* nsContentUtils::GetCommonAncestorHelper(nsINode* aNode1,
 }
 
 /* static */
+nsINode* nsContentUtils::GetClosestCommonShadowIncludingInclusiveAncestor(
+    nsINode* aNode1, nsINode* aNode2) {
+  if (aNode1 == aNode2) {
+    return aNode1;
+  }
+
+  return GetCommonAncestorInternal(aNode1, aNode2, [](nsINode* aNode) {
+    return aNode->GetParentOrShadowHostNode();
+  });
+}
+
+/* static */
 nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorHelper(
     nsIContent* aContent1, nsIContent* aContent2) {
   return GetCommonAncestorInternal(
@@ -6998,25 +7010,6 @@ bool nsContentUtils::PlatformToDOMLineBreaks(nsString& aString,
   return true;
 }
 
-void nsContentUtils::PopulateStringFromStringBuffer(nsStringBuffer* aBuf,
-                                                    nsAString& aResultString) {
-  MOZ_ASSERT(aBuf, "Expecting a non-null string buffer");
-
-  uint32_t stringLen = NS_strlen(static_cast<char16_t*>(aBuf->Data()));
-
-  // SANITY CHECK: In case the nsStringBuffer isn't correctly
-  // null-terminated, let's clamp its length using the allocated size, to be
-  // sure the resulting string doesn't sample past the end of the the buffer.
-  // (Note that StorageSize() is in units of bytes, so we have to convert that
-  // to units of PRUnichars, and subtract 1 for the null-terminator.)
-  uint32_t allocStringLen = (aBuf->StorageSize() / sizeof(char16_t)) - 1;
-  MOZ_ASSERT(stringLen <= allocStringLen,
-             "string buffer lacks null terminator!");
-  stringLen = std::min(stringLen, allocStringLen);
-
-  aBuf->ToString(stringLen, aResultString);
-}
-
 already_AddRefed<nsContentList> nsContentUtils::GetElementsByClassName(
     nsINode* aRootNode, const nsAString& aClasses) {
   MOZ_ASSERT(aRootNode, "Must have root node");
@@ -7442,8 +7435,12 @@ int32_t nsContentUtils::GetAdjustedOffsetInTextControl(nsIFrame* aOffsetFrame,
 // static
 bool nsContentUtils::IsPointInSelection(
     const mozilla::dom::Selection& aSelection, const nsINode& aNode,
-    const uint32_t aOffset) {
-  if (aSelection.IsCollapsed()) {
+    const uint32_t aOffset, const bool aAllowCrossShadowBoundary) {
+  const bool selectionIsCollapsed =
+      !aAllowCrossShadowBoundary
+          ? aSelection.IsCollapsed()
+          : aSelection.AreNormalAndCrossShadowBoundaryRangesCollapsed();
+  if (selectionIsCollapsed) {
     return false;
   }
 
@@ -7457,7 +7454,8 @@ bool nsContentUtils::IsPointInSelection(
     }
 
     // Done when we find a range that we are in
-    if (range->IsPointInRange(aNode, aOffset, IgnoreErrors())) {
+    if (range->IsPointInRange(aNode, aOffset, IgnoreErrors(),
+                              aAllowCrossShadowBoundary)) {
       return true;
     }
   }
@@ -8211,7 +8209,7 @@ nsresult nsContentUtils::IPCTransferableToTransferable(
     aTransferable->SetCookieJarSettings(cookieJarSettings);
   }
   aTransferable->SetReferrerInfo(aIPCTransferable.referrerInfo());
-  aTransferable->SetRequestingPrincipal(aIPCTransferable.requestingPrincipal());
+  aTransferable->SetDataPrincipal(aIPCTransferable.dataPrincipal());
   aTransferable->SetContentPolicyType(aIPCTransferable.contentPolicyType());
 
   return NS_OK;
@@ -8302,7 +8300,7 @@ nsresult nsContentUtils::CalculateBufferSizeForImage(
 }
 
 static already_AddRefed<DataSourceSurface> BigBufferToDataSurface(
-    BigBuffer& aData, uint32_t aStride, const IntSize& aImageSize,
+    const BigBuffer& aData, uint32_t aStride, const IntSize& aImageSize,
     SurfaceFormat aFormat) {
   if (!aData.Size() || !aImageSize.width || !aImageSize.height) {
     return nullptr;
@@ -8325,22 +8323,13 @@ static already_AddRefed<DataSourceSurface> BigBufferToDataSurface(
 nsresult nsContentUtils::DeserializeTransferableDataImageContainer(
     const IPCTransferableDataImageContainer& aData,
     imgIContainer** aContainer) {
-  const IntSize size(aData.width(), aData.height());
-  size_t maxBufferSize = 0;
-  size_t usedBufferSize = 0;
-  nsresult rv = CalculateBufferSizeForImage(
-      aData.stride(), size, aData.format(), &maxBufferSize, &usedBufferSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (usedBufferSize > aData.data().Size()) {
-    return NS_ERROR_FAILURE;
-  }
-  RefPtr<DataSourceSurface> surface =
-      CreateDataSourceSurfaceFromData(size, aData.format(), aData.data().Data(),
-                                      static_cast<int32_t>(aData.stride()));
+  RefPtr<DataSourceSurface> surface = IPCImageToSurface(aData.image());
   if (!surface) {
     return NS_ERROR_FAILURE;
   }
-  RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(surface, size);
+
+  RefPtr<gfxDrawable> drawable =
+      new gfxSurfaceDrawable(surface, surface->GetSize());
   nsCOMPtr<imgIContainer> imageContainer =
       image::ImageOps::CreateFromDrawable(drawable);
   imageContainer.forget(aContainer);
@@ -8472,23 +8461,16 @@ void nsContentUtils::TransferableToIPCTransferableData(
         if (!dataSurface) {
           continue;
         }
-        size_t length;
-        int32_t stride;
-        Maybe<BigBuffer> surfaceData =
-            GetSurfaceData(*dataSurface, &length, &stride);
 
-        if (surfaceData.isNothing()) {
+        auto imageData = nsContentUtils::SurfaceToIPCImage(*dataSurface);
+        if (!imageData) {
           continue;
         }
 
         IPCTransferableDataItem* item =
             aTransferableData->items().AppendElement();
         item->flavor() = flavorStr;
-
-        mozilla::gfx::IntSize size = dataSurface->GetSize();
-        item->data() = IPCTransferableDataImageContainer(
-            std::move(*surfaceData), size.width, size.height, stride,
-            dataSurface->GetFormat());
+        item->data() = IPCTransferableDataImageContainer(std::move(*imageData));
         continue;
       }
 
@@ -8569,8 +8551,7 @@ void nsContentUtils::TransferableToIPCTransferable(
 
   aIPCTransferable->data() = std::move(ipcTransferableData);
   aIPCTransferable->isPrivateData() = aTransferable->GetIsPrivateData();
-  aIPCTransferable->requestingPrincipal() =
-      aTransferable->GetRequestingPrincipal();
+  aIPCTransferable->dataPrincipal() = aTransferable->GetDataPrincipal();
   aIPCTransferable->cookieJarSettings() = std::move(cookieJarSettingsArgs);
   aIPCTransferable->contentPolicyType() = aTransferable->GetContentPolicyType();
   aIPCTransferable->referrerInfo() = aTransferable->GetReferrerInfo();
@@ -8617,7 +8598,7 @@ Maybe<IPCImage> nsContentUtils::SurfaceToIPCImage(DataSourceSurface& aSurface) {
 }
 
 already_AddRefed<DataSourceSurface> nsContentUtils::IPCImageToSurface(
-    IPCImage&& aImage) {
+    const IPCImage& aImage) {
   return BigBufferToDataSurface(aImage.data(), aImage.stride(),
                                 aImage.size().ToUnknownSize(), aImage.format());
 }

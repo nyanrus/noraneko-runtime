@@ -220,9 +220,17 @@ impl super::Device {
             multiview: context.multiview,
         };
 
-        let shader = &stage.module.naga;
-        let entry_point_index = shader
-            .module
+        let (module, info) = naga::back::pipeline_constants::process_overrides(
+            &stage.module.naga.module,
+            &stage.module.naga.info,
+            stage.constants,
+        )
+        .map_err(|e| {
+            let msg = format!("{e}");
+            crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
+        })?;
+
+        let entry_point_index = module
             .entry_points
             .iter()
             .position(|ep| ep.name.as_str() == stage.entry_point)
@@ -247,11 +255,23 @@ impl super::Device {
         };
 
         let mut output = String::new();
+        let needs_temp_options = stage.zero_initialize_workgroup_memory
+            != context.layout.naga_options.zero_initialize_workgroup_memory;
+        let mut temp_options;
+        let naga_options = if needs_temp_options {
+            // We use a conditional here, as cloning the naga_options could be expensive
+            // That is, we want to avoid doing that unless we cannot avoid it
+            temp_options = context.layout.naga_options.clone();
+            temp_options.zero_initialize_workgroup_memory = stage.zero_initialize_workgroup_memory;
+            &temp_options
+        } else {
+            &context.layout.naga_options
+        };
         let mut writer = glsl::Writer::new(
             &mut output,
-            &shader.module,
-            &shader.info,
-            &context.layout.naga_options,
+            &module,
+            &info,
+            naga_options,
             &pipeline_options,
             policies,
         )
@@ -269,8 +289,8 @@ impl super::Device {
 
         context.consume_reflection(
             gl,
-            &shader.module,
-            shader.info.get_entry_point(entry_point_index),
+            &module,
+            info.get_entry_point(entry_point_index),
             reflection_info,
             naga_stage,
             program,
@@ -297,6 +317,7 @@ impl super::Device {
                 naga_stage: naga_stage.to_owned(),
                 shader_id: stage.module.id,
                 entry_point: stage.entry_point.to_owned(),
+                zero_initialize_workgroup_memory: stage.zero_initialize_workgroup_memory,
             });
         }
         let mut guard = self

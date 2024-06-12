@@ -21,7 +21,7 @@ const OLD_BOOKMARK_QUERY_TRANSLATIONS = {
   MOBILE_BOOKMARKS: PlacesUtils.bookmarks.mobileGuid,
 };
 
-export var BookmarkJSONUtils = Object.freeze({
+export var BookmarkJSONUtils = {
   /**
    * Import bookmarks from a url.
    *
@@ -162,7 +162,7 @@ export var BookmarkJSONUtils = Object.freeze({
     });
     return { count, hash };
   },
-});
+};
 
 function BookmarkImporter(aReplace, aSource) {
   this._replace = aReplace;
@@ -503,21 +503,11 @@ function translateTreeTypes(node) {
 function insertFaviconForNode(node) {
   if (node.icon) {
     try {
-      // Create a fake faviconURI to use (FIXME: bug 523932)
-      let faviconURI = Services.io.newURI("fake-favicon-uri:" + node.url);
-      PlacesUtils.favicons.replaceFaviconDataFromDataURL(
-        faviconURI,
-        node.icon,
-        0,
-        Services.scriptSecurityManager.getSystemPrincipal()
-      );
-      PlacesUtils.favicons.setAndFetchFaviconForPage(
+      PlacesUtils.favicons.setFaviconForPage(
         Services.io.newURI(node.url),
-        faviconURI,
-        false,
-        PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-        null,
-        Services.scriptSecurityManager.getSystemPrincipal()
+        // Create a fake faviconURI to use (FIXME: bug 523932)
+        Services.io.newURI("fake-favicon-uri:" + node.url),
+        Services.io.newURI(node.icon)
       );
     } catch (ex) {
       console.error("Failed to import favicon data:", ex);

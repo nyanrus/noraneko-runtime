@@ -562,7 +562,11 @@ impl super::PrivateCapabilities {
 
         Self {
             family_check,
-            msl_version: if os_is_xr || version.at_least((12, 0), (15, 0), os_is_mac) {
+            msl_version: if os_is_xr || version.at_least((14, 0), (17, 0), os_is_mac) {
+                MTLLanguageVersion::V3_1
+            } else if version.at_least((13, 0), (16, 0), os_is_mac) {
+                MTLLanguageVersion::V3_0
+            } else if version.at_least((12, 0), (15, 0), os_is_mac) {
                 MTLLanguageVersion::V2_4
             } else if version.at_least((11, 0), (14, 0), os_is_mac) {
                 MTLLanguageVersion::V2_3
@@ -809,6 +813,14 @@ impl super::PrivateCapabilities {
                 None
             },
             timestamp_query_support,
+            supports_simd_scoped_operations: family_check
+                && (device.supports_family(MTLGPUFamily::Metal3)
+                    || device.supports_family(MTLGPUFamily::Mac2)
+                    || device.supports_family(MTLGPUFamily::Apple7)),
+            // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf#page=5
+            int64: family_check
+                && (device.supports_family(MTLGPUFamily::Apple3)
+                    || device.supports_family(MTLGPUFamily::Metal3)),
         }
     }
 
@@ -882,7 +894,7 @@ impl super::PrivateCapabilities {
         }
         features.set(
             F::SHADER_INT64,
-            self.msl_version >= MTLLanguageVersion::V2_3,
+            self.int64 && self.msl_version >= MTLLanguageVersion::V2_3,
         );
 
         features.set(
@@ -893,6 +905,10 @@ impl super::PrivateCapabilities {
 
         features.set(F::RG11B10UFLOAT_RENDERABLE, self.format_rg11b10_all);
         features.set(F::SHADER_UNUSED_VERTEX_OUTPUT, true);
+
+        if self.supports_simd_scoped_operations {
+            features.insert(F::SUBGROUP | F::SUBGROUP_BARRIER);
+        }
 
         features
     }
@@ -948,6 +964,8 @@ impl super::PrivateCapabilities {
                 max_vertex_buffers: self.max_vertex_buffers,
                 max_vertex_attributes: 31,
                 max_vertex_buffer_array_stride: base.max_vertex_buffer_array_stride,
+                min_subgroup_size: 4,
+                max_subgroup_size: 64,
                 max_push_constant_size: 0x1000,
                 min_uniform_buffer_offset_alignment: self.buffer_alignment as u32,
                 min_storage_buffer_offset_alignment: self.buffer_alignment as u32,

@@ -186,7 +186,7 @@ class Browsertime(Perftest):
                 # setup once all chrome versions use the new artifact setup.
                 cd_extracted_names_115 = {
                     "windows": str(
-                        pathlib.Path("{}chromedriver-win32", "chromedriver.exe")
+                        pathlib.Path("{}chromedriver-win64", "chromedriver.exe")
                     ),
                     "mac-x86_64": str(
                         pathlib.Path("{}chromedriver-mac-x64", "chromedriver")
@@ -212,7 +212,8 @@ class Browsertime(Perftest):
                     elif "win" in self.config["platform"]:
                         self.browsertime_chromedriver = (
                             self.browsertime_chromedriver.replace(
-                                "{}chromedriver.exe", cd_extracted_names_115["windows"]
+                                "{}chromedriver.exe",
+                                cd_extracted_names_115["windows"],
                             )
                         )
                     else:
@@ -598,12 +599,18 @@ class Browsertime(Perftest):
                 browsertime_options=browsertime_options, test=test
             )
 
-        return (
+        cmd = (
             [self.browsertime_node, self.browsertime_browsertimejs]
             + self.driver_paths
             + [browsertime_script]
             + browsertime_options
         )
+
+        if test.get("support_class", None):
+            LOG.info("Test support class is modifying the command...")
+            test.get("support_class").modify_command(cmd, test)
+
+        return cmd
 
     def _compose_gecko_profiler_cmds(self, test, priority1_options):
         """Modify the command line options for running the gecko profiler
@@ -623,7 +630,7 @@ class Browsertime(Perftest):
             (
                 "gecko_profile_features",
                 "--firefox.geckoProfilerParams.features",
-                "js,stackwalk,cpu,screenshots",
+                "js,stackwalk,cpu,screenshots,memory",
             ),
             (
                 "gecko_profile_threads",
@@ -915,10 +922,6 @@ class Browsertime(Perftest):
         # timeout is a single page-load timeout value (ms) from the test INI
         # this will be used for btime --timeouts.pageLoad
         cmd = self._compose_cmd(test, timeout)
-
-        if test.get("support_class", None):
-            LOG.info("Test support class is modifying the command...")
-            test.get("support_class").modify_command(cmd, test)
 
         output_timeout = BROWSERTIME_PAGELOAD_OUTPUT_TIMEOUT
         if test.get("type", "") == "scenario":

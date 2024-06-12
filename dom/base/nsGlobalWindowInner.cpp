@@ -48,6 +48,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerMarkersPrerequisites.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/BounceTrackingStorageObserver.h"
 #include "mozilla/CallState.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -3502,18 +3503,7 @@ double nsGlobalWindowInner::GetDevicePixelRatio(CallerType aCallerType,
 
   if (nsIGlobalObject::ShouldResistFingerprinting(
           aCallerType, RFPTarget::WindowDevicePixelRatio)) {
-    // Spoofing the DevicePixelRatio causes blurriness in some situations
-    // on HiDPI displays. pdf.js is a non-system caller; but it can't
-    // expose the fingerprintable information, so we can safely disable
-    // spoofing in this situation. It doesn't address the issue for
-    // web-rendered content (including pdf.js instances on the web.)
-    // In the future we hope to have a better solution to fix all HiDPI
-    // blurriness...
-    nsAutoCString origin;
-    nsresult rv = this->GetPrincipal()->GetOrigin(origin);
-    if (NS_FAILED(rv) || origin != "resource://pdf.js"_ns) {
-      return 1.0;
-    }
+    return 2.0;
   }
 
   if (aCallerType == CallerType::NonSystem) {
@@ -4648,6 +4638,19 @@ already_AddRefed<nsICSSDeclaration> nsGlobalWindowInner::GetComputedStyleHelper(
                             aError, nullptr);
 }
 
+void nsGlobalWindowInner::MaybeNotifyStorageKeyUsed() {
+  // Only notify once per window lifetime.
+  if (hasNotifiedStorageKeyUsed) {
+    return;
+  }
+  nsresult rv =
+      BounceTrackingStorageObserver::OnInitialStorageAccess(GetWindowContext());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+  hasNotifiedStorageKeyUsed = true;
+}
+
 Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
   nsIPrincipal* principal = GetPrincipal();
   nsIPrincipal* storagePrincipal;
@@ -4769,6 +4772,8 @@ Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
       return nullptr;
     }
   }
+
+  MaybeNotifyStorageKeyUsed();
 
   MOZ_LOG(gDOMLeakPRLogInner, LogLevel::Debug,
           ("nsGlobalWindowInner %p returns %p sessionStorage", this,
@@ -4938,6 +4943,8 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
         new PartitionedLocalStorage(this, principal, storagePrincipal, cache);
   }
 
+  MaybeNotifyStorageKeyUsed();
+
   MOZ_ASSERT(mLocalStorage);
   MOZ_ASSERT(
       mLocalStorage->Type() ==
@@ -4956,6 +4963,8 @@ IDBFactory* nsGlobalWindowInner::GetIndexedDB(JSContext* aCx,
       mIndexedDB = res.unwrap();
     }
   }
+
+  MaybeNotifyStorageKeyUsed();
 
   return mIndexedDB;
 }

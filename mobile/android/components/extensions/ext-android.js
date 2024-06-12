@@ -129,8 +129,7 @@ class WindowTracker extends WindowTrackerBase {
   getCurrentWindow(context) {
     // In GeckoView the popup is on a separate window so getCurrentWindow for
     // the popup should return whatever is the topWindow.
-    // TODO: Bug 1651506 use context?.viewType === "popup" instead
-    if (context?.currentWindow?.moduleManager.settings.isPopup) {
+    if (context?.viewType === "popup") {
       return this.topWindow;
     }
     return super.getCurrentWindow(context);
@@ -281,6 +280,18 @@ class TabTracker extends TabTrackerBase {
       windowId,
       tabId: this.getId(tab),
     };
+  }
+
+  getBrowserDataForContext(context) {
+    if (["tab", "background"].includes(context.viewType)) {
+      return this.getBrowserData(context.xulBrowser);
+    } else if (context.viewType === "popup") {
+      const chromeWindow = windowTracker.getCurrentWindow(context);
+      const windowId = chromeWindow ? windowTracker.getId(chromeWindow) : -1;
+      return { tabId: -1, windowId };
+    }
+
+    return { tabId: -1, windowId: -1 };
   }
 
   get activeTab() {
@@ -467,8 +478,7 @@ class Window extends WindowBase {
   isCurrentFor(context) {
     // In GeckoView the popup is on a separate window so the current window for
     // the popup is whatever is the topWindow.
-    // TODO: Bug 1651506 use context?.viewType === "popup" instead
-    if (context?.currentWindow?.moduleManager.settings.isPopup) {
+    if (context?.viewType === "popup") {
       return mobileWindowTracker.topWindow == this.window;
     }
     return super.isCurrentFor(context);

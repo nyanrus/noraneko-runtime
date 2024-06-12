@@ -303,7 +303,7 @@ pub unsafe extern "C" fn wgpu_server_adapter_request_device(
     // TODO: in https://github.com/gfx-rs/wgpu/pull/3626/files#diff-033343814319f5a6bd781494692ea626f06f6c3acc0753a12c867b53a646c34eR97
     // which introduced the queue id parameter, the queue id is also the device id. I don't know how applicable this is to
     // other situations (this one in particular).
-    let (_, _, error) = gfx_select!(self_id => global.adapter_request_device(self_id, &desc, trace_path, Some(new_id), Some(new_id.transmute())));
+    let (_, _, error) = gfx_select!(self_id => global.adapter_request_device(self_id, &desc, trace_path, Some(new_id), Some(new_id.into_queue_id())));
     if let Some(err) = error {
         error_buf.init(err);
     }
@@ -342,7 +342,13 @@ impl ShaderModuleCompilationMessage {
         let utf16_offset;
         let utf16_length;
 
-        if let Some(location) = error.location(source) {
+        let location = match error {
+            CreateShaderModuleError::Parsing(e) => e.inner.location(source),
+            CreateShaderModuleError::Validation(e) => e.inner.location(source),
+            _ => None,
+        };
+
+        if let Some(location) = location {
             let len_utf16 = |s: &str| s.chars().map(|c| c.len_utf16() as u64).sum();
             let start = location.offset as usize;
             let end = start + location.length as usize;
@@ -945,11 +951,13 @@ impl Global {
                 base,
                 timestamp_writes,
             } => {
-                if let Err(err) = self.command_encoder_run_compute_pass_impl::<A>(
-                    self_id,
-                    base.as_ref(),
-                    timestamp_writes.as_ref(),
-                ) {
+                if let Err(err) = self
+                    .command_encoder_run_compute_pass_with_unresolved_commands::<A>(
+                        self_id,
+                        base.as_ref(),
+                        timestamp_writes.as_ref(),
+                    )
+                {
                     error_buf.init(err);
                 }
             }

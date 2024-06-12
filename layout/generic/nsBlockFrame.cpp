@@ -1186,7 +1186,8 @@ static bool IsLineClampRoot(const nsBlockFrame* aFrame) {
     return false;
   }
 
-  if (StaticPrefs::layout_css_webkit_line_clamp_block_enabled()) {
+  if (StaticPrefs::layout_css_webkit_line_clamp_block_enabled() ||
+      aFrame->PresContext()->Document()->ChromeRulesEnabled()) {
     return true;
   }
 
@@ -7979,7 +7980,7 @@ bool nsBlockFrame::MarkerIsEmpty() const {
   const nsStyleList* list = marker->StyleList();
   return marker->StyleContent()->mContent.IsNone() ||
          (list->mCounterStyle.IsNone() && list->mListStyleImage.IsNone() &&
-          marker->StyleContent()->ContentCount() == 0);
+          marker->StyleContent()->NonAltContentItems().IsEmpty());
 }
 
 void nsBlockFrame::ReflowOutsideMarker(nsIFrame* aMarkerFrame,

@@ -200,6 +200,22 @@
 # Prefs starting with "accessibility."
 #---------------------------------------------------------------------------
 
+# Tab focus model bit field:
+# 1 focuses text controls, 2 focuses other form elements, 4 adds links.
+# Most users will want 1, 3, or 7. On macOS we expose a checkbox to alter
+# between 7 and 3.
+- name: accessibility.tabfocus
+  type: int32_t
+  value: 7
+  mirror: always
+
+# Only on mac tabfocus is expected to handle UI widgets as well as web content.
+# FIXME(emilio): This is weird now that we have a lot of HTML in our pages.
+- name: accessibility.tabfocus_applies_to_xul
+  type: bool
+  value: @IS_XP_MACOSX@
+  mirror: always
+
 - name: accessibility.accesskeycausesactivation
   type: bool
   value: true
@@ -1157,12 +1173,17 @@
   value: false
   mirror: never
 
-# Whether content analysis should allow content if there is a problem communicating
-# with the agent.
-- name: browser.contentanalysis.default_allow
-  type: bool
-  value: false
-  mirror: never
+# What content analysis should return if there is a problem communicating
+# with the agent. (see DefaultResponse enum in ContentAnalysis.h)
+# Make sure these stay in sync with the out-of-range check in Policies.sys.mjs.
+#
+#   0: Block all requests
+#   1: Warn on all requests (which lets the user decide)
+#   2: Allow all requests
+- name: browser.contentanalysis.default_result
+  type: uint32_t
+  value: 0
+  mirror: always
 
 # Is the IPC pipe to the DLP tool specific to the user or to the system?
 - name: browser.contentanalysis.is_per_user
@@ -1209,6 +1230,13 @@
 - name: browser.contentanalysis.show_blocked_result
   type: bool
   value: true
+  mirror: always
+
+# Should Firefox bypass content analysis for pastes and drags whose source
+# is the same tab?
+- name: browser.contentanalysis.bypass_for_same_tab_operations
+  type: bool
+  value: false
   mirror: always
 
 # Content blocking for Enhanced Tracking Protection
@@ -1651,6 +1679,13 @@
 #endif
   mirror: once
   do_not_use_directly: true
+
+#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
+- name: browser.startup.record
+  type: bool
+  value: false
+  mirror: always
+#endif
 
 # Causes SessionStore to ignore non-final update messages from
 # browser tabs that were not caused by a flush from the parent.
@@ -2544,7 +2579,7 @@
 # to content.
 - name: dom.events.asyncClipboard.clipboardItem
   type: bool
-  value: @IS_EARLY_BETA_OR_EARLIER@
+  value: true
   mirror: always
 
 # Skips checking permission and user activation when accessing the clipboard.
@@ -3090,6 +3125,15 @@
   value: true
   mirror: always
 
+# 0 no-op
+# 1 free dirty mozjemalloc pages
+# 2 trigger memory-pressure/heap-minimize
+# 3 trigger memory-pressure/low-memory
+- name: dom.memory.memory_pressure_on_background
+  type: uint32_t
+  value: 0
+  mirror: always
+
 # Enable meta-viewport support in remote APZ-enabled frames.
 - name: dom.meta-viewport.enabled
   type: RelaxedAtomicBool
@@ -3285,6 +3329,18 @@
 # Overridden in all.js on RELEASE_OR_BETA in order to add the locked attribute.
 - name: dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
   type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Should we speculatively prefetch dns for anchor elements on http documents
+- name: dom.prefetch_dns_for_anchor_http_document
+  type: bool
+  value: true
+  mirror: always
+
+# Should we speculatively prefetch dns for anchor elements on https documents
+- name: dom.prefetch_dns_for_anchor_https_document
+  type: bool
   value: false
   mirror: always
 
@@ -6355,6 +6411,15 @@
   value: 0
   mirror: always
 
+# Meant to be used for tests only. If greater than 0 then we assert that the
+# number of active render textures increases by this amount or less.
+#ifdef DEBUG
+- name: gfx.testing.assert-render-textures-increase
+  type: RelaxedAtomicInt32
+  value: 0
+  mirror: always
+#endif
+
 - name: gfx.text.disable-aa
   type: bool
   value: false
@@ -6992,8 +7057,8 @@
   value: false
   mirror: always
 
-# Decode all images synchronously
-- name: image.decode-sync.enabled
+# Decode all images synchronously, intended to be used for reftests.
+- name: image.testing.decode-sync.enabled
   type: bool
   value: false
   mirror: always
@@ -7601,16 +7666,23 @@
    mirror: always
    set_spidermonkey_pref: startup
 
-#ifdef NIGHTLY_BUILD
-  # Experimental support for Iterator Helpers in JavaScript.
--   name: javascript.options.experimental.iterator_helpers
+# Experimental support for ArrayBuffer.prototype.transfer{,ToFixedLength}() in JavaScript.
+-   name: javascript.options.arraybuffer_transfer
     type: bool
-    value: false
+    value: true
     mirror: always
     set_spidermonkey_pref: startup
 
-  # Experimental support for New Set methods
+# Experimental support for New Set methods
 -   name: javascript.options.experimental.new_set_methods
+    type: bool
+    value: true
+    mirror: always
+    set_spidermonkey_pref: startup
+
+#ifdef NIGHTLY_BUILD
+  # Experimental support for Iterator Helpers in JavaScript.
+-   name: javascript.options.experimental.iterator_helpers
     type: bool
     value: false
     mirror: always
@@ -7643,16 +7715,14 @@
     value: false
     mirror: always
     set_spidermonkey_pref: startup
-#endif  // NIGHTLY_BUILD
 
-# Experimental support for ArrayBuffer.prototype.transfer{,ToFixedLength}() in JavaScript.
--   name: javascript.options.arraybuffer_transfer
+  # Experimental support for Float16Array in JavaScript.
+-   name: javascript.options.experimental.float16array
     type: bool
-    value: true
+    value: false
     mirror: always
     set_spidermonkey_pref: startup
 
-#ifdef NIGHTLY_BUILD
   # Experimental support for Import Assertions in JavaScript.
 -   name: javascript.options.experimental.import_attributes
     type: bool
@@ -7805,6 +7875,16 @@
     mirror: always
     set_spidermonkey_pref: startup
 
+-   name: javascript.options.wasm_branch_hinting
+    type: bool
+#if defined(ENABLE_WASM_BRANCH_HINTING)
+    value: @IS_NIGHTLY_BUILD@
+#else
+    value: false
+#endif
+    mirror: always
+    set_spidermonkey_pref: startup
+
 #if defined(ENABLE_WASM_SIMD)
 #if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
   # Enables AVX instructions support on X86/X64 platforms.
@@ -7849,6 +7929,12 @@
 #else
     value: false
 #endif
+    mirror: always
+    set_spidermonkey_pref: startup
+
+-   name: javascript.options.wasm_js_promise_integration
+    type: bool
+    value: false
     mirror: always
     set_spidermonkey_pref: startup
 
@@ -8039,11 +8125,6 @@
   type: bool
   value: false
   mirror: always
-
-- name: layers.force-shmem-tiles
-  type: bool
-  value: false
-  mirror: once
 
 - name: layers.draw-mask-debug
   type: RelaxedAtomicBool
@@ -8381,7 +8462,7 @@
 # Whether @starting-style is enabled?
 - name: layout.css.starting-style-at-rules.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -8537,6 +8618,13 @@
   mirror: always
   rust: true
 
+# Whether alt text in content is enabled.
+- name: layout.css.content.alt-text.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
 # Should stray control characters be rendered visibly?
 - name: layout.css.control-characters.visible
   type: RelaxedAtomicBool
@@ -8653,7 +8741,7 @@
 # Is support for (linear|radial|conic)-gradient color interpolation methods enabled?
 - name: layout.css.gradient-color-interpolation-method.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
   rust: true
 
@@ -8696,7 +8784,11 @@
 #   2 - Symmetrical spacing, half added to each side
 - name: layout.css.letter-spacing.model
   type: int32_t
+#ifdef NIGHTLY_BUILD
+  value: 2
+#else
   value: 0
+#endif
   mirror: always
 
 # Is support for motion-path url enabled?
@@ -8866,7 +8958,7 @@
 # Enable relative color syntax: https://drafts.csswg.org/css-color-5/#relative-colors
 - name: layout.css.relative-color-syntax.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -9406,7 +9498,7 @@
 # Is matching video-dynamic-range: high allowed?
 - name: layout.css.video-dynamic-range.allows-high
   type: RelaxedAtomicBool
-#if defined(XP_MACOSX) || defined(NIGHTLY_BUILD)
+#if defined(XP_MACOSX)
   value: true
 #else
   value: false
@@ -9768,11 +9860,6 @@
   value: @IS_NOT_ANDROID@
   mirror: always
 
-- name: media.mediasource.webm.audio.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 # Whether to enable MediaSource v2 support.
 - name: media.mediasource.experimental.enabled
   type: RelaxedAtomicBool
@@ -9935,6 +10022,13 @@
 #else
   value: false
 #endif
+  mirror: always
+
+# The codecs in the vendored ffmpeg copy are usually prefered to the other
+# codecs. This allows changing this policy for testing purposes.
+- name: media.prefer-non-ffvpx
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 - name: media.rdd-process.enabled
@@ -10861,6 +10955,14 @@
 - name: media.getusermedia.microphone.prefer_voice_stream_with_processing.enabled
   type: RelaxedAtomicBool
   value: True
+  mirror: always
+
+# Tell the audio backend to create a voice stream for later re-use before asking
+# the user for microphone permissions, if approving those permissions would
+# result in a voice stream when created later on.
+- name: media.getusermedia.microphone.voice_stream_priming.enabled
+  type: RelaxedAtomicBool
+  value: @IS_XP_MACOSX@
   mirror: always
 
 # This pref turns on legacy (non-spec) exposure of camera and microphone
@@ -11802,19 +11904,13 @@
 # Hard code the User-Agent string's CPU architecture. This pref can be removed
 # after we're confident there are no webcompat problems.
 #
-# For now, don't enable this pref for x86 Linux builds until Firefox
-# download page bugs https://github.com/mozilla/bedrock/issues/12966 and
-# https://github.com/mozilla/bedrock/issues/14012 are fixed.
-#
 # Enable for:
 # * Android (any architecture)
-# * Linux (any architecture except x86)
+# * Linux (any architecture)
 # * Other Unix-like platforms except macOS (any architecture)
 - name: network.http.useragent.freezeCpu
   type: bool
-# (When reading the next line, know that preprocessor.py doesn't
-# understand parentheses, but && is higher precedence than ||.)
-#if defined(ANDROID) || defined(XP_LINUX) && !defined(__i386__) || defined(XP_UNIX) && !defined(XP_LINUX) && !defined(XP_MACOSX)
+#if defined(XP_UNIX) && !defined(XP_MACOSX)
   value: true
 #else
   value: false
@@ -12327,7 +12423,13 @@
 
 - name: network.dns.disablePrefetchFromHTTPS
   type: bool
-  value: true
+  value: false
+  mirror: always
+
+# For testing purpose only: allow dns prefetch through proxies
+- name: network.dns.prefetch_via_proxy
+  type: bool
+  value: false
   mirror: always
 
 # Max time to shutdown the resolver threads
@@ -12395,6 +12497,15 @@
 - name: network.dns.max_any_priority_threads
   type: RelaxedAtomicUint32
   value: 24
+  mirror: always
+
+# This makes it so NS_HTTP_REFRESH_DNS is only
+# set on DNS resolutions when LOAD_FRESH_CONNECTION is set.
+# That's because we don't need to refresh DNS on
+# every page reload.
+- name: network.dns.only_refresh_on_fresh_connection
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 # The proxy type. See nsIProtocolProxyService.idl
@@ -13522,6 +13633,33 @@
   value: 10
   mirror: once
 
+# Whether flooding prevention feature is enabled or not.
+- name: places.history.floodingPrevention.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# Maximum elapsed time betwen a user interaction and a visit before starting to
+# apply flooding prevention.
+- name: places.history.floodingPrevention.maxSecondsFromLastUserInteraction
+  type: uint32_t
+  value: 3
+  mirror: always
+
+# Number of consecutive accesses to an origin in a short timeframe before
+# starting to restrict storing visits for it.
+- name: places.history.floodingPrevention.restrictionCount
+  type: uint32_t
+  value: 3
+  mirror: always
+
+# Duration of the timeframe where consecutive visits to an origin should happen
+# before starting to restrict storing visits for it.
+- name: places.history.floodingPrevention.restrictionExpireSeconds
+  type: uint32_t
+  value: 5
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "plain_text."
 #---------------------------------------------------------------------------
@@ -13584,11 +13722,9 @@
   mirror: always
 
 # Whether we attempt to generate and use document-internal PDF destinations.
-# This currently sometimes results in an internal cairo error, see bug 1725743;
-# disabled by default until that is resolved.
 - name: print.save_as_pdf.internal_destinations.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # Whether we use the CSS @page size as the paper size in PDF output.
@@ -13854,6 +13990,13 @@
   value: false
   mirror: always
   do_not_use_directly: true
+
+# Disables FPP Remote settings bucket. Allows user to stop overriding
+# of FPP overrides
+- name: privacy.fingerprintingProtection.remoteOverrides.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
 
 # We automatically decline canvas permission requests if they are not initiated
 # from user input. Just in case that breaks something, we allow the user to
@@ -14137,7 +14280,7 @@
 # Main pref to enable / disable the feature.
 - name: privacy.bounceTrackingProtection.enabled
   type: bool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: once
 
 # How long to wait for a client redirect after a navigation ends.
@@ -14169,11 +14312,26 @@
 # Whether only bounces that access storage should be considered trackers.
 - name: privacy.bounceTrackingProtection.requireStatefulBounces
   type: bool
+  value: true
+  mirror: always
+
+# Enables a mode where if bounce tracking protection is enabled it classifies
+# but does not purge trackers. This mode is helpful for testing the feature
+# without risking data loss. Telemetry is still collected normally.
+- name: privacy.bounceTrackingProtection.enableDryRunMode
+  type: bool
+  value: @IS_NOT_NIGHTLY_BUILD@
+  mirror: always
+
+# To be used in automated test environments to enable observer messages.
+- name: privacy.bounceTrackingProtection.enableTestMode
+  type: bool
   value: false
   mirror: always
 
-# To be used in test environments to enable observer messages.
-- name: privacy.bounceTrackingProtection.enableTestMode
+# Whether the migration ran to import user activation flags into the BTP user
+# activation store. Set to false to trigger a new migration.
+- name: privacy.bounceTrackingProtection.hasMigratedUserActivationData
   type: bool
   value: false
   mirror: always
@@ -14300,13 +14458,13 @@
 # Prerequisite pref for mixed display content upgrading (images, audio, video).
 - name: security.mixed_content.upgrade_display_content
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Upgrade images when the upgrading is enabled.
 - name: security.mixed_content.upgrade_display_content.image
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Upgrade audio when the upgrading is enabled.
@@ -14457,7 +14615,6 @@
   # Run content processes in headless mode and disallow
   # connections to the X server.  Requires:
   # * `webgl.out-of-process` (or else WebGL breaks)
-  # * `widget.non-native-theme.enabled` (scrollbars & form controls)
   # Changing it requires a restart because sandbox policy information
   # dependent on it is cached.  See bug 1640345 for details.
 - name: security.sandbox.content.headless
@@ -15227,6 +15384,20 @@
   value: 3
   mirror: always
 
+# The maximum overlap between pages when scrolling with
+# page-up/page-down/spacebar, as a percentage of scrollport size.
+- name: toolkit.scrollbox.pagescroll.maxOverlapPercent
+  type: RelaxedAtomicInt32
+  value: 10
+  mirror: always
+
+# The maximum overlap between pages when scrolling with
+# page-up/page-down/spacebar, in lines.
+- name: toolkit.scrollbox.pagescroll.maxOverlapLines
+  type: RelaxedAtomicInt32
+  value: 2
+  mirror: always
+
 # The lateWriteChecksStage and fastShutdownStage below represent the stage
 # of shutdown after which we (for lateWriteChecksStage) crash / gather
 # telemetry data on file writes, or (for fastShutdownStage) we call _exit(0).
@@ -15957,15 +16128,6 @@
 # Prefs starting with "widget."
 #---------------------------------------------------------------------------
 
-# Global user preference for disabling native theme in content processes.
-#
-# NOTE(emilio): When changing this make sure to update the non_native_theme
-# entry in python/mozbuild/mozbuild/mozinfo.py and test_fission_autostart.py
-- name: widget.non-native-theme.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 # Whether the non-native theme should always use system colors. Useful mostly
 # for testing forced colors mode.
 - name: widget.non-native-theme.always-high-contrast
@@ -16065,12 +16227,6 @@
 #else
   value: true
 #endif
-  mirror: always
-
-# Whether we should try to use WebRender to render widgets.
-- name: widget.non-native-theme.webrender
-  type: bool
-  value: true
   mirror: always
 
 # Whether the outline style should be one big stroke or two contrasting strokes

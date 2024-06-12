@@ -101,8 +101,6 @@ nsresult CSSStyleRuleDeclaration::SetCSSDeclaration(
   return NS_OK;
 }
 
-Document* CSSStyleRuleDeclaration::DocToUpdate() { return nullptr; }
-
 nsDOMCSSDeclaration::ParsingEnvironment
 CSSStyleRuleDeclaration::GetParsingEnvironment(
     nsIPrincipal* aSubjectPrincipal) const {
@@ -312,6 +310,18 @@ void CSSStyleRule::GetSelectorWarnings(
     entry.mIndex = warning.index;
     entry.mKind = ToWebIDLSelectorWarningKind(warning.kind);
   }
+}
+
+already_AddRefed<nsINodeList> CSSStyleRule::QuerySelectorAll(nsINode& aRoot) {
+  AutoTArray<const StyleLockedStyleRule*, 8> rules;
+  CollectStyleRules(*this, /* aDesugared = */ true, rules);
+  StyleSelectorList* list = Servo_StyleRule_GetSelectorList(&rules);
+
+  RefPtr<nsSimpleContentList> contentList = new nsSimpleContentList(&aRoot);
+  Servo_SelectorList_QueryAll(&aRoot, list, contentList.get(),
+                              /* useInvalidation */ false);
+  Servo_SelectorList_Drop(list);
+  return contentList.forget();
 }
 
 /* virtual */

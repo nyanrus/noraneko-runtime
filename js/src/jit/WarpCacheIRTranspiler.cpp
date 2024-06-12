@@ -25,6 +25,7 @@
 #include "jit/WarpSnapshot.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "vm/BytecodeLocation.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "wasm/WasmCode.h"
 
 #include "gc/ObjectKind-inl.h"
@@ -1117,10 +1118,9 @@ bool WarpCacheIRTranspiler::emitGuardNoDenseElements(ObjOperandId objId) {
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
-                                                         bool constructing) {
+bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId) {
   MDefinition* fun = getOperand(funId);
-  uint16_t expectedFlags = FunctionFlags::HasJitEntryFlags(constructing);
+  uint16_t expectedFlags = FunctionFlags::HasJitEntryFlags();
   uint16_t unexpectedFlags = 0;
 
   auto* ins =
@@ -1134,8 +1134,7 @@ bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
 bool WarpCacheIRTranspiler::emitGuardFunctionHasNoJitEntry(ObjOperandId funId) {
   MDefinition* fun = getOperand(funId);
   uint16_t expectedFlags = 0;
-  uint16_t unexpectedFlags =
-      FunctionFlags::HasJitEntryFlags(/*isConstructing=*/false);
+  uint16_t unexpectedFlags = FunctionFlags::HasJitEntryFlags();
 
   auto* ins =
       MGuardFunctionFlags::New(alloc(), fun, expectedFlags, unexpectedFlags);
@@ -1621,6 +1620,22 @@ bool WarpCacheIRTranspiler::emitLoadTypeOfObjectResult(ObjOperandId objId) {
   add(typeOf);
 
   auto* ins = MTypeOfName::New(alloc(), typeOf);
+  add(ins);
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitLoadTypeOfEqObjectResult(
+    ObjOperandId objId, TypeofEqOperand operand) {
+  MDefinition* obj = getOperand(objId);
+  auto* typeOf = MTypeOf::New(alloc(), obj);
+  add(typeOf);
+
+  auto* typeInt = MConstant::New(alloc(), Int32Value(operand.type()));
+  add(typeInt);
+
+  auto* ins = MCompare::New(alloc(), typeOf, typeInt, operand.compareOp(),
+                            MCompare::Compare_Int32);
   add(ins);
   pushResult(ins);
   return true;

@@ -216,6 +216,15 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 },
             ],
             [
+                ["--variant"],
+                {
+                    "action": "store",
+                    "dest": "variant",
+                    "default": "",
+                    "help": "specify a variant if mozharness needs to setup paths",
+                },
+            ],
+            [
                 ["--gpu-required"],
                 {
                     "action": "store_true",
@@ -698,6 +707,9 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             if c.get("threads"):
                 base_cmd.extend(["--threads", c["threads"]])
 
+            if c["variant"]:
+                base_cmd.append("--variant={}".format(c["variant"]))
+
             if c["enable_xorigin_tests"]:
                 base_cmd.append("--enable-xorigin-tests")
 
@@ -926,8 +938,17 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
             # All Linux systems need module-null-sink to be loaded, otherwise
             # media tests fail.
+
             self.run_command("pactl load-module module-null-sink")
-            self.run_command("pactl list modules short")
+            modules = self.get_output_from_command("pactl list modules short")
+            if not [l for l in modules.splitlines() if "module-x11" in l]:
+                # gnome-session isn't running, missing logind and other system services
+                # force the task to retry (return 4)
+                self.return_code = 4
+                self.fatal(
+                    "Unable to start PulseAudio and load x11 modules",
+                    exit_code=self.return_code,
+                )
 
     def stage_files(self):
         for category in SUITE_CATEGORIES:

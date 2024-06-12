@@ -868,11 +868,12 @@ translations:
           A string containing the name of the item the user tapped. These items
           include:
           main_flow_toolbar, main_flow_browser, page_settings, global_settings,
-          global_lang_settings, global_site_settings, downloads
+          global_lang_settings, global_site_settings, downloads, global_settings_from_preferences
         type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1883968
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1886851
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1890838
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1883968#c6
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1886851#c8
@@ -2826,11 +2827,11 @@ customize_home:
     notification_emails:
       - android-probes@mozilla.com
     expires: never
-  recently_saved:
+  bookmarks:
     type: boolean
     description: |
       An indication of whether the recently
-      saved section is enabled to be displayed
+      saved section is enabled to be displayed. This was previously customize_home.recently_saved.
     send_in_pings:
       - metrics
     bugs:
@@ -2936,7 +2937,8 @@ customize_home:
           toggled.
 
           We currently track: most_visited_sites, jump_back_in,
-          recently_visited, recently_saved, pocket, and contile.
+          recently_visited, bookmarks, pocket, and contile.
+          We previously tracked bookmarks as recently_saved.
       enabled:
         type: boolean
         description: "Whether or not the preference is *now* enabled"
@@ -9892,11 +9894,11 @@ recent_tabs:
       - android-probes@mozilla.com
     expires: never
 
-recent_bookmarks:
+home_bookmarks:
   shown:
     type: event
     description: |
-      Recent bookmarks section was shown to the user.
+      Bookmarks section of home was shown to the user. This was previously recent_bookmarks.shown.
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/22103
     data_reviews:
@@ -9913,8 +9915,8 @@ recent_bookmarks:
     lifetime: application
     description: |
       A counter that indicates the number of times that a user
-      has clicked on a recently saved bookmark from the home
-      screen.
+      has clicked on a bookmark from the home
+      screen. This was previously recent_bookmarks.bookmark_clicked.
     send_in_pings:
       - metrics
     bugs:
@@ -9934,8 +9936,8 @@ recent_bookmarks:
     lifetime: application
     description: |
       A counter that indicates the number of times that a user
-      has clicked the show all button for recently saved bookmarks
-      on the home screen.
+      has clicked the show all button for bookmarks
+      on the home screen. This was previously recent_bookmarks.show_all_bookmarks.
     send_in_pings:
       - metrics
     bugs:
@@ -9950,11 +9952,11 @@ recent_bookmarks:
     notification_emails:
       - android-probes@mozilla.com
     expires: never
-  recent_bookmarks_count:
+  bookmarks_count:
     type: quantity
     description: |
       The number of bookmarked items appearing in the
-      Recently Saved section on the home page.
+      Bookmarks section on the home page. This was previously recent_bookmarks.recent_bookmarks_count.
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/22075
     data_reviews:
@@ -11581,6 +11583,29 @@ debug_drawer:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1876596
     data_reviews:
       - https://github.com/mozilla-mobile/firefox-android/pull/5356
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+
+micro_survey:
+  response:
+    type: event
+    description: User response data for a micro survey.
+    extra_keys:
+      feature_name:
+        description: The name of the feature the survey is for e.g. "printing PDF".
+        type: string
+      user_selection:
+        description: |
+          The users selected option. For example, possible values are:
+          "Very satisfied", "satisfied", "neutral", "dissatisfied" and "Very dissatisfied".
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1891509
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1891509
     data_sensitivity:
       - interaction
     notification_emails:

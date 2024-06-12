@@ -41,6 +41,10 @@ let hasContainers =
   Services.prefs.getBoolPref("privacy.userContext.enabled") &&
   ContextualIdentityService.getPublicIdentities().length;
 
+const hasSelectTranslations =
+  Services.prefs.getBoolPref("browser.translations.enable") &&
+  Services.prefs.getBoolPref("browser.translations.select.enable");
+
 const example_base =
   // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/contextMenu/";
@@ -112,6 +116,7 @@ add_task(async function test_xul_text_link_label() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   // Clean up so won't affect HTML element test cases.
@@ -204,6 +209,7 @@ const kLinkItems = [
   true,
   "context-searchselect-private",
   true,
+  ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
 ];
 
 add_task(async function test_link() {
@@ -234,6 +240,7 @@ add_task(async function test_mailto() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 });
 
@@ -247,6 +254,7 @@ add_task(async function test_tel() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 });
 
@@ -272,6 +280,10 @@ add_task(async function test_image() {
         "---",
         null,
         "context-setDesktopBackground",
+        true,
+        "---",
+        null,
+        "context-take-screenshot",
         true,
       ],
       {
@@ -356,6 +368,10 @@ add_task(async function test_video_ok() {
     true,
     "context-sendvideo",
     true,
+    "---",
+    null,
+    "context-take-screenshot",
+    true,
   ]);
 
   await SpecialPowers.popPrefEnv();
@@ -403,6 +419,10 @@ add_task(async function test_video_ok() {
     "context-copyvideourl",
     true,
     "context-sendvideo",
+    true,
+    "---",
+    null,
+    "context-take-screenshot",
     true,
   ]);
 
@@ -490,6 +510,10 @@ add_task(async function test_video_bad() {
     true,
     "context-sendvideo",
     true,
+    "---",
+    null,
+    "context-take-screenshot",
+    true,
   ]);
 
   await SpecialPowers.popPrefEnv();
@@ -537,6 +561,10 @@ add_task(async function test_video_bad() {
     "context-copyvideourl",
     true,
     "context-sendvideo",
+    true,
+    "---",
+    null,
+    "context-take-screenshot",
     true,
   ]);
 
@@ -588,6 +616,10 @@ add_task(async function test_video_bad2() {
     false,
     "context-sendvideo",
     false,
+    "---",
+    null,
+    "context-take-screenshot",
+    true,
   ]);
 
   await SpecialPowers.popPrefEnv();
@@ -636,6 +668,10 @@ add_task(async function test_video_bad2() {
     false,
     "context-sendvideo",
     false,
+    "---",
+    null,
+    "context-take-screenshot",
+    true,
   ]);
 
   await SpecialPowers.popPrefEnv();
@@ -767,6 +803,10 @@ add_task(async function test_video_in_iframe() {
       true,
       "---",
       null,
+      "context-take-frame-screenshot",
+      true,
+      "---",
+      null,
       "context-viewframeinfo",
       true,
     ]),
@@ -843,6 +883,10 @@ add_task(async function test_video_in_iframe() {
       "---",
       null,
       "context-printframe",
+      true,
+      "---",
+      null,
+      "context-take-frame-screenshot",
       true,
       "---",
       null,
@@ -964,6 +1008,10 @@ add_task(async function test_image_in_iframe() {
       "---",
       null,
       "context-printframe",
+      true,
+      "---",
+      null,
+      "context-take-frame-screenshot",
       true,
       "---",
       null,
@@ -1336,6 +1384,7 @@ add_task(async function test_select_text() {
       true,
       "context-searchselect-private",
       true,
+      ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
       "---",
       null,
       "context-viewpartialsource-selection",
@@ -1369,6 +1418,9 @@ add_task(async function test_select_text_search_service_not_initialized() {
       null,
       "context-take-screenshot",
       true,
+      ...(hasSelectTranslations
+        ? ["---", null, "context-translate-selection", true]
+        : []),
       "---",
       null,
       "context-viewpartialsource-selection",
@@ -1423,6 +1475,7 @@ add_task(async function test_select_text_link() {
       true,
       "context-searchselect-private",
       true,
+      ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
       "---",
       null,
       "context-viewpartialsource-selection",
@@ -1490,6 +1543,9 @@ add_task(async function test_imagelink() {
     null,
     "context-setDesktopBackground",
     true,
+    ...(hasSelectTranslations
+      ? ["---", null, "context-translate-selection", true]
+      : []),
   ]);
 });
 
@@ -1591,6 +1647,10 @@ add_task(async function test_longdesc() {
     null,
     "context-setDesktopBackground",
     true,
+    "---",
+    null,
+    "context-take-screenshot",
+    true,
   ]);
 });
 
@@ -1682,6 +1742,7 @@ add_task(async function test_svg_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   await test_contextmenu("#svg-with-link2 > a", [
@@ -1711,6 +1772,7 @@ add_task(async function test_svg_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   await test_contextmenu("#svg-with-link3 > a", [
@@ -1740,6 +1802,7 @@ add_task(async function test_svg_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 });
 
@@ -1771,6 +1834,7 @@ add_task(async function test_svg_relative_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   await test_contextmenu("#svg-with-relative-link2 > a", [
@@ -1800,6 +1864,7 @@ add_task(async function test_svg_relative_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   await test_contextmenu("#svg-with-relative-link3 > a", [
@@ -1829,6 +1894,7 @@ add_task(async function test_svg_relative_link() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 });
 
@@ -1898,6 +1964,7 @@ add_task(async function test_background_image() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   // Don't show image related context menu commands when there is a selection
@@ -1921,6 +1988,7 @@ add_task(async function test_background_image() {
       true,
       "context-searchselect-private",
       true,
+      ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
       "---",
       null,
       "context-viewpartialsource-selection",
@@ -1989,6 +2057,7 @@ add_task(async function test_strip_on_share_on_secure_about_page() {
     true,
     "context-searchselect-private",
     true,
+    ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
   ]);
 
   // Clean up

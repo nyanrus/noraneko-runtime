@@ -127,6 +127,7 @@ struct CharacterDataChangeInfo;
 namespace mozilla {
 
 enum class CaretAssociationHint;
+enum class IsFocusableFlags : uint8_t;
 enum class PeekOffsetOption : uint16_t;
 enum class PseudoStyleType : uint8_t;
 enum class TableSelectionMode : uint32_t;
@@ -1386,7 +1387,25 @@ class nsIFrame : public nsQueryFrame {
 
   bool HasUnreflowedContainerQueryAncestor() const;
 
+  // Return True if this frame has a forced break value before it.
+  //
+  // Note: this method only checks 'break-before' property on *this* frame, and
+  // it doesn't handle forced break value propagation from its first child.
+  // Callers should handle the propagation in reflow.
+  bool ShouldBreakBefore(const ReflowInput::BreakType aBreakType) const;
+
+  // Return True if this frame has a forced break value after it.
+  //
+  // Note: this method only checks 'break-after' property on *this* frame, and
+  // it doesn't handle forced break value propagation from its last child.
+  // Callers should handle the propagation in reflow.
+  bool ShouldBreakAfter(const ReflowInput::BreakType aBreakType) const;
+
  private:
+  bool ShouldBreakBetween(const nsStyleDisplay* aDisplay,
+                          const mozilla::StyleBreakBetween aBreakBetween,
+                          const ReflowInput::BreakType aBreakType) const;
+
   // The value that the CSS page-name "auto" keyword resolves to for children
   // of this frame.
   //
@@ -4369,13 +4388,10 @@ class nsIFrame : public nsQueryFrame {
    * Also, depending on the pref accessibility.tabfocus some widgets may be
    * focusable but removed from the tab order. This is the default on
    * Mac OS X, where fewer items are focusable.
-   * @param  [in, optional] aWithMouse, is this focus query for mouse clicking
-   * @param  [in, optional] aCheckVisibility, whether to treat an invisible
-   *   frame as not focusable
    * @return whether the frame is focusable via mouse, kbd or script.
    */
-  [[nodiscard]] Focusable IsFocusable(bool aWithMouse = false,
-                                      bool aCheckVisibility = true);
+  [[nodiscard]] Focusable IsFocusable(
+      mozilla::IsFocusableFlags = mozilla::IsFocusableFlags(0));
 
  protected:
   // Helper for IsFocusable.

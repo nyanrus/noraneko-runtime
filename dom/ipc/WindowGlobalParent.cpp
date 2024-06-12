@@ -10,6 +10,7 @@
 
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/BounceTrackingStorageObserver.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/dom/InProcessParent.h"
@@ -75,7 +76,7 @@
 #include "mozilla/net/PCookieServiceParent.h"
 #include "mozilla/net/CookieServiceParent.h"
 
-#include "SessionStoreFunctions.h"
+#include "nsISessionStoreFunctions.h"
 #include "nsIXPConnect.h"
 #include "nsImportModule.h"
 #include "nsIXULRuntime.h"
@@ -1705,8 +1706,29 @@ IPCResult WindowGlobalParent::RecvSetCookies(
                         aCookies, GetBrowsingContext());
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(WindowGlobalParent, WindowContext,
-                                   mPageUseCountersWindow)
+IPCResult WindowGlobalParent::RecvOnInitialStorageAccess() {
+  DebugOnly<nsresult> rv =
+      BounceTrackingStorageObserver::OnInitialStorageAccess(this);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to notify storage access");
+  return IPC_OK();
+}
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(WindowGlobalParent)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WindowGlobalParent,
+                                                WindowContext)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPageUseCountersWindow)
+  tmp->UnlinkManager();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WindowGlobalParent,
+                                                  WindowContext)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPageUseCountersWindow)
+  if (!tmp->IsInProcess()) {
+    CycleCollectionNoteChild(cb, static_cast<BrowserParent*>(tmp->Manager()),
+                             "Manager()");
+  }
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(WindowGlobalParent,
                                                WindowContext)

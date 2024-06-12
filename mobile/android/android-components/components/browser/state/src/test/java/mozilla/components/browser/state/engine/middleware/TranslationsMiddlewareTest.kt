@@ -327,6 +327,35 @@ class TranslationsMiddlewareTest {
     }
 
     @Test
+    fun `WHEN InitTranslationsBrowserState is dispatched AND the engine is supported THEN SetNeverTranslateSitesAction is also dispatched`() = runTest {
+        // Send Action
+        translationsMiddleware.invoke(context = context, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
+
+        // Set the engine to support
+        val engineSupportedCallback = argumentCaptor<((Boolean) -> Unit)>()
+        // At least once, since InitAction also will trigger this
+        verify(engine, atLeastOnce()).isTranslationsEngineSupported(
+            onSuccess = engineSupportedCallback.capture(),
+            onError = any(),
+        )
+        engineSupportedCallback.value.invoke(true)
+
+        val neverTranslateSitesCallBack = argumentCaptor<((List<String>) -> Unit)>()
+        verify(engine, atLeastOnce()).getNeverTranslateSiteList(onSuccess = neverTranslateSitesCallBack.capture(), onError = any())
+        val mockNeverTranslate = listOf("www.mozilla.org")
+        neverTranslateSitesCallBack.value.invoke(mockNeverTranslate)
+
+        waitForIdle()
+
+        // Verifying at least once
+        verify(store, atLeastOnce()).dispatch(
+            TranslationsAction.SetNeverTranslateSitesAction(
+                neverTranslateSites = mockNeverTranslate,
+            ),
+        )
+    }
+
+    @Test
     fun `WHEN InitTranslationsBrowserState is dispatched AND has an issue with the engine THEN EngineExceptionAction is dispatched`() = runTest() {
         // Send Action
         // Note: Implicitly called once due to connection with InitAction
@@ -726,7 +755,6 @@ class TranslationsMiddlewareTest {
 
         verify(context.store).dispatch(
             TranslationsAction.SetNeverTranslateSitesAction(
-                tabId = tab.id,
                 neverTranslateSites = neverTranslateSites,
             ),
         )
@@ -825,7 +853,7 @@ class TranslationsMiddlewareTest {
     }
 
     @Test
-    fun `WHEN RemoveNeverTranslateSiteAction is dispatched AND removing is unsuccessful THEN FETCH_NEVER_TRANSLATE_SITES is dispatched`() = runTest {
+    fun `WHEN RemoveNeverTranslateSiteAction is dispatched AND removing is unsuccessful THEN SetNeverTranslateSitesAction is dispatched`() = runTest {
         val errorCallback = argumentCaptor<((Throwable) -> Unit)>()
         whenever(
             engine.setNeverTranslateSpecifiedSite(
@@ -838,45 +866,20 @@ class TranslationsMiddlewareTest {
 
         val action =
             TranslationsAction.RemoveNeverTranslateSiteAction(
-                tabId = tab.id,
                 origin = "google.com",
             )
         translationsMiddleware.invoke(context, {}, action)
         waitForIdle()
 
-        // Verify Dispatch
-        verify(store).dispatch(
-            TranslationsAction.OperationRequestedAction(
-                tabId = tab.id,
-                operation = TranslationOperation.FETCH_NEVER_TRANSLATE_SITES,
-            ),
-        )
-        waitForIdle()
-    }
-
-    @Test
-    fun `WHEN RemoveNeverTranslateSiteAction is dispatched AND removing is successful THEN FETCH_PAGE_SETTINGS is dispatched`() = runTest {
-        val sitesCallback = argumentCaptor<(() -> Unit)>()
-        val action =
-            TranslationsAction.RemoveNeverTranslateSiteAction(
-                tabId = tab.id,
-                origin = "google.com",
-            )
-        translationsMiddleware.invoke(context, {}, action)
-        verify(engine).setNeverTranslateSpecifiedSite(
-            origin = any(),
-            setting = anyBoolean(),
-            onSuccess = sitesCallback.capture(),
-            onError = any(),
-        )
-        sitesCallback.value.invoke()
-        waitForIdle()
+        val neverTranslateSitesCallBack = argumentCaptor<((List<String>) -> Unit)>()
+        verify(engine, atLeastOnce()).getNeverTranslateSiteList(onSuccess = neverTranslateSitesCallBack.capture(), onError = any())
+        val mockNeverTranslate = listOf("www.mozilla.org")
+        neverTranslateSitesCallBack.value.invoke(mockNeverTranslate)
 
         // Verify Dispatch
         verify(store).dispatch(
-            TranslationsAction.OperationRequestedAction(
-                tabId = tab.id,
-                operation = TranslationOperation.FETCH_PAGE_SETTINGS,
+            TranslationsAction.SetNeverTranslateSitesAction(
+                neverTranslateSites = mockNeverTranslate,
             ),
         )
         waitForIdle()
@@ -940,6 +943,118 @@ class TranslationsMiddlewareTest {
             ),
         )
 
+        waitForIdle()
+    }
+
+    @Test
+    fun `WHEN InitTranslationsBrowserState is dispatched AND the engine is supported THEN SetOfferTranslateSettingAction is also dispatched`() = runTest {
+        // Send Action
+        translationsMiddleware.invoke(context = context, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
+
+        // Set the engine to support
+        val engineSupportedCallback = argumentCaptor<((Boolean) -> Unit)>()
+        // At least once, since InitAction also will trigger this
+        verify(engine, atLeastOnce()).isTranslationsEngineSupported(
+            onSuccess = engineSupportedCallback.capture(),
+            onError = any(),
+        )
+        engineSupportedCallback.value.invoke(true)
+
+        // Verify results for offer
+        verify(engine, atLeastOnce()).getTranslationsOfferPopup()
+        waitForIdle()
+
+        // Verifying at least once
+        verify(store, atLeastOnce()).dispatch(
+            TranslationsAction.SetGlobalOfferTranslateSettingAction(
+                offerTranslation = false,
+            ),
+        )
+
+        waitForIdle()
+    }
+
+    @Test
+    fun `WHEN FETCH_OFFER_SETTING is dispatched with a tab id THEN SetOfferTranslateSettingAction and SetPageSettingsAction are also dispatched`() = runTest {
+        // Set the mock offer value
+        whenever(
+            engine.getTranslationsOfferPopup(),
+        ).thenAnswer { true }
+
+        // Send Action
+        val action =
+            TranslationsAction.OperationRequestedAction(
+                tabId = tab.id,
+                operation = TranslationOperation.FETCH_OFFER_SETTING,
+            )
+        translationsMiddleware.invoke(context, {}, action)
+        waitForIdle()
+
+        // Verify Dispatch
+        verify(store, atLeastOnce()).dispatch(
+            TranslationsAction.SetGlobalOfferTranslateSettingAction(
+                offerTranslation = true,
+            ),
+        )
+
+        // Since we had a tabId, this call will also happen
+        verify(store, atLeastOnce()).dispatch(
+            TranslationsAction.SetPageSettingsAction(
+                tabId = tab.id,
+                pageSettings = any(),
+            ),
+        )
+
+        waitForIdle()
+    }
+
+    @Test
+    fun `WHEN UpdateOfferTranslateSettingAction is called then setTranslationsOfferPopup is called on the engine`() = runTest {
+        // Send Action
+        val action =
+            TranslationsAction.UpdateGlobalOfferTranslateSettingAction(
+                offerTranslation = true,
+            )
+        translationsMiddleware.invoke(context, {}, action)
+        waitForIdle()
+
+        // Verify offer was set
+        verify(engine, atLeastOnce()).setTranslationsOfferPopup(offer = true)
+        waitForIdle()
+    }
+
+    @Test
+    fun `WHEN UpdateLanguageSettingsAction is dispatched and fails THEN SetLanguageSettingsAction is dispatched`() = runTest {
+        // Send Action
+        val action =
+            TranslationsAction.UpdateLanguageSettingsAction(
+                languageCode = "es",
+                setting = LanguageSetting.ALWAYS,
+            )
+        translationsMiddleware.invoke(context, {}, action)
+
+        waitForIdle()
+
+        // Mock engine error
+        val updateLanguagesErrorCallback = argumentCaptor<((Throwable) -> Unit)>()
+        verify(engine).setLanguageSetting(
+            languageCode = any(),
+            languageSetting = any(),
+            onSuccess = any(),
+            onError = updateLanguagesErrorCallback.capture(),
+        )
+        updateLanguagesErrorCallback.value.invoke(Throwable())
+
+        waitForIdle()
+
+        // Verify Dispatch
+        val languageSettingsCallback = argumentCaptor<((Map<String, LanguageSetting>) -> Unit)>()
+        verify(engine, atLeastOnce()).getLanguageSettings(
+            onSuccess = languageSettingsCallback.capture(),
+            onError = any(),
+        )
+        val mockLanguageSetting = mapOf("en" to LanguageSetting.OFFER)
+        languageSettingsCallback.value.invoke(mockLanguageSetting)
         waitForIdle()
     }
 }

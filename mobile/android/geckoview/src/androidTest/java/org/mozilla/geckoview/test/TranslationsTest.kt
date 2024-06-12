@@ -6,6 +6,7 @@ package org.mozilla.geckoview.test
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
+import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
 import org.json.JSONObject
 import org.junit.After
@@ -78,7 +79,7 @@ class TranslationsTest : BaseSessionTest() {
                 handled.complete(null)
             }
         })
-        var expectedTranslateEvent = JSONObject(
+        val expectedTranslateEvent = JSONObject(
             """
             {
             "actor":{
@@ -89,6 +90,7 @@ class TranslationsTest : BaseSessionTest() {
                       "docLangTag": "es"
                     },
                     "requestedTranslationPair": null,
+                    "hasVisibleChange": false,
                     "error": null,
                     "isEngineReady": false
                     }
@@ -153,28 +155,43 @@ class TranslationsTest : BaseSessionTest() {
         val translate = sessionRule.session.sessionTranslation!!.translate("en", "es", null)
         try {
             sessionRule.waitForResult(translate)
-            assertTrue("Translate should complete.", true)
+            // When testing from AS, this path is possible.
+            if (!sessionRule.env.isAutomation) {
+                assertTrue("Translate should complete.", true)
+            }
         } catch (e: Exception) {
-            assertTrue("Should not have an exception while translating.", false)
+            if (sessionRule.env.isAutomation) {
+                assertTrue("Expect an exception while translating in automation.", true)
+            }
         }
 
         // Options should work as expected
-        var options = TranslationOptions.Builder().downloadModel(true).build()
+        val options = TranslationOptions.Builder().downloadModel(true).build()
         val translateOptions = sessionRule.session.sessionTranslation!!.translate("en", "es", options)
         try {
             sessionRule.waitForResult(translateOptions)
-            assertTrue("Translate should complete with options.", true)
+            // When testing from AS, this path is possible.
+            if (!sessionRule.env.isAutomation) {
+                assertTrue("Translate should complete with options.", true)
+            }
         } catch (e: Exception) {
-            assertTrue("Should not have an exception while translating with options.", false)
+            if (sessionRule.env.isAutomation) {
+                assertTrue("Expect an exception while translating in automation.", true)
+            }
         }
 
         // Language tags should be fault tolerant of minor variations
         val longLanguageTag = sessionRule.session.sessionTranslation!!.translate("EN", "ES", null)
         try {
             sessionRule.waitForResult(longLanguageTag)
-            assertTrue("Translate should complete with longer language tag.", true)
+            // When testing from AS, this path is possible.
+            if (!sessionRule.env.isAutomation) {
+                assertTrue("Translate should complete with longer language tag.", true)
+            }
         } catch (e: Exception) {
-            assertTrue("Should not have an exception while translating with a longer language tag.", false)
+            if (sessionRule.env.isAutomation) {
+                assertTrue("Expect an exception while translating in automation.", true)
+            }
         }
     }
 
@@ -244,9 +261,14 @@ class TranslationsTest : BaseSessionTest() {
         val translate = sessionRule.session.sessionTranslation!!.translate("es", "en", null)
         try {
             sessionRule.waitForResult(translate)
-            assertTrue("Should be able to translate.", true)
+            // When testing from AS, this path is possible.
+            if (!sessionRule.env.isAutomation) {
+                assertTrue("Should be able to translate.", true)
+            }
         } catch (e: Exception) {
-            assertTrue("Should not have an exception.", false)
+            if (sessionRule.env.isAutomation) {
+                assertTrue("Expect an exception while translating in automation.", true)
+            }
         }
     }
 
@@ -443,10 +465,10 @@ class TranslationsTest : BaseSessionTest() {
     @Test
     fun testGetLanguageSettings() {
         // Note: Test endpoint is using a mocked response and doesn't reflect actual prefs
-        var languageSettings: Map<String, String> =
+        val languageSettings: Map<String, String> =
             sessionRule.waitForResult(TranslationsController.RuntimeTranslation.getLanguageSettings())
 
-        var frLanguageSetting = sessionRule.waitForResult(TranslationsController.RuntimeTranslation.getLanguageSetting("fr"))
+        val frLanguageSetting = sessionRule.waitForResult(TranslationsController.RuntimeTranslation.getLanguageSetting("fr"))
 
         if (sessionRule.env.isAutomation) {
             assertTrue("FR was correctly set to ALWAYS via full query.", languageSettings["fr"] == ALWAYS)
@@ -620,5 +642,74 @@ class TranslationsTest : BaseSessionTest() {
                 )
             }
         }
+    }
+
+    @Test
+    fun hasVisibleChangeTest() {
+        mainSession.loadTestPath(TRANSLATIONS_ES)
+        mainSession.waitForPageStop()
+
+        val handled = GeckoResult<Void>()
+        var delegateCalled = 0
+        sessionRule.delegateUntilTestEnd(object : Delegate {
+            @AssertCalled(count = 2)
+            override fun onTranslationStateChange(
+                session: GeckoSession,
+                translationState: TranslationState?,
+            ) {
+                delegateCalled++
+
+                if (delegateCalled == 1) {
+                    assertFalse("Initially not visibly changed.", translationState!!.hasVisibleChange)
+                }
+
+                if (delegateCalled == 2) {
+                    assertTrue("After a translation, the DOM should be visibly changed.", translationState!!.hasVisibleChange)
+                    handled.complete(null)
+                }
+            }
+        })
+        val notTranslated = JSONObject(
+            """
+            {
+            "actor":{
+                "languageState":{
+                    "detectedLanguages": {
+                      "userLangTag": "en",
+                      "isDocLangTagSupported": true,
+                      "docLangTag": "es"
+                    },
+                    "requestedTranslationPair": null,
+                    "hasVisibleChange": false,
+                    "error": null,
+                    "isEngineReady": false
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        mainSession.triggerLanguageStateChange(notTranslated)
+
+        val translated = JSONObject(
+            """
+            {
+            "actor":{
+                "languageState":{
+                    "detectedLanguages": {
+                      "userLangTag": "en",
+                      "isDocLangTagSupported": true,
+                      "docLangTag": "es"
+                    },
+                    "requestedTranslationPair": {"fromLanguage" : "es" , "toLanguage" : "en"},
+                    "hasVisibleChange": true,
+                    "error": null,
+                    "isEngineReady": true
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        mainSession.triggerLanguageStateChange(translated)
+        sessionRule.waitForResult(handled)
     }
 }

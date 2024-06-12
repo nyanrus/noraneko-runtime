@@ -964,7 +964,7 @@ void nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowInput& aState,
     nsRect childScrollableOverflow = childOverflow.ScrollableOverflow();
 
     const LogicalMargin inlinePadding =
-        padding.ApplySkipSides(LogicalSides(wm, eLogicalSideBitsBBoth));
+        padding.ApplySkipSides(LogicalSides(wm, LogicalSides::BBoth));
     childScrollableOverflow.Inflate(inlinePadding.GetPhysicalMargin(wm));
 
     nsRect& so = aMetrics->ScrollableOverflow();
@@ -5211,15 +5211,19 @@ nsSize nsHTMLScrollFrame::GetPageScrollAmount() const {
   }
 
   nsSize lineScrollAmount = GetLineScrollAmount();
+  const int32_t maxOverlapPercent = std::clamp(
+      StaticPrefs::toolkit_scrollbox_pagescroll_maxOverlapPercent(), 0, 80);
+  const int32_t maxOverlapLines =
+      std::max(StaticPrefs::toolkit_scrollbox_pagescroll_maxOverlapLines(), 0);
 
-  // The page increment is the size of the page, minus the smaller of
-  // 10% of the size or 2 lines.
-  return nsSize(effectiveScrollPortSize.width -
-                    std::min(effectiveScrollPortSize.width / 10,
-                             2 * lineScrollAmount.width),
-                effectiveScrollPortSize.height -
-                    std::min(effectiveScrollPortSize.height / 10,
-                             2 * lineScrollAmount.height));
+  // The page increment is the size of the page, minus some overlap.
+  return nsSize(
+      effectiveScrollPortSize.width -
+          std::min(effectiveScrollPortSize.width * maxOverlapPercent / 100,
+                   maxOverlapLines * lineScrollAmount.width),
+      effectiveScrollPortSize.height -
+          std::min(effectiveScrollPortSize.height * maxOverlapPercent / 100,
+                   maxOverlapLines * lineScrollAmount.height));
 }
 
 /**

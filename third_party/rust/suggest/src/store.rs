@@ -13,7 +13,8 @@ use error_support::handle_error;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use remote_settings::{
-    self, GetItemsOptions, RemoteSettingsConfig, RemoteSettingsRecord, SortOrder,
+    self, GetItemsOptions, RemoteSettingsConfig, RemoteSettingsRecord, RemoteSettingsServer,
+    SortOrder,
 };
 use rusqlite::{
     types::{FromSql, ToSqlOutput},
@@ -50,6 +51,7 @@ pub struct SuggestStoreBuilder(Mutex<SuggestStoreBuilderInner>);
 #[derive(Default)]
 struct SuggestStoreBuilderInner {
     data_path: Option<String>,
+    remote_settings_server: Option<RemoteSettingsServer>,
     remote_settings_config: Option<RemoteSettingsConfig>,
 }
 
@@ -79,6 +81,11 @@ impl SuggestStoreBuilder {
         self
     }
 
+    pub fn remote_settings_server(self: Arc<Self>, server: RemoteSettingsServer) -> Arc<Self> {
+        self.0.lock().remote_settings_server = Some(server);
+        self
+    }
+
     #[handle_error(Error)]
     pub fn build(&self) -> SuggestApiResult<Arc<SuggestStore>> {
         let inner = self.0.lock();
@@ -86,14 +93,29 @@ impl SuggestStoreBuilder {
             .data_path
             .clone()
             .ok_or_else(|| Error::SuggestStoreBuilder("data_path not specified".to_owned()))?;
-        let settings_client =
-            remote_settings::Client::new(inner.remote_settings_config.clone().unwrap_or_else(
-                || RemoteSettingsConfig {
-                    server_url: None,
-                    bucket_name: None,
-                    collection_name: REMOTE_SETTINGS_COLLECTION.into(),
-                },
-            ))?;
+        let remote_settings_config = match (
+            inner.remote_settings_server.as_ref(),
+            inner.remote_settings_config.as_ref(),
+        ) {
+            (Some(server), None) => RemoteSettingsConfig {
+                server: Some(server.clone()),
+                server_url: None,
+                bucket_name: None,
+                collection_name: REMOTE_SETTINGS_COLLECTION.into(),
+            },
+            (None, Some(remote_settings_config)) => remote_settings_config.clone(),
+            (None, None) => RemoteSettingsConfig {
+                server: None,
+                server_url: None,
+                bucket_name: None,
+                collection_name: REMOTE_SETTINGS_COLLECTION.into(),
+            },
+            (Some(_), Some(_)) => Err(Error::SuggestStoreBuilder(
+                "can't specify both `remote_settings_server` and `remote_settings_config`"
+                    .to_owned(),
+            ))?,
+        };
+        let settings_client = remote_settings::Client::new(remote_settings_config)?;
         Ok(Arc::new(SuggestStore {
             inner: SuggestStoreInner::new(data_path, settings_client),
         }))
@@ -172,6 +194,7 @@ impl SuggestStore {
         let settings_client = || -> Result<_> {
             Ok(remote_settings::Client::new(
                 settings_config.unwrap_or_else(|| RemoteSettingsConfig {
+                    server: None,
                     server_url: None,
                     bucket_name: None,
                     collection_name: REMOTE_SETTINGS_COLLECTION.into(),
@@ -252,6 +275,8 @@ pub struct SuggestIngestionConstraints {
     /// soft limit, and the store might ingest more than requested.
     pub max_suggestions: Option<u64>,
     pub providers: Option<Vec<SuggestionProvider>>,
+    /// Only run ingestion if the table `suggestions` is empty
+    pub empty_only: bool,
 }
 
 /// The implementation of the store. This is generic over the Remote Settings
@@ -333,6 +358,10 @@ where
 {
     pub fn ingest(&self, constraints: SuggestIngestionConstraints) -> Result<()> {
         let writer = &self.dbs()?.writer;
+
+        if constraints.empty_only && !writer.read(|dao| dao.suggestions_table_empty())? {
+            return Ok(());
+        }
 
         if let Some(unparsable_records) =
             writer.read(|dao| dao.get_meta::<UnparsableRecords>(UNPARSABLE_RECORDS_META_KEY))?
@@ -865,6 +894,12 @@ mod tests {
 
         let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
 
+        // suggestions_table_empty returns true before the ingestion is complete
+        assert!(store
+            .dbs()?
+            .reader
+            .read(|dao| dao.suggestions_table_empty())?);
+
         store.ingest(SuggestIngestionConstraints::default())?;
 
         store.dbs()?.reader.read(|dao| {
@@ -897,6 +932,153 @@ mod tests {
             "#]]
             .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
                 keyword: "lo".into(),
+                providers: vec![SuggestionProvider::Amp],
+                limit: None,
+            })?);
+
+            Ok(())
+        })?;
+
+        // suggestions_table_empty returns false after the ingestion is complete
+        assert!(!store
+            .dbs()?
+            .reader
+            .read(|dao| dao.suggestions_table_empty())?);
+
+        Ok(())
+    }
+
+    /// Tests ingesting suggestions into an empty database.
+    #[test]
+    fn ingest_empty_only() -> anyhow::Result<()> {
+        before_each();
+
+        // This ingestion should run, since the DB is empty
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "1234",
+            "type": "data",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([{
+                "id": 0,
+                "advertiser": "Los Pollos Hermanos",
+                "iab_category": "8 - Food & Drink",
+                "keywords": ["lo", "los", "los p", "los pollos", "los pollos h", "los pollos hermanos"],
+                "title": "Los Pollos Hermanos - Albuquerque",
+                "url": "https://www.lph-nm.biz",
+                "icon": "5678",
+                "impression_url": "https://example.com/impression_url",
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
+            }]),
+        )?;
+        let mut store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints {
+            empty_only: true,
+            ..SuggestIngestionConstraints::default()
+        })?;
+
+        store.dbs()?.reader.read(|dao| {
+            expect![[r#"
+                [
+                    Amp {
+                        title: "Los Pollos Hermanos - Albuquerque",
+                        url: "https://www.lph-nm.biz",
+                        raw_url: "https://www.lph-nm.biz",
+                        icon: None,
+                        icon_mimetype: None,
+                        full_keyword: "los",
+                        block_id: 0,
+                        advertiser: "Los Pollos Hermanos",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "lo".into(),
+                providers: vec![SuggestionProvider::Amp],
+                limit: None,
+            })?);
+
+            Ok(())
+        })?;
+
+        // ingestion should run with SuggestIngestionConstraints::empty_only = true, since the DB
+        // is empty
+        store.settings_client = SnapshotSettingsClient::with_snapshot(Snapshot::with_records(json!([{
+            "id": "1234",
+            "type": "data",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "12345",
+            "type": "data",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-2.json",
+                "mimetype": "application/json",
+                "location": "data-2.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([{
+                "id": 0,
+                "advertiser": "Los Pollos Hermanos",
+                "iab_category": "8 - Food & Drink",
+                "keywords": ["lo", "los", "los p", "los pollos", "los pollos h", "los pollos hermanos"],
+                "title": "Los Pollos Hermanos - Albuquerque",
+                "url": "https://www.lph-nm.biz",
+                "icon": "5678",
+                "impression_url": "https://example.com/impression_url",
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
+            }])
+        )?
+        .with_data("data-2.json", json!([{
+                "id": 1,
+                "advertiser": "Good Place Eats",
+                "iab_category": "8 - Food & Drink",
+                "keywords": ["la", "las", "lasa", "lasagna", "lasagna come out tomorrow"],
+                "title": "Lasagna Come Out Tomorrow",
+                "url": "https://www.lasagna.restaurant",
+                "icon": "2",
+                "impression_url": "https://example.com/impression_url",
+                "click_url": "https://example.com/click_url"
+            }]),
+        )?);
+        store.ingest(SuggestIngestionConstraints {
+            empty_only: true,
+            ..SuggestIngestionConstraints::default()
+        })?;
+
+        store.dbs()?.reader.read(|dao| {
+            expect![[r#"
+                []
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "la".into(),
                 providers: vec![SuggestionProvider::Amp],
                 limit: None,
             })?);
@@ -2189,6 +2371,7 @@ mod tests {
             store.ingest(SuggestIngestionConstraints {
                 max_suggestions: Some(max_suggestions),
                 providers: Some(vec![SuggestionProvider::Amp]),
+                ..SuggestIngestionConstraints::default()
             })?;
             let actual_limit = store
                 .settings_client
@@ -5021,10 +5204,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                         },
                     ),
@@ -5093,10 +5276,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                         },
                     ),
@@ -5178,6 +5361,7 @@ mod tests {
         let constraints = SuggestIngestionConstraints {
             max_suggestions: Some(100),
             providers: Some(vec![SuggestionProvider::Amp, SuggestionProvider::Pocket]),
+            ..SuggestIngestionConstraints::default()
         };
         store.ingest(constraints)?;
 
@@ -5292,10 +5476,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                         },
                     ),
@@ -5381,7 +5565,7 @@ mod tests {
                     UnparsableRecords(
                         {
                             "invalid-attachment": UnparsableRecord {
-                                schema_version: 18,
+                                schema_version: 19,
                             },
                         },
                     ),

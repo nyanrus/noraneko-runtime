@@ -1786,9 +1786,10 @@ extensions.startupCache:
   write_byteLength:
     bug_numbers:
       - 1767336
+      - 1892151
     description: >
       The amount of bytes writted into the Extensions StartupCache file.
-    expires: "128"
+    expires: "135"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1800,10 +1801,11 @@ extensions.startupCache:
   read_errors:
     bug_numbers:
       - 1767336
+      - 1892151
     description: >
       The amount of times an unexpected error has been raised while
       reading the Extensions StartupCache file
-    expires: "128"
+    expires: "135"
     kind: uint
     keyed: true
     notification_emails:
@@ -2947,6 +2949,7 @@ media:
   device_hardware_decoding_support:
     bug_numbers:
       - 1850594
+      - 1892516
     description: >
       Record the hardware decoding availability on devices, the key is the name of video codec, eg. h264, av1.
     expires: never
@@ -2958,7 +2961,7 @@ media:
     products:
       - 'firefox'
     record_in_processes:
-      - 'gpu'
+      - 'main'
 
 # The following section contains content process base counters.
 dom.contentprocess:
@@ -8789,24 +8792,6 @@ contextual.services.quicksuggest:
       - 'firefox'
     record_in_processes:
       - main
-  help_dynamic_wikipedia:
-    bug_numbers:
-      - 1800993
-    description: >
-      A keyed uint recording how many times the user has clicked on the help
-      button in sponsored Firefox Suggest dynamic wikipedia results
-      in the urlbar (not including the help button). The key is the 1-based
-      index of each result.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
   help_nonsponsored:
     bug_numbers:
       - 1800993
@@ -8831,23 +8816,6 @@ contextual.services.quicksuggest:
       A keyed uint recording how many times the user has clicked on the help
       button in sponsored Firefox Suggests (a.k.a. Quick Suggest) results in
       the urlbar. The key is the 1-based index of each result.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-  help_weather:
-    bug_numbers:
-      - 1804536
-    description: >
-      A keyed uint recording how many times the user has clicked on the help
-      button in Firefox Suggests (a.k.a. Quick Suggest) weather results in the
-      urlbar. The key is the 1-based index of each result.
     expires: never
     kind: uint
     keyed: true
@@ -9198,7 +9166,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main' # test_ChildScalars.js depends on this being main-only.
@@ -9216,7 +9183,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main'
@@ -9234,7 +9200,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main'

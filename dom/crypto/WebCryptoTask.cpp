@@ -166,7 +166,7 @@ static nsresult Coerce(JSContext* aCx, T& aTarget, const OOS& aAlgorithm) {
 
   JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*aAlgorithm.GetAsObject()));
   if (!aTarget.Init(aCx, value)) {
-    return NS_ERROR_DOM_SYNTAX_ERR;
+    return NS_ERROR_DOM_TYPE_MISMATCH_ERR;
   }
 
   return NS_OK;
@@ -392,9 +392,14 @@ void WebCryptoTask::FailWithError(nsresult aRv) {
   MOZ_ASSERT(IsOnOriginalThread());
   Telemetry::Accumulate(Telemetry::WEBCRYPTO_RESOLVED, false);
 
-  // Blindly convert nsresult to DOMException
-  // Individual tasks must ensure they pass the right values
-  mResultPromise->MaybeReject(aRv);
+  if (aRv == NS_ERROR_DOM_TYPE_MISMATCH_ERR) {
+    mResultPromise->MaybeRejectWithTypeError(
+        "The operation could not be performed.");
+  } else {
+    // Blindly convert nsresult to DOMException
+    // Individual tasks must ensure they pass the right values
+    mResultPromise->MaybeReject(aRv);
+  }
   // Manually release mResultPromise while we're on the main thread
   mResultPromise = nullptr;
   mWorkerRef = nullptr;
@@ -1112,7 +1117,7 @@ class AsymmetricSignVerifyTask : public WebCryptoTask {
 
       mEarlyRv = GetAlgorithmName(aCx, params.mHash, hashAlgName);
       if (NS_FAILED(mEarlyRv)) {
-        mEarlyRv = NS_ERROR_DOM_SYNTAX_ERR;
+        mEarlyRv = NS_ERROR_DOM_NOT_SUPPORTED_ERR;
         return;
       }
     } else {
@@ -2424,7 +2429,7 @@ class DeriveHkdfBitsTask : public ReturnArrayBufferViewTask {
 
     // length must be greater than zero.
     if (aLength == 0) {
-      mEarlyRv = NS_ERROR_DOM_DATA_ERR;
+      mEarlyRv = NS_ERROR_DOM_OPERATION_ERR;
       return;
     }
 
@@ -2750,7 +2755,7 @@ class DeriveEcdhBitsTask : public ReturnArrayBufferViewTask {
     RootedDictionary<EcdhKeyDeriveParams> params(aCx);
     mEarlyRv = Coerce(aCx, params, aAlgorithm);
     if (NS_FAILED(mEarlyRv)) {
-      mEarlyRv = NS_ERROR_DOM_SYNTAX_ERR;
+      /* The returned code is installed by Coerce function. */
       return;
     }
 
@@ -2768,7 +2773,7 @@ class DeriveEcdhBitsTask : public ReturnArrayBufferViewTask {
     nsString curve2 = publicKey->Algorithm().mEc.mNamedCurve;
 
     if (!curve1.Equals(curve2)) {
-      mEarlyRv = NS_ERROR_DOM_DATA_ERR;
+      mEarlyRv = NS_ERROR_DOM_INVALID_ACCESS_ERR;
       return;
     }
   }

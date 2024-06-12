@@ -1088,7 +1088,7 @@ already_AddRefed<DOMRectList> Element::GetClientRects() {
   nsLayoutUtils::RectListBuilder builder(rectList);
   nsLayoutUtils::GetAllInFlowRects(
       frame, nsLayoutUtils::GetContainingBlockForClientRect(frame), &builder,
-      nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+      nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms);
   return rectList.forget();
 }
 
@@ -1353,7 +1353,7 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
     for (const AbstractRange* range : *ranges) {
       if (range->MayCrossShadowBoundary()) {
         MOZ_ASSERT(range->IsDynamicRange());
-        StaticRange* crossBoundaryRange =
+        CrossShadowBoundaryRange* crossBoundaryRange =
             range->AsDynamicRange()->GetCrossShadowBoundaryRange();
         MOZ_ASSERT(crossBoundaryRange);
         // We may have previously selected this node before it

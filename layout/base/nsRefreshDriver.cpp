@@ -831,11 +831,11 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     const TimeDuration previousRate = mVsyncRate;
     const TimeDuration rate = GetTimerRate();
 
-    hal::PerformanceHintSession* const performanceHintSession =
-        GetPerformanceHintSession();
-    if (performanceHintSession && rate != previousRate) {
-      performanceHintSession->UpdateTargetWorkDuration(
-          ContentChild::GetPerformanceHintTarget(rate));
+    if (rate != previousRate) {
+      if (auto* const performanceHintSession = GetPerformanceHintSession()) {
+        performanceHintSession->UpdateTargetWorkDuration(
+            ContentChild::GetPerformanceHintTarget(rate));
+      }
     }
 
     if (TimeDuration::FromMilliseconds(nsRefreshDriver::DefaultInterval()) >
@@ -862,7 +862,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
 
     TimeStamp tickEnd = TimeStamp::Now();
 
-    if (performanceHintSession) {
+    if (auto* const performanceHintSession = GetPerformanceHintSession()) {
       performanceHintSession->ReportActualWorkDuration(tickEnd - tickStart);
     }
 
@@ -2228,23 +2228,7 @@ void nsRefreshDriver::RunFullscreenSteps() {
 
 void nsRefreshDriver::UpdateIntersectionObservations(TimeStamp aNowTime) {
   AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Compute intersections", LAYOUT);
-
-  AutoTArray<RefPtr<Document>, 32> documents;
-
-  if (mPresContext->Document()->HasIntersectionObservers()) {
-    documents.AppendElement(mPresContext->Document());
-  }
-
-  mPresContext->Document()->CollectDescendantDocuments(
-      documents, [](const Document* document) -> bool {
-        return document->HasIntersectionObservers();
-      });
-
-  for (const auto& doc : documents) {
-    doc->UpdateIntersectionObservations(aNowTime);
-    doc->ScheduleIntersectionObserverNotification();
-  }
-
+  mPresContext->Document()->UpdateIntersections(aNowTime);
   mNeedToUpdateIntersectionObservations = false;
 }
 

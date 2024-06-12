@@ -1319,8 +1319,6 @@ void HttpBaseChannel::ExplicitSetUploadStreamLength(
     return;
   }
 
-  // SetRequestHeader propagates headers to chrome if HttpChannelChild
-  MOZ_ASSERT(!LoadWasOpened());
   nsAutoCString contentLengthStr;
   contentLengthStr.AppendInt(aContentLength);
   SetRequestHeader(header, contentLengthStr, false);
@@ -2294,6 +2292,19 @@ HttpBaseChannel::UpgradeToSecure() {
   NS_ENSURE_TRUE(LoadUpgradableToSecure(), NS_ERROR_NOT_AVAILABLE);
 
   StoreUpgradeToSecure(true);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetRequestObserversCalled(bool* aCalled) {
+  NS_ENSURE_ARG_POINTER(aCalled);
+  *aCalled = LoadRequestObserversCalled();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetRequestObserversCalled(bool aCalled) {
+  StoreRequestObserversCalled(aCalled);
   return NS_OK;
 }
 

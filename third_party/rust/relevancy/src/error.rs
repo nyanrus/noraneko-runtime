@@ -23,6 +23,21 @@ pub enum Error {
 
     #[error("Error fetching interest data")]
     FetchInterestDataError,
+
+    #[error("Interrupted")]
+    Interrupted(#[from] interrupt_support::Interrupted),
+
+    #[error("Invalid interest code: {0}")]
+    InvalidInterestCode(u32),
+
+    #[error("Remote Setting Error: {0}")]
+    RemoteSettingsError(#[from] remote_settings::RemoteSettingsError),
+
+    #[error("Serde Json Error: {0}")]
+    SerdeJsonError(#[from] serde_json::Error),
+
+    #[error("Base64 Decode Error: {0}")]
+    Base64DecodeError(String),
 }
 
 /// Result enum for the public API

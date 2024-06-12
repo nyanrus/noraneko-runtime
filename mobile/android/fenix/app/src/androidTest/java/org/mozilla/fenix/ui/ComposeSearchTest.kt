@@ -55,7 +55,7 @@ class ComposeSearchTest : TestSetup() {
     private lateinit var searchMockServer: MockWebServer
     private val queryString: String = "firefox"
     private val generalEnginesList = listOf("DuckDuckGo", "Google", "Bing")
-    private val topicEnginesList = listOf("Amazon.com", "Wikipedia", "eBay")
+    private val topicEnginesList = listOf("Wikipedia", "eBay")
 
     @get:Rule
     val activityTestRule = AndroidComposeTestRule(
@@ -111,7 +111,7 @@ class ComposeSearchTest : TestSetup() {
             verifySearchToolbar(isDisplayed = true)
             clickSearchSelectorButton()
             verifySearchShortcutListContains(
-                "DuckDuckGo", "Google", "Amazon.com", "Wikipedia", "Bing", "eBay",
+                "DuckDuckGo", "Google", "Wikipedia", "Bing", "eBay",
                 "Bookmarks", "Tabs", "History", "Search settings",
             )
         }
@@ -153,7 +153,7 @@ class ComposeSearchTest : TestSetup() {
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2154196
     @Test
     fun verifySearchPlaceholderForTopicSpecificSearchEnginesTest() {
-        val topicEnginesList = listOf("Amazon.com", "Wikipedia", "eBay")
+        val topicEnginesList = listOf("Wikipedia", "eBay")
 
         topicEnginesList.forEach {
             homeScreen {
@@ -229,7 +229,7 @@ class ComposeSearchTest : TestSetup() {
     @SmokeTest
     @Test
     fun searchEnginesCanBeChangedTemporarilyFromSearchSelectorMenuTest() {
-        val enginesList = listOf("DuckDuckGo", "Google", "Amazon.com", "Wikipedia", "Bing", "eBay")
+        val enginesList = listOf("DuckDuckGo", "Google", "Wikipedia", "Bing", "eBay")
 
         enginesList.forEach {
             homeScreen {
@@ -303,13 +303,12 @@ class ComposeSearchTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1592229
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @Test
     fun verifyAPageIsAddedToASearchGroupOnlyOnceTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
         val secondPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 2).url
         val originPageUrl =
-            "http://localhost:${searchMockServer.port}/pages/searchResults.html?search=test%20search".toUri()
+            "http://localhost:${searchMockServer.port}/pages/searchResults.html?search=firefox".toUri()
         val searchEngineName = "TestSearchEngine"
         // setting our custom mockWebServer search URL
         setCustomSearchEngine(searchMockServer, searchEngineName)

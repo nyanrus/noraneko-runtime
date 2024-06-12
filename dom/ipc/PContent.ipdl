@@ -101,7 +101,6 @@ using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::EventMessage from "mozilla/EventForwards.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::ImagePoint from "Units.h";
-using mozilla::ImageIntSize from "Units.h";
 using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 [MoveOnly=data] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
@@ -461,13 +460,6 @@ struct TextRecognitionResult {
 union TextRecognitionResultOrError {
     TextRecognitionResult;
     nsCString;
-};
-
-struct IPCImage {
-    BigBuffer data;
-    uint32_t stride;
-    SurfaceFormat format;
-    ImageIntSize size;
 };
 
 struct ClipboardReadRequest {
@@ -1052,9 +1044,6 @@ child:
     // Update the cached list of codec supported in the given process.
     async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
 
-    // Send the list of the supported mimetypes in the given process. GeckoView-specific
-    async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
-
     // Used to initialize the global variable in content processes with the
     // latched value in the parent process. See dom/LocalStorageCommon.h for more
     // details.
@@ -1214,12 +1203,12 @@ parent:
     async ConsoleMessage(nsString message);
     async ScriptErrorWithStack(nsString message, nsString sourceName, nsString sourceLine,
                                uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
-                               nsCString category, bool privateWindow,
-                               bool fromChromeContext, ClonedMessageData stack);
+                               nsCString category, bool isFromPrivateWindow,
+                               bool isFromChromeContext, ClonedMessageData stack);
 
     // Places the items within dataTransfer on the clipboard.
     async SetClipboard(IPCTransferable aTransferable,
-                       int32_t aWhichClipboard);
+                       int32_t aWhichClipboard, MaybeDiscardedWindowContext aRequestingWindowContext);
 
     // Given a list of supported types, returns the clipboard data for the
     // first type that matches.
@@ -1227,7 +1216,7 @@ parent:
     // which is used for content analysis.
     sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard,
                       MaybeDiscardedWindowContext aRequestingWindowContext)
-        returns (IPCTransferableData transferableData);
+        returns (IPCTransferableDataOrError transferableDataOrError);
 
     // Requests getting data from clipboard.
     async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard,
@@ -1252,8 +1241,12 @@ parent:
      * and that the data will be sent over another IPC message once it is ready.
      * @param  aClipboardType
      *         The clipboard type defined in nsIClipboard.
+     * @param  aSettingWindowContext
+     *         The window context that is setting the clipboard, if any. This is used
+     *         to possibly bypass Content Analysis if a set clipboard and get clipboard
+     *         operation are done on the same page.
      */
-    async PClipboardWriteRequest(int32_t aClipboardType);
+    async PClipboardWriteRequest(int32_t aClipboardType, MaybeDiscardedWindowContext aSettingWindowContext);
 
     sync GetIconForExtension(nsCString aFileExt, uint32_t aIconSize)
         returns (uint8_t[] bits);
@@ -1741,6 +1734,15 @@ parent:
         PositionState? aState);
 
     /**
+     * This method is used to update a media's position state whenever its
+     * guessed position state is being updated.
+     */
+    async NotifyGuessedPositionStateChanged(
+        MaybeDiscardedBrowsingContext aContext,
+        nsID aMediaId,
+        PositionState? aState);
+
+    /**
      * This method will make canonical browsing context to update the count of
      * callers which want to keep the page from being suspended even if the page
      * is inactive.
@@ -1819,8 +1821,8 @@ parent:
 both:
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
-                      nsCString category, bool privateWindow, uint64_t innerWindowId,
-                      bool fromChromeContext);
+                      nsCString category, bool isFromPrivateWindow, uint64_t innerWindowId,
+                      bool isFromChromeContext);
 
     /**
      * Used in fission to report timing data when the parent window is in

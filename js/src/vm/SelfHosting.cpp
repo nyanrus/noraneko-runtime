@@ -73,7 +73,8 @@
 #include "vm/Compression.h"
 #include "vm/DateObject.h"
 #include "vm/ErrorReporting.h"  // js::MaybePrintAndClearPendingException
-#include "vm/FrameIter.h"       // js::ScriptFrameIter
+#include "vm/Float16.h"
+#include "vm/FrameIter.h"  // js::ScriptFrameIter
 #include "vm/GeneratorObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
@@ -1025,6 +1026,8 @@ static bool intrinsic_GetTypedArrayKind(JSContext* cx, unsigned argc,
                 "TYPEDARRAY_KIND_BIGINT64 doesn't match the scalar type");
   static_assert(TYPEDARRAY_KIND_BIGUINT64 == Scalar::Type::BigUint64,
                 "TYPEDARRAY_KIND_BIGUINT64 doesn't match the scalar type");
+  static_assert(TYPEDARRAY_KIND_FLOAT16 == Scalar::Type::Float16,
+                "TYPEDARRAY_KIND_FLOAT16 doesn't match the scalar type");
 
   JSObject* obj = &args[0].toObject();
   Scalar::Type type = JS_GetArrayBufferViewType(obj);
@@ -1234,6 +1237,9 @@ static bool IsTypedArrayBitwiseSlice(Scalar::Type sourceType,
     case Scalar::Int32:
     case Scalar::Uint32:
       return targetType == Scalar::Int32 || targetType == Scalar::Uint32;
+
+    case Scalar::Float16:
+      return targetType == Scalar::Float16;
 
     case Scalar::Float32:
       return targetType == Scalar::Float32;
@@ -2204,7 +2210,6 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_INLINABLE_FN("TypedArrayLengthZeroOnOutOfBounds",
                     intrinsic_TypedArrayLengthZeroOnOutOfBounds, 1, 0,
                     IntrinsicTypedArrayLengthZeroOnOutOfBounds),
-    JS_FN("TypedArrayNativeSort", intrinsic_TypedArrayNativeSort, 1, 0),
     JS_INLINABLE_FN("UnsafeGetInt32FromReservedSlot",
                     intrinsic_UnsafeGetInt32FromReservedSlot, 2, 0,
                     IntrinsicUnsafeGetInt32FromReservedSlot),
@@ -2379,6 +2384,8 @@ static const JSFunctionSpec intrinsic_functions[] = {
 #ifdef ENABLE_RECORD_TUPLE
     JS_FN("std_Tuple_unchecked", tuple_construct, 1, 0),
 #endif
+    JS_TRAMPOLINE_FN("std_TypedArray_sort", TypedArrayObject::sort, 1, 0,
+                     TypedArraySort),
 
     JS_FS_END};
 

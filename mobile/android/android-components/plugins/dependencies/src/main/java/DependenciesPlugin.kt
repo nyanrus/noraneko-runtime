@@ -6,7 +6,7 @@ import org.gradle.api.Plugin
 import org.gradle.api.initialization.Settings
 
 // If you ever need to force a toolchain rebuild (taskcluster) then edit the following comment.
-// FORCE REBUILD 2023-05-24
+// FORCE REBUILD 2024-05-02
 
 class DependenciesPlugin : Plugin<Settings> {
     override fun apply(settings: Settings) = Unit
@@ -19,10 +19,10 @@ object Versions {
     const val serialization = "1.6.3"
     const val python_envs_plugin = "0.0.31"
 
-    const val mozilla_glean = "59.0.0"
+    const val mozilla_glean = "60.0.1"
 
     const val junit = "4.13.2"
-    const val robolectric = "4.11.1"
+    const val robolectric = "4.12.1"
     const val mockito = "5.11.0"
     const val maven_ant_tasks = "2.1.3"
     const val jacoco = "0.8.11"
@@ -38,20 +38,20 @@ object Versions {
     const val detekt = "1.23.6"
     const val ktlint = "0.49.1"
 
-    const val sentry = "7.5.0"
+    const val sentry = "7.8.0"
 
     const val zxing = "3.5.3"
 
     const val disklrucache = "2.0.2"
-    const val leakcanary = "2.13"
+    const val leakcanary = "2.14"
 
     const val material = "1.9.0"
-    const val ksp = "1.0.19"
+    const val ksp = "1.0.20"
     val ksp_plugin = "$kotlin-$ksp"
 
     // see https://android-developers.googleblog.com/2022/06/independent-versioning-of-Jetpack-Compose-libraries.html
     // for Jetpack Compose libraries versioning
-    const val compose_compiler = "1.5.11"
+    const val compose_compiler = "1.5.13"
 
     object AndroidX {
         const val activityCompose = "1.7.2"
@@ -61,10 +61,11 @@ object Versions {
         const val browser = "1.8.0"
         const val biometric = "1.1.0"
         const val cardview = "1.0.0"
-        const val compose_bom = "2024.04.01"
+        const val collection = "1.4.0"
+        const val compose_bom = "2024.05.00"
         const val constraintlayout = "2.1.4"
         const val coordinatorlayout = "1.2.0"
-        const val core = "1.12.0"
+        const val core = "1.13.1"
         const val drawerlayout = "1.2.0"
         const val fragment = "1.6.2"
         const val recyclerview = "1.3.2"
@@ -85,12 +86,14 @@ object Versions {
         const val uiautomator = "2.3.0"
         const val localbroadcastmanager = "1.0.0"
         const val swiperefreshlayout = "1.1.0"
-        const val data_store_preferences="1.0.0"
+        const val datastore="1.1.1"
     }
 
     object Firebase {
-        const val messaging = "23.4.1"
+        const val messaging = "24.0.0"
     }
+
+    const val play_services = "18.4.0"
 }
 
 // Synchronized dependencies used by (some) modules
@@ -117,6 +120,7 @@ object ComponentsDependencies {
     const val androidx_biometric = "androidx.biometric:biometric:${Versions.AndroidX.biometric}"
     const val androidx_browser = "androidx.browser:browser:${Versions.AndroidX.browser}"
     const val androidx_cardview = "androidx.cardview:cardview:${Versions.AndroidX.cardview}"
+    const val androidx_collection = "androidx.collection:collection:${Versions.AndroidX.collection}"
 
     const val androidx_compose_bom = "androidx.compose:compose-bom:${Versions.AndroidX.compose_bom}"
     const val androidx_compose_animation = "androidx.compose.animation:animation"
@@ -165,7 +169,8 @@ object ComponentsDependencies {
     const val androidx_espresso_core = "androidx.test.espresso:espresso-core:${Versions.AndroidX.espresso}"
     const val androidx_localbroadcastmanager = "androidx.localbroadcastmanager:localbroadcastmanager:${Versions.AndroidX.localbroadcastmanager}"
     const val androidx_swiperefreshlayout = "androidx.swiperefreshlayout:swiperefreshlayout:${Versions.AndroidX.swiperefreshlayout}"
-    const val androidx_data_store_preferences = "androidx.datastore:datastore-preferences:${Versions.AndroidX.data_store_preferences}"
+    const val androidx_datastore = "androidx.datastore:datastore:${Versions.AndroidX.datastore}"
+    const val androidx_datastore_preferences = "androidx.datastore:datastore-preferences:${Versions.AndroidX.datastore}"
 
     const val google_material = "com.google.android.material:material:${Versions.material}"
 
@@ -212,4 +217,6 @@ object ComponentsDependencies {
     const val thirdparty_androidsvg = "com.caverock:androidsvg-aar:${Versions.androidsvg}"
 
     const val firebase_messaging = "com.google.firebase:firebase-messaging:${Versions.Firebase.messaging}"
+
+    const val play_services_base = "com.google.android.gms:play-services-base:${Versions.play_services}"
 }

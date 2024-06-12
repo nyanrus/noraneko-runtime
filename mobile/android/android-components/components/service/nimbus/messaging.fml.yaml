@@ -111,16 +111,20 @@ objects:
         default: {}
       title:
         type: Option<Text>
-        description: "The title text displayed to the user"
+        description: The title text displayed to the user
         default: null
       text:
         type: Text
-        description: "The message text displayed to the user"
+        description: The message text displayed to the user
         # This should never be defaulted.
         default: ""
+      microsurveyConfig:
+        type: Option<MicrosurveyConfig>
+        description: Optional configuration data for a microsurvey.
+        default: null
       is-control:
         type: Boolean
-        description: "Indicates if this message is the control message, if true shouldn't be displayed"
+        description: Indicates if this message is the control message, if true shouldn't be displayed
         default: false
       experiment:
         type: Option<ExperimentSlug>
@@ -183,6 +187,17 @@ objects:
           How often, in minutes, the notification message worker will wake up and check for new
           messages.
         default: 240 # 4 hours
+  MicrosurveyConfig:
+    description: Attributes relating to microsurvey content.
+    fields:
+      target-feature:
+        type: MicrosurveyTargetFeature
+        description: The type of feature the microsurvey is for e.g. Printing.
+        default: unknown # Should not be defaulted
+      options:
+        description: The list of options to present to the user e.g. "Satisfied, Dissatisfied...".
+        type: List<Text>
+        default: [] # Should not be defaulted
 
 enums:
   ControlMessageBehavior:
@@ -192,3 +207,11 @@ enums:
         description: The next eligible message should be shown.
       show-none:
         description: The surface should show no message.
+
+  MicrosurveyTargetFeature:
+    description: The specific feature the microsurvey is for e.g Printing.
+    variants:
+      printing:
+        description: The printing feature.
+      unknown:
+        description: No target feature set. Only used in an invalid experiment configuration.

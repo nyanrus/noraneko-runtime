@@ -17,12 +17,6 @@
 #include "nsString.h"
 #include "nsTArray.h"
 
-#ifdef DEBUG
-#  include "nsStringStats.h"
-#else
-#  define STRING_STAT_INCREMENT(_s)
-#endif
-
 // It's not worthwhile to reallocate the buffer and memcpy the
 // contents over when the size difference isn't large. With
 // power-of-two allocation buckets and 64 as the typical inline
@@ -63,7 +57,6 @@ static void ReleaseData(void* aData, nsAString::DataFlags aFlags) {
     MOZ_LOG_DTOR(aData, "StringAdopt", 1);
 
     free(aData);
-    STRING_STAT_INCREMENT(AdoptFree);
   }
   // otherwise, nothing to do.
 }
@@ -79,7 +72,6 @@ nsTSubstring<T>::nsTSubstring(char_type* aData, size_type aLength,
   AssertValid();
 
   if (aDataFlags & DataFlags::OWNED) {
-    STRING_STAT_INCREMENT(Adopt);
     MOZ_LOG_CTOR(this->mData, "StringAdopt", 1);
   }
 }
@@ -412,6 +404,17 @@ void nsTSubstring<T>::Assign(const char_type* aData, size_type aLength) {
 }
 
 template <typename T>
+void nsTSubstring<T>::Assign(already_AddRefed<nsStringBuffer> aBuffer,
+                             size_type aLength) {
+  nsStringBuffer* buffer = aBuffer.take();
+  auto* data = reinterpret_cast<char_type*>(buffer->Data());
+  MOZ_DIAGNOSTIC_ASSERT(data[aLength] == char_type(0),
+                        "data should be null terminated");
+  Finalize();
+  SetData(data, aLength, DataFlags::REFCOUNTED | DataFlags::TERMINATED);
+}
+
+template <typename T>
 bool nsTSubstring<T>::Assign(const char_type* aData,
                              const fallible_t& aFallible) {
   return Assign(aData, size_type(-1), aFallible);
@@ -631,7 +634,6 @@ void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
 
     SetData(aData, aLength, DataFlags::TERMINATED | DataFlags::OWNED);
 
-    STRING_STAT_INCREMENT(Adopt);
     // Treat this as construction of a "StringAdopt" object for leak
     // tracking purposes.
     MOZ_LOG_CTOR(this->mData, "StringAdopt", 1);

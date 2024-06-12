@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -36,6 +37,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.button.RadioButton
+import org.mozilla.fenix.compose.button.TextButton
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val LIST_ITEM_HEIGHT = 56.dp
@@ -43,8 +45,8 @@ private val LIST_ITEM_HEIGHT = 56.dp
 private val ICON_SIZE = 24.dp
 
 /**
- * List item used to display a label with an optional description text and
- * an optional [IconButton] at the end.
+ * List item used to display a label with an optional description text and an optional
+ * [IconButton] or [Icon] at the end.
  *
  * @param label The label in the list item.
  * @param modifier [Modifier] to be applied to the layout.
@@ -52,9 +54,11 @@ private val ICON_SIZE = 24.dp
  * @param description An optional description text below the label.
  * @param maxDescriptionLines An optional maximum number of lines for the description text to span.
  * @param onClick Called when the user clicks on the item.
- * @param iconPainter [Painter] used to display an [IconButton] after the list item.
+ * @param iconPainter [Painter] used to display an icon after the list item.
  * @param iconDescription Content description of the icon.
- * @param onIconClick Called when the user clicks on the icon.
+ * @param iconTint Tint applied to [iconPainter].
+ * @param onIconClick Called when the user clicks on the icon. An [IconButton] will be
+ * displayed if this is provided. Otherwise, an [Icon] will be displayed.
  */
 @Composable
 fun TextListItem(
@@ -66,6 +70,7 @@ fun TextListItem(
     onClick: (() -> Unit)? = null,
     iconPainter: Painter? = null,
     iconDescription: String? = null,
+    iconTint: Color = FirefoxTheme.colors.iconPrimary,
     onIconClick: (() -> Unit)? = null,
 ) {
     ListItem(
@@ -87,9 +92,16 @@ fun TextListItem(
                 Icon(
                     painter = iconPainter,
                     contentDescription = iconDescription,
-                    tint = FirefoxTheme.colors.iconPrimary,
+                    tint = iconTint,
                 )
             }
+        } else if (iconPainter != null) {
+            Icon(
+                painter = iconPainter,
+                contentDescription = iconDescription,
+                modifier = Modifier.padding(end = 16.dp),
+                tint = iconTint,
+            )
         }
     }
 }
@@ -160,54 +172,135 @@ fun FaviconListItem(
 
 /**
  * List item used to display a label and an icon at the beginning with an optional description
- * text and an optional [IconButton] at the end.
+ * text and an optional [IconButton] or [Icon] at the end.
  *
  * @param label The label in the list item.
+ * @param labelTextColor [Color] to be applied to the label.
  * @param description An optional description text below the label.
+ * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
+ * be clickable.
  * @param onClick Called when the user clicks on the item.
  * @param beforeIconPainter [Painter] used to display an [Icon] before the list item.
  * @param beforeIconDescription Content description of the icon.
- * @param afterIconPainter [Painter] used to display an [IconButton] after the list item.
+ * @param beforeIconTint Tint applied to [beforeIconPainter].
+ * @param afterIconPainter [Painter] used to display an icon after the list item.
  * @param afterIconDescription Content description of the icon.
- * @param onAfterIconClick Called when the user clicks on the icon.
+ * @param afterIconTint Tint applied to [afterIconPainter].
+ * @param onAfterIconClick Called when the user clicks on the icon. An [IconButton] will be
+ * displayed if this is provided. Otherwise, an [Icon] will be displayed.
  */
 @Composable
 fun IconListItem(
     label: String,
+    labelTextColor: Color = FirefoxTheme.colors.textPrimary,
     description: String? = null,
+    enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     beforeIconPainter: Painter,
     beforeIconDescription: String? = null,
+    beforeIconTint: Color = FirefoxTheme.colors.iconPrimary,
     afterIconPainter: Painter? = null,
     afterIconDescription: String? = null,
+    afterIconTint: Color = FirefoxTheme.colors.iconPrimary,
     onAfterIconClick: (() -> Unit)? = null,
 ) {
     ListItem(
         label = label,
+        labelTextColor = labelTextColor,
         description = description,
+        enabled = enabled,
         onClick = onClick,
         beforeListAction = {
             Icon(
                 painter = beforeIconPainter,
                 contentDescription = beforeIconDescription,
                 modifier = Modifier.padding(horizontal = 16.dp),
-                tint = FirefoxTheme.colors.iconPrimary,
+                tint = if (enabled) beforeIconTint else FirefoxTheme.colors.iconDisabled,
             )
         },
         afterListAction = {
+            val tint = if (enabled) afterIconTint else FirefoxTheme.colors.iconDisabled
+
             if (afterIconPainter != null && onAfterIconClick != null) {
                 IconButton(
                     onClick = onAfterIconClick,
                     modifier = Modifier
                         .padding(end = 16.dp)
                         .size(ICON_SIZE),
+                    enabled = enabled,
                 ) {
                     Icon(
                         painter = afterIconPainter,
                         contentDescription = afterIconDescription,
-                        tint = FirefoxTheme.colors.iconPrimary,
+                        tint = tint,
                     )
                 }
+            } else if (afterIconPainter != null) {
+                Icon(
+                    painter = afterIconPainter,
+                    contentDescription = afterIconDescription,
+                    modifier = Modifier.padding(end = 16.dp),
+                    tint = tint,
+                )
+            }
+        },
+    )
+}
+
+/**
+ * List item used to display a label and an icon at the beginning with an optional description
+ * text and an optional [TextButton] at the end.
+ *
+ * @param label The label in the list item.
+ * @param labelTextColor [Color] to be applied to the label.
+ * @param description An optional description text below the label.
+ * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
+ * be clickable.
+ * @param onClick Called when the user clicks on the item.
+ * @param beforeIconPainter [Painter] used to display an [Icon] before the list item.
+ * @param beforeIconDescription Content description of the icon.
+ * @param beforeIconTint Tint applied to [beforeIconPainter].
+ * @param afterButtonText The button text to be displayed after the list item.
+ * @param afterButtonTextColor [Color] to apply to [afterButtonText].
+ * @param onAfterButtonClick Called when the user clicks on the text button.
+ */
+@Composable
+fun IconListItem(
+    label: String,
+    labelTextColor: Color = FirefoxTheme.colors.textPrimary,
+    description: String? = null,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    beforeIconPainter: Painter,
+    beforeIconDescription: String? = null,
+    beforeIconTint: Color = FirefoxTheme.colors.iconPrimary,
+    afterButtonText: String? = null,
+    afterButtonTextColor: Color = FirefoxTheme.colors.actionPrimary,
+    onAfterButtonClick: (() -> Unit)? = null,
+) {
+    ListItem(
+        label = label,
+        labelTextColor = labelTextColor,
+        description = description,
+        enabled = enabled,
+        onClick = onClick,
+        beforeListAction = {
+            Icon(
+                painter = beforeIconPainter,
+                contentDescription = beforeIconDescription,
+                modifier = Modifier.padding(horizontal = 16.dp),
+                tint = if (enabled) beforeIconTint else FirefoxTheme.colors.iconDisabled,
+            )
+        },
+        afterListAction = {
+            if (afterButtonText != null && onAfterButtonClick != null) {
+                TextButton(
+                    text = afterButtonText,
+                    onClick = onAfterButtonClick,
+                    enabled = enabled,
+                    textColor = afterButtonTextColor,
+                    upperCaseText = false,
+                )
             }
         },
     )
@@ -270,9 +363,12 @@ fun RadioButtonListItem(
  *
  * @param label The label in the list item.
  * @param modifier [Modifier] to be applied to the layout.
+ * @param labelTextColor [Color] to be applied to the label.
  * @param maxLabelLines An optional maximum number of lines for the label text to span.
  * @param description An optional description text below the label.
  * @param maxDescriptionLines An optional maximum number of lines for the description text to span.
+ * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
+ * be clickable.
  * @param onClick Called when the user clicks on the item.
  * @param beforeListAction Optional Composable for adding UI before the list item.
  * @param afterListAction Optional Composable for adding UI to the end of the list item.
@@ -281,16 +377,18 @@ fun RadioButtonListItem(
 private fun ListItem(
     label: String,
     modifier: Modifier = Modifier,
+    labelTextColor: Color = FirefoxTheme.colors.textPrimary,
     maxLabelLines: Int = 1,
     description: String? = null,
     maxDescriptionLines: Int = 1,
+    enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     beforeListAction: @Composable RowScope.() -> Unit = {},
     afterListAction: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier = when (onClick != null) {
-            true -> Modifier.clickable { onClick() }
+            true -> Modifier.clickable(enabled = enabled) { onClick() }
             false -> Modifier
         }.then(
             Modifier.defaultMinSize(minHeight = LIST_ITEM_HEIGHT),
@@ -306,7 +404,7 @@ private fun ListItem(
         ) {
             Text(
                 text = label,
-                color = FirefoxTheme.colors.textPrimary,
+                color = if (enabled) labelTextColor else FirefoxTheme.colors.textDisabled,
                 style = FirefoxTheme.typography.subtitle1,
                 maxLines = maxLabelLines,
             )
@@ -314,7 +412,7 @@ private fun ListItem(
             description?.let {
                 Text(
                     text = description,
-                    color = FirefoxTheme.colors.textSecondary,
+                    color = if (enabled) FirefoxTheme.colors.textSecondary else FirefoxTheme.colors.textDisabled,
                     style = FirefoxTheme.typography.body2,
                     maxLines = maxDescriptionLines,
                 )
@@ -352,12 +450,20 @@ private fun TextListItemWithDescriptionPreview() {
 @Preview(name = "TextListItem with a right icon", uiMode = Configuration.UI_MODE_NIGHT_YES)
 private fun TextListItemWithIconPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Column(Modifier.background(FirefoxTheme.colors.layer1)) {
             TextListItem(
-                label = "Label + right icon",
-                iconPainter = painterResource(R.drawable.ic_menu),
+                label = "Label + right icon button",
+                onClick = {},
+                iconPainter = painterResource(R.drawable.mozac_ic_folder_24),
                 iconDescription = "click me",
                 onIconClick = { println("icon click") },
+            )
+
+            TextListItem(
+                label = "Label + right icon",
+                onClick = {},
+                iconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                iconDescription = "click me",
             )
         }
     }
@@ -367,11 +473,40 @@ private fun TextListItemWithIconPreview() {
 @Preview(name = "IconListItem", uiMode = Configuration.UI_MODE_NIGHT_YES)
 private fun IconListItemPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Column(Modifier.background(FirefoxTheme.colors.layer1)) {
             IconListItem(
                 label = "Left icon list item",
-                beforeIconPainter = painterResource(R.drawable.ic_folder_icon),
+                onClick = {},
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
                 beforeIconDescription = "click me",
+            )
+
+            IconListItem(
+                label = "Left icon list item",
+                labelTextColor = FirefoxTheme.colors.textAccent,
+                onClick = {},
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                beforeIconTint = FirefoxTheme.colors.iconAccentViolet,
+            )
+
+            IconListItem(
+                label = "Left icon list item + right icon",
+                onClick = {},
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                afterIconPainter = painterResource(R.drawable.mozac_ic_chevron_right_24),
+                afterIconDescription = null,
+            )
+
+            IconListItem(
+                label = "Left icon list item + right icon (disabled)",
+                enabled = false,
+                onClick = {},
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                afterIconPainter = painterResource(R.drawable.mozac_ic_chevron_right_24),
+                afterIconDescription = null,
             )
         }
     }
@@ -379,19 +514,28 @@ private fun IconListItemPreview() {
 
 @Composable
 @Preview(
-    name = "IconListItem with an interactable right icon",
+    name = "IconListItem with after list action",
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
-private fun IconListItemWithRightIconPreview() {
+private fun IconListItemWithAfterListActionPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Column(Modifier.background(FirefoxTheme.colors.layer1)) {
             IconListItem(
-                label = "Left icon list item + right icon",
-                beforeIconPainter = painterResource(R.drawable.ic_folder_icon),
+                label = "IconListItem + right icon + clicks",
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
                 beforeIconDescription = null,
-                afterIconPainter = painterResource(R.drawable.ic_menu),
+                afterIconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
                 afterIconDescription = "click me",
                 onAfterIconClick = { println("icon click") },
+            )
+
+            IconListItem(
+                label = "IconListItem + text button",
+                onClick = { println("list item click") },
+                beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                afterButtonText = "Edit",
+                onAfterButtonClick = { println("text button click") },
             )
         }
     }
@@ -410,14 +554,14 @@ private fun FaviconListItemPreview() {
                 description = "Description text",
                 onClick = { println("list item click") },
                 url = "",
-                iconPainter = painterResource(R.drawable.ic_menu),
+                iconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
                 onIconClick = { println("icon click") },
             )
 
             FaviconListItem(
                 label = "Favicon + painter",
                 description = "Description text",
-                faviconPainter = painterResource(id = R.drawable.ic_tab_collection),
+                faviconPainter = painterResource(id = R.drawable.mozac_ic_collection_24),
                 onClick = { println("list item click") },
                 url = "",
             )

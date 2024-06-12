@@ -76,6 +76,8 @@ smime_init()
   cp ${QADIR}/smime/alice.txt ${SMIMEDIR}
 
   mkdir tb
+  cp ${QADIR}/smime/interop-openssl/*.p12 ${SMIMEDIR}/tb
+  cp ${QADIR}/smime/interop-openssl/*.env ${SMIMEDIR}
 
   make_multipart "------------ms030903020902020502030404"
   multipart_start="$mp_start"
@@ -481,6 +483,134 @@ smime_p7()
   done
 }
 
+smime_enveloped_openssl_interop() {
+    echo "$SCRIPTNAME: OpenSSL interoperability --------------------------------"
+
+    ${BINDIR}/pk12util -d ${P_R_ALICEDIR} -i tb/Fran.p12 -W nss -K nss
+    ${BINDIR}/pk12util -d ${P_R_ALICEDIR} -i tb/Fran-ec.p12 -W nss -K nss
+    
+    echo "This is a test message to Fran." > fran.txt
+
+    echo "cmsutil -D -i fran-oaep_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data1"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data1
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data1
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha256hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data2"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha256hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data2
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data2
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha384hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data3"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha384hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data3
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data3
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha512hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data4"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha512hash_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data4
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data4
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha256mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data5"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha256mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data5
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data5
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha384mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data6"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha384mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data6
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data6
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha512mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data7"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha512mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data7
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data7
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data8"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data8
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data8
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha256hash-sha256mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data9"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha256hash-sha256mgf_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data9
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data9
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha256hash-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data10"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha256hash-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data10
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data10
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep-sha256mgf-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data11"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep-sha256mgf-label_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data11
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data11
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-oaep_ossl-sha256hash-sha256mgf-label.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data12"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-oaep_ossl-sha256hash-sha256mgf-label.env -d ${P_R_ALICEDIR} -p nss -o fran-oaep.data12
+    html_msg $? 0 "Decode OpenSSL OAEP Enveloped Data Fran" "."
+
+    diff fran.txt fran-oaep.data12
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+
+    echo "cmsutil -D -i fran-ec_ossl-aes128-sha1.env -d ${P_R_ALICEDIR} -p nss -o fran.data1"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-ec_ossl-aes128-sha1.env -d ${P_R_ALICEDIR} -p nss -o fran.data1
+    html_msg $? 0 "Decode OpenSSL Enveloped Data Fran (ECDH, AES128 key wrap, SHA-1 KDF)" "."
+    
+    diff fran.txt fran.data1
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+    
+    echo "cmsutil -D -i fran-ec_ossl-aes128-sha224.env -d ${P_R_ALICEDIR} -p nss -o fran.data2"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-ec_ossl-aes128-sha224.env -d ${P_R_ALICEDIR} -p nss -o fran.data2
+    html_msg $? 0 "Decode OpenSSL Enveloped Data Fran (ECDH, AES128 key wrap, SHA-224 KDF)" "."
+    
+    diff fran.txt fran.data2
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+    
+    echo "cmsutil -D -i fran-ec_ossl-aes128-sha256.env -d ${P_R_ALICEDIR} -p nss -o fran.data3"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-ec_ossl-aes128-sha256.env -d ${P_R_ALICEDIR} -p nss -o fran.data3
+    html_msg $? 0 "Decode OpenSSL Enveloped Data Fran (ECDH, AES128 key wrap, SHA-256 KDF)" "."
+    
+    diff fran.txt fran.data3
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+    
+    echo "cmsutil -D -i fran-ec_ossl-aes192-sha384.env -d ${P_R_ALICEDIR} -p nss -o fran.data4"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-ec_ossl-aes192-sha384.env -d ${P_R_ALICEDIR} -p nss -o fran.data4
+    html_msg $? 0 "Decode OpenSSL Enveloped Data Fran (ECDH, AES192 key wrap, SHA-384 KDF)" "."
+    
+    diff fran.txt fran.data4
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+    
+    echo "cmsutil -D -i fran-ec_ossl-aes256-sha512.env -d ${P_R_ALICEDIR} -p nss -o fran.data5"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-ec_ossl-aes256-sha512.env -d ${P_R_ALICEDIR} -p nss -o fran.data5
+    html_msg $? 0 "Decode OpenSSL Enveloped Data Fran (ECDH, AES256 key wrap, SHA-512 KDF)" "."
+    
+    diff fran.txt fran.data5
+    html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
+}
+
 ############################## smime_main ##############################
 # local shell function to test basic signed and enveloped messages
 # from 1 --> 2"
@@ -525,12 +655,26 @@ smime_main()
   diff alice.txt alice.data1
   html_msg $? 0 "Compare Decoded Enveloped Data and Original" "."
 
+  echo "$SCRIPTNAME: Enveloped Data Tests (ECDH) ------------------------------"
+  echo "cmsutil -E -r bob-ec@example.com -i alice.txt -d ${P_R_ALICEDIR} -p nss \\"
+  echo "        -o alice-ec.env"
+  ${PROFTOOL} ${BINDIR}/cmsutil -E -r bob-ec@example.com -i alice.txt -d ${P_R_ALICEDIR} -p nss -o alice-ec.env
+  html_msg $? 0 "Create Enveloped Data with Alice (ECDH)" "."
+
+  echo "cmsutil -D -i alice-ec.env -d ${P_R_BOBDIR} -p nss -o alice.data1"
+  ${PROFTOOL} ${BINDIR}/cmsutil -D -i alice-ec.env -d ${P_R_BOBDIR} -p nss -o alice-ec.data1
+  html_msg $? 0 "Decode Enveloped Data Alice (ECDH)" "."
+
+  echo "diff alice.txt alice-ec.data1"
+  diff alice.txt alice-ec.data1
+  html_msg $? 0 "Compare Decoded Enveloped Data and Original (ECDH)" "."
+
   # multiple recip
   echo "$SCRIPTNAME: Testing multiple recipients ------------------------------"
   echo "cmsutil -E -i alice.txt -d ${P_R_ALICEDIR} -o alicecc.env \\"
   echo "        -r bob@example.com,dave@example.com"
   ${PROFTOOL} ${BINDIR}/cmsutil -E -i alice.txt -d ${P_R_ALICEDIR} -o alicecc.env \
-          -r bob@example.com,dave@example.com
+          -r bob@example.com,dave-ec@example.com
   ret=$?
   html_msg $ret 0 "Create Multiple Recipients Enveloped Data Alice" "."
   if [ $ret != 0 ] ; then
@@ -554,7 +698,7 @@ smime_main()
 
   echo "cmsutil -D -i alicecc.env -d ${P_R_DAVEDIR} -p nss -o alice.data3"
   ${PROFTOOL} ${BINDIR}/cmsutil -D -i alicecc.env -d ${P_R_DAVEDIR} -p nss -o alice.data3
-  html_msg $? 0 "Decode Multiple Recipients Enveloped Data Alice by Dave" "."
+  html_msg $? 0 "Decode Multiple Recipients Enveloped Data Alice by Dave (ECDH)" "."
 
   echo "cmsutil -D -i aliceve.env -d ${P_R_EVEDIR} -p nss -o alice.data4"
   ${PROFTOOL} ${BINDIR}/cmsutil -D -i aliceve.env -d ${P_R_EVEDIR} -p nss -o alice.data4
@@ -568,6 +712,8 @@ smime_main()
 
   diff alice.txt alice.data4
   html_msg $? 0 "Compare Decoded with Multiple Email cert" "."
+
+  smime_enveloped_openssl_interop
 
   echo "$SCRIPTNAME: Sending CERTS-ONLY Message ------------------------------"
   echo "cmsutil -O -r \"Alice,bob@example.com,dave@example.com\" \\"

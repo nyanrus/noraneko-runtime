@@ -157,28 +157,6 @@
 
     <issue
         id="UnusedAttribute"
-        message="Attribute `shortcutLongLabel` is only used in API level 25 and higher (current min is 21)"
-        errorLine1="        android:shortcutLongLabel=&quot;@string/home_screen_shortcut_open_new_tab_2&quot;>"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/debug/res/xml/shortcuts.xml"
-            line="12"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UnusedAttribute"
-        message="Attribute `shortcutLongLabel` is only used in API level 25 and higher (current min is 21)"
-        errorLine1="        android:shortcutLongLabel=&quot;@string/home_screen_shortcut_open_new_tab_2&quot;>"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/xml/shortcuts.xml"
-            line="12"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UnusedAttribute"
         message="Attribute `shortcutId` is only used in API level 25 and higher (current min is 21)"
         errorLine1="        android:shortcutId=&quot;open_new_private_tab&quot;"
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
@@ -218,28 +196,6 @@
         <location
             file="src/main/res/xml/shortcuts.xml"
             line="22"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UnusedAttribute"
-        message="Attribute `shortcutLongLabel` is only used in API level 25 and higher (current min is 21)"
-        errorLine1="        android:shortcutLongLabel=&quot;@string/home_screen_shortcut_open_new_private_tab_2&quot;>"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/debug/res/xml/shortcuts.xml"
-            line="23"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UnusedAttribute"
-        message="Attribute `shortcutLongLabel` is only used in API level 25 and higher (current min is 21)"
-        errorLine1="        android:shortcutLongLabel=&quot;@string/home_screen_shortcut_open_new_private_tab_2&quot;>"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/xml/shortcuts.xml"
-            line="23"
             column="9"/>
     </issue>
 
@@ -1368,6 +1324,11 @@
             file="src/main/res/layout/activity_privacy_content_display.xml"
             line="21"
             column="21"/>
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.microsurvey_success appears to be unused">
+        <location file="src/main/res/drawable/microsurvey_success.xml" />
     </issue>
 
 </issues>

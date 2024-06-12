@@ -188,27 +188,14 @@ config = {
             "options": ["--suite=reftest", "--topsrcdir=tests/reftest/tests"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest.list"],
         },
-        "reftest-no-accel": {
-            "options": [
-                "--suite=reftest",
-                "--setpref=layers.acceleration.disabled=true",
-                "--topsrcdir=tests/reftest/tests",
-            ],
-            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"],
-        },
     },
     "all_xpcshell_suites": {
         "xpcshell": {
             "options": [
                 "--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-            ],
-            "tests": [],
-        },
-        "xpcshell-msix": {
-            "options": [
-                "--app-binary=%(binary_path)s",
-                "--app-path=%(install_dir)s",
-                "--xre-path=%(install_dir)s",
+                "--msix-app-binary=%(binary_path)s",
+                "--msix-app-path=%(install_dir)s",
+                "--msix-xre-path=%(install_dir)s",
             ],
             "tests": [],
         },

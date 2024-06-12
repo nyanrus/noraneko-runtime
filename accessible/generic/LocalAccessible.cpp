@@ -14,6 +14,7 @@
 #include "mozilla/a11y/AccAttributes.h"
 #include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/a11y/Platform.h"
+#include "mozilla/FocusModel.h"
 #include "nsAccUtils.h"
 #include "nsAccessibilityService.h"
 #include "ApplicationAccessible.h"
@@ -127,7 +128,6 @@ ENameValueFlag LocalAccessible::Name(nsString& aName) const {
   if (!aName.IsEmpty()) return eNameOK;
 
   ENameValueFlag nameFlag = NativeName(aName);
-  nsCoreUtils::TrimNonBreakingSpaces(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
   // In the end get the name from tooltip.
@@ -408,6 +408,7 @@ uint64_t LocalAccessible::NativeInteractiveState() const {
   if (NativelyUnavailable()) return states::UNAVAILABLE;
 
   nsIFrame* frame = GetFrame();
+  auto flags = IsFocusableFlags(0);
   // If we're caching this remote document in the parent process, we
   // need to cache focusability irrespective of visibility. Otherwise,
   // if this document is invisible when it first loads, we'll cache that
@@ -418,13 +419,12 @@ uint64_t LocalAccessible::NativeInteractiveState() const {
   // Although ignoring visibility means IsFocusable will return true for
   // visibility: hidden, etc., this isn't a problem because we don't include
   // those hidden elements in the a11y tree anyway.
-  const bool ignoreVisibility = mDoc->IPCDoc();
-  if (frame && frame->IsFocusable(
-                   /* aWithMouse */ false,
-                   /* aCheckVisibility */ !ignoreVisibility)) {
+  if (mDoc->IPCDoc()) {
+    flags |= IsFocusableFlags::IgnoreVisibility;
+  }
+  if (frame && frame->IsFocusable(flags)) {
     return states::FOCUSABLE;
   }
-
   return 0;
 }
 
@@ -689,7 +689,8 @@ nsRect LocalAccessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
   if (frame && mContent) {
     *aBoundingFrame = nsLayoutUtils::GetContainingBlockForClientRect(frame);
     nsRect unionRect = nsLayoutUtils::GetAllInFlowRectsUnion(
-        frame, *aBoundingFrame, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+        frame, *aBoundingFrame,
+        nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms);
 
     if (unionRect.IsEmpty()) {
       // If we end up with a 0x0 rect from above (or one with negative
@@ -1625,6 +1626,14 @@ void LocalAccessible::ApplyARIAState(uint64_t* aState) const {
   *aState |= aria::UniversalStatesFor(element);
 
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  if (!roleMapEntry && IsHTMLTableCell() && Role() == roles::GRID_CELL) {
+    // This is a <td> inside a role="grid", so it gets an implicit role of
+    // GRID_CELL in ARIATransformRole. However, because it's implicit, we
+    // don't have a role map entry, and without that, we can't apply ARIA states
+    // below. Therefore, we get the role map entry here.
+    roleMapEntry = aria::GetRoleMap(nsGkAtoms::gridcell);
+    MOZ_ASSERT(roleMapEntry, "Should have role map entry for gridcell");
+  }
   if (roleMapEntry) {
     // We only force the readonly bit off if we have a real mapping for the aria
     // role. This preserves the ability for screen readers to use readonly
@@ -3794,14 +3803,12 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     } else if (aUpdateType == CacheUpdateType::Update) {
       fields->SetAttribute(CacheKey::DOMNodeID, DeleteEntry());
     }
-    if (auto* el = dom::Element::FromNodeOrNull(mContent)) {
-      nsAutoString className;
-      el->GetClassName(className);
-      if (!className.IsEmpty()) {
-        fields->SetAttribute(CacheKey::DOMNodeClass, std::move(className));
-      } else if (aUpdateType == CacheUpdateType::Update) {
-        fields->SetAttribute(CacheKey::DOMNodeClass, DeleteEntry());
-      }
+    nsString className;
+    DOMNodeClass(className);
+    if (!className.IsEmpty()) {
+      fields->SetAttribute(CacheKey::DOMNodeClass, std::move(className));
+    } else if (aUpdateType == CacheUpdateType::Update) {
+      fields->SetAttribute(CacheKey::DOMNodeClass, DeleteEntry());
     }
   }
 
@@ -4269,6 +4276,13 @@ void LocalAccessible::DOMNodeID(nsString& aID) const {
     if (nsAtom* id = mContent->GetID()) {
       id->ToString(aID);
     }
+  }
+}
+
+void LocalAccessible::DOMNodeClass(nsString& aClass) const {
+  aClass.Truncate();
+  if (auto* el = dom::Element::FromNodeOrNull(mContent)) {
+    el->GetClassName(aClass);
   }
 }
 

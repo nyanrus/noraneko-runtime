@@ -1356,17 +1356,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
         return mDefaultAppearance;
       case mozilla::StyleAppearance::Textfield:
         // `appearance: textfield` should behave like `auto` on all elements
-        // except <input type=search> elements, which we identify using the
-        // internal -moz-default-appearance property.  (In the browser chrome
-        // we have some other elements that set `-moz-default-appearance:
-        // searchfield`, but not in content documents.)
-        if (mDefaultAppearance == mozilla::StyleAppearance::Searchfield) {
-          return mAppearance;
-        }
-        // We also need to support `appearance: textfield` on <input
-        // type=number>, since that is the only way in Gecko to disable the
-        // spinners.
-        if (mDefaultAppearance == mozilla::StyleAppearance::NumberInput) {
+        // except <input type=search/number/password> elements, which we
+        // identify using the internal -moz-default-appearance property.
+        if (mDefaultAppearance == mozilla::StyleAppearance::Searchfield ||
+            mDefaultAppearance == mozilla::StyleAppearance::NumberInput ||
+            mDefaultAppearance == mozilla::StyleAppearance::PasswordInput) {
           return mAppearance;
         }
         return mDefaultAppearance;
@@ -1533,8 +1527,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     }
   }
 
+  // These two methods are deprecated since they do not differentiate paginated
+  // context and multi-column context. Use nsIFrame::ShouldBreakBefore() /
+  // nsIFrame::ShouldBreakAfter() instead.
   bool BreakBefore() const { return ShouldBreak(mBreakBefore); }
-
   bool BreakAfter() const { return ShouldBreak(mBreakAfter); }
 
   // These are defined in nsStyleStructInlines.h.
@@ -1607,12 +1603,22 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
 
   using CounterPair = mozilla::StyleGenericCounterPair<int32_t>;
 
-  size_t ContentCount() const {
-    return mContent.IsItems() ? mContent.AsItems().Length() : 0;
+  /// Returns the content items that aren't alternative content.
+  mozilla::Span<const mozilla::StyleContentItem> NonAltContentItems() const {
+    if (!mContent.IsItems()) {
+      return {};
+    }
+    const auto& items = mContent.AsItems();
+    return mozilla::Span(items.items).To(items.alt_start);
   }
 
-  const mozilla::StyleContentItem& ContentAt(size_t aIndex) const {
-    return mContent.AsItems().AsSpan()[aIndex];
+  /// Returns the content items that /are/ alternative content.
+  mozilla::Span<const mozilla::StyleContentItem> AltContentItems() const {
+    if (!mContent.IsItems()) {
+      return {};
+    }
+    const auto& items = mContent.AsItems();
+    return mozilla::Span(items.items).From(items.alt_start);
   }
 
   mozilla::StyleContent mContent;
@@ -2057,36 +2063,5 @@ struct UniquePtr_Simple {
 
 STATIC_ASSERT_TYPE_LAYOUTS_MATCH(mozilla::UniquePtr<int>,
                                  UniquePtr_Simple<int>);
-
-/**
- * <div rustbindgen replaces="nsTArray"></div>
- */
-template <typename T>
-class nsTArray_Simple {
- protected:
-  T* mBuffer;
-
- public:
-  ~nsTArray_Simple() {
-    // The existence of a user-provided, and therefore non-trivial, destructor
-    // here prevents bindgen from deriving the Clone trait via a simple memory
-    // copy.
-  }
-};
-
-/**
- * <div rustbindgen replaces="CopyableTArray"></div>
- */
-template <typename T>
-class CopyableTArray_Simple : public nsTArray_Simple<T> {};
-
-STATIC_ASSERT_TYPE_LAYOUTS_MATCH(nsTArray<nsStyleImageLayers::Layer>,
-                                 nsTArray_Simple<nsStyleImageLayers::Layer>);
-STATIC_ASSERT_TYPE_LAYOUTS_MATCH(nsTArray<mozilla::StyleTransition>,
-                                 nsTArray_Simple<mozilla::StyleTransition>);
-STATIC_ASSERT_TYPE_LAYOUTS_MATCH(nsTArray<mozilla::StyleAnimation>,
-                                 nsTArray_Simple<mozilla::StyleAnimation>);
-STATIC_ASSERT_TYPE_LAYOUTS_MATCH(nsTArray<mozilla::StyleViewTimeline>,
-                                 nsTArray_Simple<mozilla::StyleViewTimeline>);
 
 #endif /* nsStyleStruct_h___ */

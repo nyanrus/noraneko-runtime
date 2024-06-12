@@ -226,7 +226,7 @@ struct Sampling {
     sampler: GlobalOrArgument,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub struct FunctionInfo {
@@ -574,7 +574,7 @@ impl FunctionInfo {
                 non_uniform_result: self.add_ref(vector),
                 requirements: UniformityRequirements::empty(),
             },
-            E::Literal(_) | E::Constant(_) | E::ZeroValue(_) => Uniformity::new(),
+            E::Literal(_) | E::Constant(_) | E::Override(_) | E::ZeroValue(_) => Uniformity::new(),
             E::Compose { ref components, .. } => {
                 let non_uniform_result = components
                     .iter()
@@ -787,6 +787,14 @@ impl FunctionInfo {
                 non_uniform_result: self.add_ref(query),
                 requirements: UniformityRequirements::empty(),
             },
+            E::SubgroupBallotResult => Uniformity {
+                non_uniform_result: Some(handle),
+                requirements: UniformityRequirements::empty(),
+            },
+            E::SubgroupOperationResult { .. } => Uniformity {
+                non_uniform_result: Some(handle),
+                requirements: UniformityRequirements::empty(),
+            },
         };
 
         let ty = resolve_context.resolve(expression, |h| Ok(&self[h].ty))?;
@@ -827,7 +835,7 @@ impl FunctionInfo {
                         let req = self.expressions[expr.index()].uniformity.requirements;
                         if self
                             .flags
-                            .contains(super::ValidationFlags::CONTROL_FLOW_UNIFORMITY)
+                            .contains(ValidationFlags::CONTROL_FLOW_UNIFORMITY)
                             && !req.is_empty()
                         {
                             if let Some(cause) = disruptor {
@@ -1029,6 +1037,42 @@ impl FunctionInfo {
                     }
                     FunctionUniformity::new()
                 }
+                S::SubgroupBallot {
+                    result: _,
+                    predicate,
+                } => {
+                    if let Some(predicate) = predicate {
+                        let _ = self.add_ref(predicate);
+                    }
+                    FunctionUniformity::new()
+                }
+                S::SubgroupCollectiveOperation {
+                    op: _,
+                    collective_op: _,
+                    argument,
+                    result: _,
+                } => {
+                    let _ = self.add_ref(argument);
+                    FunctionUniformity::new()
+                }
+                S::SubgroupGather {
+                    mode,
+                    argument,
+                    result: _,
+                } => {
+                    let _ = self.add_ref(argument);
+                    match mode {
+                        crate::GatherMode::BroadcastFirst => {}
+                        crate::GatherMode::Broadcast(index)
+                        | crate::GatherMode::Shuffle(index)
+                        | crate::GatherMode::ShuffleDown(index)
+                        | crate::GatherMode::ShuffleUp(index)
+                        | crate::GatherMode::ShuffleXor(index) => {
+                            let _ = self.add_ref(index);
+                        }
+                    }
+                    FunctionUniformity::new()
+                }
             };
 
             disruptor = disruptor.or(uniformity.exit_disruptor());
@@ -1047,7 +1091,7 @@ impl ModuleInfo {
         gctx: crate::proc::GlobalCtx,
     ) -> Result<(), super::ConstExpressionError> {
         self.const_expression_types[handle.index()] =
-            resolve_context.resolve(&gctx.const_expressions[handle], |h| Ok(&self[h]))?;
+            resolve_context.resolve(&gctx.global_expressions[handle], |h| Ok(&self[h]))?;
         Ok(())
     }
 
@@ -1186,6 +1230,7 @@ fn uniform_control_flow() {
     };
     let resolve_context = ResolveContext {
         constants: &Arena::new(),
+        overrides: &Arena::new(),
         types: &type_arena,
         special_types: &crate::SpecialTypes::default(),
         global_vars: &global_var_arena,

@@ -67,7 +67,7 @@
     replaceContainerClass("color", hbox, identity.color);
 
     let label = ContextualIdentityService.getUserContextLabel(userContextId);
-    document.getElementById("userContext-label").setAttribute("value", label);
+    document.getElementById("userContext-label").textContent = label;
     // Also set the container label as the tooltip so we can only show the icon
     // in small windows.
     hbox.setAttribute("tooltiptext", label);
@@ -108,6 +108,12 @@
         this,
         "_shouldExposeContentTitlePbm",
         "privacy.exposeContentTitleInWindow.pbm",
+        true
+      );
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "_showTabCardPreview",
+        "browser.tabs.cardPreview.enabled",
         true
       );
 
@@ -161,6 +167,8 @@
       TO_START: 2,
       TO_END: 3,
       MULTI_SELECTED: 4,
+      DUPLICATES: 6,
+      ALL_DUPLICATES: 7,
     },
 
     _lastRelatedTabMap: new WeakMap(),
@@ -346,6 +354,90 @@
 
     get visibleTabs() {
       return this.tabContainer._getVisibleTabs();
+    },
+
+    getDuplicateTabsToClose(aTab) {
+      // One would think that a set is better, but it would need to copy all
+      // the strings instead of just keeping references to the nsIURI objects,
+      // and the array is presumed to be small anyways.
+      let keys = [];
+      let keyForTab = tab => {
+        let uri = tab.linkedBrowser?.currentURI;
+        if (!uri) {
+          return null;
+        }
+        return {
+          uri,
+          userContextId: tab.userContextId,
+        };
+      };
+      let keyEquals = (a, b) => {
+        return a.userContextId == b.userContextId && a.uri.equals(b.uri);
+      };
+      if (aTab.multiselected) {
+        for (let tab of this.selectedTabs) {
+          let key = keyForTab(tab);
+          if (key) {
+            keys.push(key);
+          }
+        }
+      } else {
+        let key = keyForTab(aTab);
+        if (key) {
+          keys.push(key);
+        }
+      }
+
+      if (!keys.length) {
+        return [];
+      }
+
+      let duplicateTabs = [];
+      for (let tab of this.tabs) {
+        if (tab == aTab || tab.pinned) {
+          continue;
+        }
+        if (aTab.multiselected && tab.multiselected) {
+          continue;
+        }
+        let key = keyForTab(tab);
+        if (key && keys.some(k => keyEquals(k, key))) {
+          duplicateTabs.push(tab);
+        }
+      }
+
+      return duplicateTabs;
+    },
+
+    getAllDuplicateTabsToClose() {
+      let lastSeenTabs = this.tabs.toSorted(
+        (a, b) => b.lastSeenActive - a.lastSeenActive
+      );
+      let duplicateTabs = [];
+      let keys = [];
+      for (let tab of lastSeenTabs) {
+        const uri = tab.linkedBrowser?.currentURI;
+        if (!uri) {
+          // Can't tell if it's a duplicate without a URI.
+          // Safest to leave it be.
+          continue;
+        }
+
+        const key = {
+          uri,
+          userContextId: tab.userContextId,
+        };
+        if (
+          !tab.pinned &&
+          keys.some(
+            k => k.userContextId == key.userContextId && k.uri.equals(key.uri)
+          )
+        ) {
+          duplicateTabs.push(tab);
+        }
+        keys.push(key);
+      }
+      return duplicateTabs;
     },
 
     get _numPinnedTabs() {
@@ -1108,6 +1200,11 @@
         return;
       }
 
+      let oldBrowser = this.selectedBrowser;
+      // Once the async switcher starts, it's unpredictable when it will touch
+      // the address bar, thus we store its state immediately.
+      gURLBar?.saveSelectionStateForBrowser(oldBrowser);
+
       let newTab = this.getTabForBrowser(newBrowser);
 
       if (!aForceUpdate) {
@@ -1137,18 +1234,11 @@
       }
       this._lastRelatedTabMap = new WeakMap();
 
-      let oldBrowser = this.selectedBrowser;
-
       if (!gMultiProcessBrowser) {
         oldBrowser.removeAttribute("primary");
         oldBrowser.docShellIsActive = false;
         newBrowser.setAttribute("primary", "true");
         newBrowser.docShellIsActive = !document.hidden;
-      }
-
-      if (gURLBar) {
-        oldBrowser._urlbarSelectionStart = gURLBar.selectionStart;
-        oldBrowser._urlbarSelectionEnd = gURLBar.selectionEnd;
       }
 
       this._selectedBrowser = newBrowser;
@@ -1445,19 +1535,12 @@
                 if (currentActiveElement != document.activeElement) {
                   return;
                 }
-
-                gURLBar.setSelectionRange(
-                  newBrowser._urlbarSelectionStart,
-                  newBrowser._urlbarSelectionEnd
-                );
+                gURLBar.restoreSelectionStateForBrowser(newBrowser);
               },
               { once: true }
             );
           } else {
-            gURLBar.setSelectionRange(
-              newBrowser._urlbarSelectionStart,
-              newBrowser._urlbarSelectionEnd
-            );
+            gURLBar.restoreSelectionStateForBrowser(newBrowser);
           }
         };
 
@@ -1610,6 +1693,22 @@
 
     _dataURLRegEx: /^data:[^,]+;base64,/i,
 
+    // Regex to test if a string (potential tab label) consists of only non-
+    // printable characters. We consider Unicode categories Separator
+    // (spaces & line-breaks) and Other (control chars, private use, non-
+    // character codepoints) to be unprintable, along with a few specific
+    // characters whose expected rendering is blank:
+    //   U+2800 BRAILLE PATTERN BLANK (category So)
+    //   U+115F HANGUL CHOSEONG FILLER (category Lo)
+    //   U+1160 HANGUL JUNGSEONG FILLER (category Lo)
+    //   U+3164 HANGUL FILLER (category Lo)
+    //   U+FFA0 HALFWIDTH HANGUL FILLER (category Lo)
+    // We also ignore combining marks, as in the absence of a printable base
+    // character they are unlikely to be usefully rendered, and may well be
+    // clipped away entirely.
+    _nonPrintingRegEx:
+      /^[\p{Z}\p{C}\p{M}\u{115f}\u{1160}\u{2800}\u{3164}\u{ffa0}]*$/u,
+
     setTabTitle(aTab) {
       var browser = this.getBrowserForTab(aTab);
       var title = browser.contentTitle;
@@ -1630,6 +1729,16 @@
       }
 
       let isURL = false;
+
+      // Trim leading and trailing whitespace from the title.
+      title = title.trim();
+
+      // If the title contains only non-printing characters (or only combining
+      // marks, but no base character for them), we won't use it.
+      if (this._nonPrintingRegEx.test(title)) {
+        title = "";
+      }
+
       let isContentTitle = !!title;
       if (!title) {
         // See if we can use the URI as the title.
@@ -2118,16 +2227,12 @@
         b.setAttribute("name", name);
       }
 
-      let notificationbox = document.createXULElement("notificationbox");
-      notificationbox.setAttribute("notificationside", "top");
-
       let stack = document.createXULElement("stack");
       stack.className = "browserStack";
       stack.appendChild(b);
 
       let browserContainer = document.createXULElement("vbox");
       browserContainer.className = "browserContainer";
-      browserContainer.appendChild(notificationbox);
       browserContainer.appendChild(stack);
 
       let browserSidebarContainer = document.createXULElement("hbox");
@@ -3244,6 +3349,24 @@
         return true;
       }
 
+      const shownDupeDialogPref =
+        "browser.tabs.haveShownCloseAllDuplicateTabsWarning";
+      if (
+        aCloseTabs == this.closingTabsEnum.ALL_DUPLICATES &&
+        !Services.prefs.getBoolPref(shownDupeDialogPref, false)
+      ) {
+        // The first time a user closes all duplicate tabs, tell them what will
+        // happen and give them a chance to back away.
+        Services.prefs.setBoolPref(shownDupeDialogPref, true);
+
+        window.focus();
+        const [title, text] = this.tabLocalization.formatValuesSync([
+          { id: "tabbrowser-confirm-close-duplicate-tabs-title" },
+          { id: "tabbrowser-confirm-close-duplicate-tabs-text" },
+        ]);
+        return Services.prompt.confirm(window, title, text);
+      }
+
       const pref =
         aCloseTabs == this.closingTabsEnum.ALL
           ? "browser.tabs.warnOnClose"
@@ -3481,6 +3604,42 @@
         tabsToEnd.push(tabs[i]);
       }
       return tabsToEnd;
+    },
+
+    removeDuplicateTabs(aTab) {
+      this._removeDuplicateTabs(
+        aTab,
+        this.getDuplicateTabsToClose(aTab),
+        this.closingTabsEnum.DUPLICATES
+      );
+    },
+
+    _removeDuplicateTabs(aConfirmationAnchor, tabs, aCloseTabs) {
+      if (!tabs.length) {
+        return;
+      }
+
+      if (!this.warnAboutClosingTabs(tabs.length, aCloseTabs)) {
+        return;
+      }
+
+      this.removeTabs(tabs);
+      ConfirmationHint.show(
+        aConfirmationAnchor,
+        "confirmation-hint-duplicate-tabs-closed",
+        { l10nArgs: { tabCount: tabs.length } }
+      );
+    },
+
+    removeAllDuplicateTabs() {
+      // I would like to have the caller provide this target,
+      // but the caller lives in a different document.
+      let alltabsButton = document.getElementById("alltabs-button");
+      this._removeDuplicateTabs(
+        alltabsButton,
+        this.getAllDuplicateTabsToClose(),
+        this.closingTabsEnum.ALL_DUPLICATES
+      );
     },
 
     /**
@@ -4329,6 +4488,56 @@
           "close-last-tab"
         );
       }
+    },
+    /**
+     * Closes tabs within the browser that match a given list of nsURIs. Returns
+     * any nsURIs that could not be closed successfully. This does not close any
+     * tabs that have a beforeUnload prompt
+     *
+     * @param {nsURI[]} urisToClose
+     *   The set of uris to remove.
+     * @returns {nsURI[]}
+     *  the nsURIs that weren't found in this browser
+     */
+    async closeTabsByURI(urisToClose) {
+      let remainingURIsToClose = [...urisToClose];
+      let tabsToRemove = [];
+      for (let tab of this.tabs) {
+        let currentURI = tab.linkedBrowser.currentURI;
+        // Find any URI that matches the current tab's URI
+        const matchedIndex = remainingURIsToClose.findIndex(uriToClose =>
+          uriToClose.equals(currentURI)
+        );
+
+        if (matchedIndex > -1) {
+          tabsToRemove.push(tab);
+          remainingURIsToClose.splice(matchedIndex, 1); // Remove the matched URI
+        }
+      }
+
+      if (tabsToRemove.length) {
+        const { beforeUnloadComplete, lastToClose } = this._startRemoveTabs(
+          tabsToRemove,
+          {
+            animate: false,
+            suppressWarnAboutClosingWindow: true,
+            skipPermitUnload: false,
+            skipRemoves: false,
+            skipSessionStore: false,
+          }
+        );
+
+        // Wait for the beforeUnload handlers to complete.
+        await beforeUnloadComplete;
+
+        // _startRemoveTabs doesn't close the last tab in the window
+        // for this use case, we simply close it
+        if (lastToClose) {
+          this.removeTab(lastToClose);
+        }
+      }
+      // If we still have uris, that means we couldn't find them in this window instance
+      return remainingURIsToClose;
     },
 
     /**
@@ -5659,6 +5868,20 @@
       }
     },
 
+    getTabPids(tab) {
+      if (!tab.linkedBrowser) {
+        return [];
+      }
+
+      // Get the PIDs of the content process and remote subframe processes
+      let [contentPid, ...framePids] = E10SUtils.getBrowserPids(
+        tab.linkedBrowser,
+        gFissionBrowser
+      );
+      let pids = contentPid ? [contentPid] : [];
+      return pids.concat(framePids.sort());
+    },
+
     getTabTooltip(tab, includeLabel = true) {
       let labelArray = [];
       if (includeLabel) {
@@ -5670,24 +5893,14 @@
           false
         )
       ) {
-        if (tab.linkedBrowser) {
-          // Show the PIDs of the content process and remote subframe processes.
-          let [contentPid, ...framePids] = E10SUtils.getBrowserPids(
-            tab.linkedBrowser,
-            gFissionBrowser
-          );
-          if (contentPid) {
-            if (framePids && framePids.length) {
-              labelArray.push(
-                `(pids ${contentPid}, ${framePids.sort().join(", ")})`
-              );
-            } else {
-              labelArray.push(`(pid ${contentPid})`);
-            }
-          }
-          if (tab.linkedBrowser.docShellIsActive) {
-            labelArray.push("[A]");
-          }
+        const pids = this.getTabPids(tab);
+        if (pids.length) {
+          let pidLabel = pids.length > 1 ? "pids" : "pid";
+          labelArray.push(`(${pidLabel} ${pids.join(", ")})`);
+        }
+
+        if (tab.linkedBrowser.docShellIsActive) {
+          labelArray.push("[A]");
         }
       }
 
@@ -5750,6 +5963,13 @@
         tooltip.label = "";
         document.l10n.setAttributes(tooltip, l10nId, l10nArgs);
       } else {
+        // Prevent the tooltip from appearing if card preview is enabled, but
+        // only if the user is not hovering over the media play icon or the
+        // close button
+        if (this._showTabCardPreview) {
+          event.preventDefault();
+          return;
+        }
         tooltip.label = this.getTabTooltip(tab, true);
       }
     },
@@ -7528,9 +7748,8 @@ var TabContextMenu = {
       tabsToMove[0] == visibleTabs[gBrowser._numPinnedTabs];
     contextMoveTabToStart.disabled = isFirstTab && allSelectedTabsAdjacent;
 
-    if (this.contextTab.hasAttribute("customizemode")) {
-      document.getElementById("context_openTabInWindow").disabled = true;
-    }
+    document.getElementById("context_openTabInWindow").disabled =
+      this.contextTab.hasAttribute("customizemode");
 
     // Only one of "Duplicate Tab"/"Duplicate Tabs" should be visible.
     document.getElementById("context_duplicateTab").hidden =
@@ -7563,6 +7782,17 @@ var TabContextMenu = {
     document
       .getElementById("context_closeTab")
       .setAttribute("data-l10n-args", tabCountInfo);
+
+    let closeDuplicateEnabled = Services.prefs.getBoolPref(
+      "browser.tabs.context.close-duplicate.enabled"
+    );
+    let closeDuplicateTabsItem = document.getElementById(
+      "context_closeDuplicateTabs"
+    );
+    closeDuplicateTabsItem.hidden = !closeDuplicateEnabled;
+    closeDuplicateTabsItem.disabled =
+      !closeDuplicateEnabled ||
+      !gBrowser.getDuplicateTabsToClose(this.contextTab).length;
 
     // Disable "Close Multiple Tabs" if all sub menuitems are disabled
     document.getElementById("context_closeTabOptions").disabled =

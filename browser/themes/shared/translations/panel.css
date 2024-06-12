@@ -63,9 +63,17 @@ h1.translations-panel-header-wrapper {
 
 /* The default styling is to dim the default, but here override it so that it still uses
    the primary color. */
-.translations-panel-footer > button[default][disabled="true"] {
+.translations-panel-button-group > button[default][disabled="true"] {
   color: var(--button-primary-color);
   background-color: var(--button-primary-bgcolor);
+}
+
+#select-translations-panel-footer {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-small);
 }
 
 #full-page-translations-panel-translate-hint-action {
@@ -117,28 +125,34 @@ h1.translations-panel-header-wrapper {
   padding: 12px;
 }
 
-.select-translations-panel-button {
-  align-items: center;
-  justify-content: center;
-  margin-inline: 0;
-}
-
 .select-translations-panel-content {
   padding: var(--arrowpanel-padding);
   padding-block: 4px;
 }
 
 .select-translations-panel-copy-button {
+  list-style-image: url(chrome://global/skin/icons/edit-copy.svg);
   background-color: transparent;
-  font: message-box;
-  font-weight: var(--font-weight-bold);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  margin: 0;
 
-  &::before {
-    content: url(chrome://global/skin/icons/edit-copy.svg);
-    fill: currentColor;
-    margin-inline-end: 5px;
-    -moz-context-properties: fill;
+  > .button-box {
+    gap: var(--space-xsmall);
   }
+
+  &.copied {
+    list-style-image: url(chrome://global/skin/icons/check.svg);
+  }
+}
+
+#select-translations-panel-copy-button {
+  justify-content: flex-start;
+}
+
+#select-translations-panel-footer-button-group {
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .select-translations-panel-header {
@@ -146,8 +160,9 @@ h1.translations-panel-header-wrapper {
   text-align: initial;
 }
 
-.select-translations-panel-label {
-  margin-block: var(--arrowpanel-padding) 6px;
+.select-translations-panel-label,
+.select-translations-panel-message-bar {
+  margin-block: 0 6px;
 }
 
 #select-translations-panel-lang-selection {
@@ -156,7 +171,7 @@ h1.translations-panel-header-wrapper {
 
 .select-translations-panel-text-area {
   height: 8em;
-  resize: none;
+  resize: vertical;
 
   &:disabled {
     color: var(--panel-disabled-color);

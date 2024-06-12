@@ -106,12 +106,6 @@ search:
         pref: browser.urlbar.richSuggestions.featureGate
       description: >-
         Feature gate that controls whether Rich Suggestions are enabled.
-    serpEventTelemetryEnabled:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.search.serpEventTelemetry.enabled
-      description: Whether the Glean SERP event telemetry is enabled.
     serpEventTelemetryCategorizationEnabled:
       type: boolean
       setPref:
@@ -627,6 +621,20 @@ windowsLaunchOnLogin:
         pref: browser.startup.windowsLaunchOnLogin.enabled
       description: Should users see the Windows launch on login checkbox.
 
+firefoxBridge:
+  description: "Controls for Firefox Bridge extension and extension registration"
+  owner: install-update@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.firefoxbridge.enabled
+      description: >-
+        Should Firefox Bridge be registered within firefoxBridgeNativeMessaging
+        startup idle task for use with native messaging proxy.
+
 windowsJumpList:
   description: "Controls for the Windows Jump List integration."
   owner: mconley@mozilla.com
@@ -641,14 +649,15 @@ windowsJumpList:
 
 abouthomecache:
   description: "The startup about:home cache."
-  owner: omc@mozilla.com
+  owner: omc@mozilla.com, mconley@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     enabled:
       type: boolean
-      fallbackPref: browser.startup.homepage.abouthome_cache.enabled
       description: Is the feature enabled?
+      setPref:
+        branch: user
+        pref: browser.startup.homepage.abouthome_cache.enabled
 
 newtab:
   description: "The about:newtab page"
@@ -929,6 +938,11 @@ pocketNewtab:
       type: string
       fallbackPref: >-
         browser.newtabpage.activity-stream.discoverystream.region-spocs-config
+    regionWeatherConfig:
+      description: A comma-separated list of regions that get weather by default.
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.region-weather-config
     topSitesMaxSponsored:
       # Defined under `pocketNewtab` as it needs to be used along with other variables
       type: int
@@ -943,6 +957,12 @@ pocketNewtab:
       type: boolean
       fallbackPref: >-
         browser.topsites.contile.sov.enabled
+    pocketFeedParameters:
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.pocket-feed-parameters
+      description: >-
+        Add parameters to Pocket feed URL.
 
 saveToPocket:
   description: The save to Pocket feature
@@ -1130,6 +1150,18 @@ fullPageTranslationAutomaticPopup:
       setPref:
         branch: user
         pref: browser.translations.automaticallyPopup
+
+selectTranslation:
+  description: This feature enables the option to translate selected text from the context menu.
+  owner: enordin@mozilla.com
+  hasExposure: false
+  variables:
+    boolean:
+      description: Set to true to enable the select-translations feature
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.translations.select.enable
 
 pdfjs:
   description: The Firefox pdf reader.
@@ -1392,13 +1424,13 @@ gleanInternalSdk:
   description: "The Glean internal SDK feature intended only for internal Glean Team use"
   owner: glean-team@mozilla.com
   hasExposure: false
-  # Some variables are used through the C++ API and thus require pref-storage.
-  # We rely on those values at Glean.init time, which happens at startup.
-  isEarlyStartup: true
   variables:
     finalInactive:
       type: "boolean"
       description: "Enables FOG early shutdown pings when true"
+      setPref:
+        branch: user
+        pref: telemetry.glean.internal.finalInactive
     gleanMetricConfiguration:
       type: json
       description: |
@@ -1409,33 +1441,9 @@ gleanInternalSdk:
       type: int
       description: >-
         Maximum number of pings that can be sent in a 60 second interval
-
-majorRelease2022:
-  description: Major Release 2022
-  owner: firefoxview@mozilla.com
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
-    feltPrivacyPBMDarkTheme:
-      type: boolean
-      fallbackPref: "browser.theme.dark-private-windows"
-      description: "Use dark theme variant for PBM windows. This is only supported if the theme sets darkTheme data."
-    feltPrivacyShowPreferencesSection:
-      type: boolean
-      fallbackPref: "browser.privacySegmentation.preferences.show"
-      description: "Controls visibility of the privacy segmentation preferences section."
-    feltPrivacyWindowSeparation:
-      type: boolean
-      fallbackPref: "browser.privateWindowSeparation.enabled"
-      description: "Whether or not private browsing windows use a separate icon in the Windows taskbar"
-    colorwayCloset:
-      type: boolean
-      fallbackPref: "browser.theme.colorway-closet"
-      description: "Whether or not to show the colorway closet modal"
-    onboarding:
-      type: boolean
-      fallbackPref: "browser.majorrelease.onboarding"
-      description: "Whether or not to use the MR2022 onboarding settings."
+      setPref:
+        branch: user
+        pref: telemetry.glean.internal.maxPingsPerMinute
 
 browserLowMemoryPrefs:
   description: Prefs which control the browser's behaviour under low memory.
@@ -1694,26 +1702,20 @@ dapTelemetry:
   description: DAP Telemetry
   owner: simon@mozilla.com
   hasExposure: false
-  isEarlyStartup: true # Data is sent on startup with a trigger in BrowserGlue.sys.mjs
   variables:
     enabled:
       type: boolean
-      fallbackPref: toolkit.telemetry.dap_enabled
       description: Whether to automatically send DAP measurements.
     task1Enabled:
       type: boolean
-      fallbackPref: toolkit.telemetry.dap_task1_enabled
       description: Whether to send fake measurements for task 1.
     task1TaskId:
       type: string
-      fallbackPref: toolkit.telemetry.dap_task1_taskid
       description: The task ID to use for task 1 measurements.
     visitCountingEnabled:
       type: boolean
-      fallbackPref: toolkit.telemetry.dap_visit_counting_enabled
       description: Whether to count visits to the provided list of URLs.
     visitCountingExperimentList:
-      fallbackPref: toolkit.telemetry.dap_visit_counting_experiment_list
       type: json
       description: A list of experiments with URLs for which we want to count visits.
 
@@ -2098,6 +2100,12 @@ gc:
       setPref:
         branch: user
         pref: "javascript.options.mem.gc_parallel_marking_threshold_mb"
+    gc_max_parallel_marking_threads:
+      description: The maximum number of threads to use for parallel marking, if enabled.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_max_parallel_marking_threads"
     gc_per_zone:
       description: Whether per-zone GC is enabled. If not, all zones are collected every time.
       type: boolean
@@ -2397,20 +2405,6 @@ backgroundUpdate:
         branch: user
         pref: app.update.background.allowUpdatesForUnelevatedInstallations
 
-defaultAgent:
-  description: >-
-    Features that configure the Windows Default Browser Agent.
-  owner: install-update@mozilla.com
-  applications:
-    - firefox-desktop-background-task
-  hasExposure: false
-  variables:
-    cppFallback:
-      description: >-
-        Triggers the Default Agent to fall back to the C++ implementation of DoTask if true.
-      type: boolean
-      fallbackPref: "defaultAgent.cppFallback.enabled"
-
 bookmarks:
   description: Prefs to control aspects of the bookmarks system.
   owner: omc@mozilla.com
@@ -2706,6 +2700,10 @@ contentRelevancy:
       setPref:
         branch: user
         pref: toolkit.contentRelevancy.timerInterval
+    ingestEnabled:
+      description: Enable the ingestion through the Rust component
+      type: boolean
+      fallbackPref: toolkit.contentRelevancy.ingestEnabled
 
 tabPreview:
   description: Prefs to control Tab Previews
@@ -2733,6 +2731,29 @@ backupService:
       description: >-
         When true, the profile backup service will be initialized soon after
         startup.
+    prefsUIEnabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.backup.preferences.ui.enabled
+      description: >-
+        When true, the section in about:preferences to control the backup
+        feature is visible.
+    sqlitePagesPerStep:
+      description: >-
+        The number of database pages to backup per step when backing up an
+        SQLite database.
+      type: int
+      setPref:
+        branch: user
+        pref: browser.backup.sqlite.pages_per_step
+    sqliteStepDelayMs:
+      description: >-
+        The delay between SQLite database backup steps in milliseconds.
+      type: int
+      setPref:
+        branch: user
+        pref: browser.backup.sqlite.step_delay_ms
 
 pqcrypto:
   description: Prefs that control the use of post-quantum cryptography.

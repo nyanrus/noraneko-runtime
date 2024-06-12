@@ -115,7 +115,6 @@ class nsNodeInfoManager;
 class nsParser;
 class nsPIWindowRoot;
 class nsPresContext;
-class nsStringBuffer;
 class nsTextFragment;
 class nsView;
 class nsWrapperCache;
@@ -500,6 +499,9 @@ class nsContentUtils {
 
     return GetCommonAncestorHelper(aNode1, aNode2);
   }
+
+  static nsINode* GetClosestCommonShadowIncludingInclusiveAncestor(
+      nsINode* aNode1, nsINode* aNode2);
 
   /**
    * Returns the common flattened tree ancestor, if any, for two given content
@@ -2443,14 +2445,6 @@ class nsContentUtils {
   [[nodiscard]] static bool PlatformToDOMLineBreaks(nsString& aString,
                                                     const mozilla::fallible_t&);
 
-  /**
-   * Populates aResultString with the contents of the string-buffer aBuf, up
-   * to aBuf's null-terminator.  aBuf must not be null. Ownership of the string
-   * is not transferred.
-   */
-  static void PopulateStringFromStringBuffer(nsStringBuffer* aBuf,
-                                             nsAString& aResultString);
-
   static bool IsHandlingKeyBoardEvent() { return sIsHandlingKeyBoardEvent; }
 
   static void SetIsHandlingKeyBoardEvent(bool aHandling) {
@@ -2778,9 +2772,13 @@ class nsContentUtils {
    *                    check.  aNode and aOffset can be computed with
    *                    UIEvent::GetRangeParentContentAndOffset() if you want to
    *                    check the click point.
+   * @param aAllowCrossShadowBoundary If true, this method allows the selection
+   *                                  to have boundaries that cross shadow
+   *                                  boundaries.
    */
   static bool IsPointInSelection(const mozilla::dom::Selection& aSelection,
-                                 const nsINode& aNode, const uint32_t aOffset);
+                                 const nsINode& aNode, const uint32_t aOffset,
+                                 const bool aAllowCrossShadowBoundary = false);
 
   /**
    * Takes a selection, and a text control element (<input> or <textarea>), and
@@ -3041,7 +3039,7 @@ class nsContentUtils {
   static mozilla::Maybe<mozilla::dom::IPCImage> SurfaceToIPCImage(
       mozilla::gfx::DataSourceSurface&);
   static already_AddRefed<mozilla::gfx::DataSourceSurface> IPCImageToSurface(
-      mozilla::dom::IPCImage&&);
+      const mozilla::dom::IPCImage&);
 
   // Helpers shared by the implementations of nsContentUtils methods and
   // nsIDOMWindowUtils methods.
@@ -3597,6 +3595,8 @@ class nsContentUtils {
           aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
+  static nsINode* GetCommonShadowIncludingAncestorHelper(nsINode* aNode1,
+                                                         nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(
       nsIContent* aContent1, nsIContent* aContent2);
 
