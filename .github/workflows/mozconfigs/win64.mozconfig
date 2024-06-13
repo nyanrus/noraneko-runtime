@@ -3,6 +3,7 @@ ac_add_options --with-app-basename=Noraneko
 ac_add_options --disable-maintenance-service
 ac_add_options --disable-updater
 ac_add_options --disable-tests
+ac_add_options --enable-geckodriver
 ac_add_options --disable-crashreporter
 ac_add_options --enable-bootstrap
 ac_add_options --enable-rust-simd
