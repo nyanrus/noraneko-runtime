@@ -18,3 +18,5 @@ mk_add_options AUTOCLOBBER=1
 #Telemetry
 #https://searchfox.org/mozilla-central/rev/893f350260faac2ee6bf2b14c627d55eb2babfb0/toolkit/components/telemetry/docs/internals/preferences.rst
 ac_add_options --with-branding=noraneko/gecko/branding/unofficial
+# Package js shell.
+export MOZ_PACKAGE_JSSHELL=1
