@@ -3576,7 +3576,10 @@ void BrowserParent::SetRenderLayers(bool aEnabled) {
     return;
   }
 
-  mRenderLayers = aEnabled;
+  /*@nora|INJECT|START*/
+  bool splitViewIsEnabled = Preferences::GetBool("floorp.browser.splitView.working", false);
+  mRenderLayers = splitViewIsEnabled ? true : aEnabled;
+  /*@nora|INJECT|END*/
 
   SetRenderLayersInternal(aEnabled);
 }
