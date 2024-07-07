@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-job-defaults:
+task-defaults:
     worker-type: b-linux-gcp
 
 linux64/opt:
@@ -499,7 +499,7 @@ linux/opt:
     run-on-projects:
         - 'mozilla-beta'
         - 'mozilla-release'
-        - 'mozilla-esr115'
+        - 'mozilla-esr128'
     use-sccache: true
     fetches:
         toolchain:

@@ -8,22 +8,22 @@ import json
 import re
 
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
-from mozbuild.util import ReadOnlyDict
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
+from taskgraph.util.readonlydict import ReadOnlyDict
 from taskgraph.util.schema import Schema, resolve_keyed_by
 from taskgraph.util.taskcluster import (
     get_artifact_path,
     get_artifact_url,
     get_index_url,
 )
+from taskgraph.util.templates import merge
 from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
 from gecko_taskgraph.util.perftest import is_external_browser
 from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.templates import merge
 
 transforms = TransformSequence()
 
@@ -395,24 +395,20 @@ def setup_browsertime(config, tasks):
 
         cd_fetches = {
             "android.*": [
-                "linux64-chromedriver-122",
-                "linux64-chromedriver-123",
-                "linux64-chromedriver-124",
+                "linux64-chromedriver-125",
+                "linux64-chromedriver-126",
             ],
             "linux.*": [
-                "linux64-chromedriver-122",
-                "linux64-chromedriver-123",
-                "linux64-chromedriver-124",
+                "linux64-chromedriver-125",
+                "linux64-chromedriver-126",
             ],
             "macosx1015.*": [
-                "mac64-chromedriver-122",
-                "mac64-chromedriver-123",
-                "mac64-chromedriver-124",
+                "mac64-chromedriver-125",
+                "mac64-chromedriver-126",
             ],
             "macosx1400.*": [
-                "mac-arm-chromedriver-122",
-                "mac-arm-chromedriver-123",
-                "mac-arm-chromedriver-124",
+                "mac-arm-chromedriver-125",
+                "mac-arm-chromedriver-126",
             ],
             "windows.*aarch64.*": [
                 "win32-chromedriver-121",
@@ -420,19 +416,17 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-123",
             ],
             "windows.*-64.*": [
-                "win64-chromedriver-123",
-                "win64-chromedriver-124",
+                "win64-chromedriver-125",
+                "win64-chromedriver-126",
             ],
         }
 
         chromium_fetches = {
-            "linux.*": ["linux64-chromiumdriver"],
-            "macosx1015.*": ["mac-chromiumdriver"],
-            "macosx1400.*": ["mac-chromiumdriver-arm"],
-            "windows.*aarch64.*": ["win32-chromiumdriver"],
-            "windows.*-32.*": ["win32-chromiumdriver"],
-            "windows.*-64.*": ["win64-chromiumdriver"],
-            "android.*": ["linux64-chromiumdriver"],
+            "linux.*": ["linux64-cft-chromedriver"],
+            "macosx1015.*": ["mac-cft-chromedriver"],
+            "macosx1400.*": ["mac-cft-chromedriver-arm"],
+            "windows.*-64.*": ["win64-cft-chromedriver"],
+            "android.*": ["linux64-cft-chromedriver"],
         }
 
         cd_extracted_name = {
@@ -449,13 +443,13 @@ def setup_browsertime(config, tasks):
             for platform in chromium_fetches:
                 fs["by-test-platform"][platform].extend(chromium_fetches[platform])
 
-            # The chromedrivers for chromium are repackaged into the archives
-            # that we get the chromium binary from so we always have a compatible
-            # version.
+            # The Chrome-for-Testing chromedrivers are repackaged into the following
+            # platform specific archives. The versions will always be compatible as
+            # these are fetched from the `Canary` channel.
             cd_extracted_name = {
-                "windows": "chrome-win/chromedriver.exe",
-                "mac": "chrome-mac/chromedriver",
-                "default": "chrome-linux/chromedriver",
+                "windows": "cft-chromedriver-win64/chromedriver.exe",
+                "mac": "cft-chromedriver-mac/chromedriver",
+                "default": "cft-chromedriver-linux/chromedriver",
             }
 
         # Disable the Raptor install step

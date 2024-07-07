@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: gecko_taskgraph.loader.transform:loader
+loader: taskgraph.loader.transform:loader
 
 transforms:
     - gecko_taskgraph.transforms.bouncer_check:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
-job-defaults:
+task-defaults:
     name: bouncer-check
     description: bouncer check
     worker-type: b-linux-gcp
@@ -29,7 +29,7 @@ job-defaults:
         kind: test
         tier: 1
 
-jobs:
+tasks:
     firefox:
         shipping-product: firefox
         index:
@@ -53,8 +53,7 @@ jobs:
                     mozilla-central: FIREFOX_NIGHTLY
                     mozilla-beta: LATEST_FIREFOX_RELEASED_DEVEL_VERSION
                     mozilla-release: LATEST_FIREFOX_VERSION
-                    mozilla-esr115: FIREFOX_ESR
-                    # mozilla-esrXX: FIREFOX_ESR_NEXT
+                    mozilla-esr128: FIREFOX_ESR_NEXT
                     default: LATEST_FIREFOX_DEVEL_VERSION
             products-url: https://product-details.mozilla.org/1.0/firefox_versions.json
         treeherder:
