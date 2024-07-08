@@ -39,12 +39,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   300
 );
 
-/*@nora|INJECT|START*/
-function floorpSplitViewIsEnabled() {
-  return Services.prefs.getBoolPref("floorp.browser.splitView.working", false);
-}
-/*@nora|INJECT|END*/
-
 /**
  * The tab switcher is responsible for asynchronously switching
  * tabs in e10s. It waits until the new tab is ready (i.e., the
@@ -285,7 +279,7 @@ export class AsyncTabSwitcher {
         browser.docShellIsActive = true;
       }
 
-      if (remoteTab && !floorpSplitViewIsEnabled()) {
+      if (remoteTab) {
         browser.renderLayers = true;
         remoteTab.priorityHint = true;
       }
@@ -297,7 +291,7 @@ export class AsyncTabSwitcher {
       // Setting the docShell to be inactive will also cause it
       // to stop rendering layers.
       browser.docShellIsActive = false;
-      if (remoteTab && !floorpSplitViewIsEnabled()) {
+      if (remoteTab) {
         remoteTab.priorityHint = false;
       }
       if (!browser.hasLayers) {
@@ -370,7 +364,7 @@ export class AsyncTabSwitcher {
     // constructing BrowserChild's, layer trees, etc, by showing a blank
     // tab instead and focusing it immediately.
     let shouldBeBlank = false;
-    if (requestedBrowser.isRemoteBrowser && !floorpSplitViewIsEnabled()) {
+    if (requestedBrowser.isRemoteBrowser) {
       // If a tab is remote and the window is not minimized, we can show a
       // blank tab instead of a spinner in the following cases:
       //
@@ -405,7 +399,7 @@ export class AsyncTabSwitcher {
       }
     }
 
-    if (requestedBrowser.isRemoteBrowser && !floorpSplitViewIsEnabled()) {
+    if (requestedBrowser.isRemoteBrowser) {
       this.addLogFlag("isRemote");
     }
 
@@ -830,7 +824,7 @@ export class AsyncTabSwitcher {
     this.logState(
       `onRemotenessChange(${tab._tPos}, ${tab.linkedBrowser.isRemoteBrowser})`
     );
-    if (!tab.linkedBrowser.isRemoteBrowser && !floorpSplitViewIsEnabled()) {
+    if (!tab.linkedBrowser.isRemoteBrowser) {
       if (this.getTabState(tab) == this.STATE_LOADING) {
         this.onLayersReady(tab.linkedBrowser);
       } else if (this.getTabState(tab) == this.STATE_UNLOADING) {
@@ -1023,8 +1017,7 @@ export class AsyncTabSwitcher {
     if (
       lazy.gTabCacheSize > 1 &&
       tab.linkedBrowser.isRemoteBrowser &&
-      tab.linkedBrowser.currentURI.spec != "about:blank" &&
-      !floorpSplitViewIsEnabled()
+      tab.linkedBrowser.currentURI.spec != "about:blank"
     ) {
       let tabIndex = this.tabLayerCache.indexOf(tab);
 
