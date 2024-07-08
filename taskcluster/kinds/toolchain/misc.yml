@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-job-defaults:
+task-defaults:
     worker-type: b-linux-gcp
     worker:
         max-run-time: 1800
@@ -588,6 +588,20 @@ windows-rs:
             - artifact: windows-rs.tar.zst
               extract: false
               dest: ../artifacts
+
+win64-cmake:
+    description: "cmake toolchain build"
+    treeherder:
+        symbol: TW64(cmake)
+    run:
+        script: build-cmake.sh
+        toolchain-artifact: public/build/cmake.tar.zst
+    fetches:
+        fetch:
+            - cmake
+        toolchain:
+            - linux64-clang-toolchain
+            - vs-toolchain
 
 win64-libxml2:
     description: "libxml2 toolchain build"

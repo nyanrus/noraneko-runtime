@@ -230,7 +230,7 @@ class HTMLInputElement final : public TextControlElement,
   bool IsSingleLineTextControl() const override;
   bool IsTextArea() const override;
   bool IsPasswordTextControl() const override;
-  int32_t GetCols() override;
+  Maybe<int32_t> GetCols() override;
   int32_t GetWrapCols() override;
   int32_t GetRows() override;
   void GetDefaultValueFromContent(nsAString& aValue, bool aForDisplay) override;
@@ -248,6 +248,12 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT nsresult CreateEditor() override;
   void SetPreviewValue(const nsAString& aValue) override;
   void GetPreviewValue(nsAString& aValue) override;
+  void SetAutofillState(const nsAString& aState) override {
+    SetFormAutofillState(aState);
+  }
+  void GetAutofillState(nsAString& aState) override {
+    GetFormAutofillState(aState);
+  }
   void EnablePreview() override;
   bool IsPreviewEnabled() override;
   void InitializeKeyboardEventListeners() override;
@@ -1531,6 +1537,7 @@ class HTMLInputElement final : public TextControlElement,
   bool mHasPatternAttribute : 1;
 
  private:
+  Maybe<int32_t> GetNumberInputCols() const;
   static void ImageInputMapAttributesIntoRule(MappedDeclarationsBuilder&);
 
   /**

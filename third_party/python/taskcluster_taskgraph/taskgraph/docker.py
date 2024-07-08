@@ -16,7 +16,10 @@ except ImportError as e:
     zstd = e
 
 from taskgraph.util import docker
-from taskgraph.util.taskcluster import get_artifact_url, get_session
+from taskgraph.util.taskcluster import (
+    get_artifact_url,
+    get_session,
+)
 
 DEPLOY_WARNING = """
 *****************************************************************
@@ -59,10 +62,9 @@ def load_image_by_name(image_name, tag=None):
     )
     tasks = load_tasks_for_kind(params, "docker-image")
     task = tasks[f"build-docker-image-{image_name}"]
-    deadline = None
-    task_id = IndexSearch().should_replace_task(
-        task, {}, deadline, task.optimization.get("index-search", [])
-    )
+
+    indexes = task.optimization.get("index-search", [])
+    task_id = IndexSearch().should_replace_task(task, {}, None, indexes)
 
     if task_id in (True, False):
         print(
@@ -100,7 +102,7 @@ def build_context(name, outputFile, args=None):
 
     image_dir = docker.image_path(name)
     if not os.path.isdir(image_dir):
-        raise Exception("image directory does not exist: %s" % image_dir)
+        raise Exception(f"image directory does not exist: {image_dir}")
 
     docker.create_context_tar(".", image_dir, outputFile, args)
 
@@ -115,7 +117,7 @@ def build_image(name, tag, args=None):
 
     image_dir = docker.image_path(name)
     if not os.path.isdir(image_dir):
-        raise Exception("image directory does not exist: %s" % image_dir)
+        raise Exception(f"image directory does not exist: {image_dir}")
 
     tag = tag or docker.docker_image(name, by_tag=True)
 

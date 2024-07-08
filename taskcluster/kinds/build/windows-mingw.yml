@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-job-defaults:
+task-defaults:
     worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
@@ -37,7 +37,7 @@ win32-mingwclang/opt:
         mozconfig-variant: mingwclang
     run-on-projects:
         - 'mozilla-central'
-        - 'mozilla-esr115'
+        - 'mozilla-esr128'
     use-sccache: true
     fetches:
         toolchain:
@@ -76,7 +76,7 @@ win32-mingwclang/debug:
         mozconfig-variant: mingwclang-debug
     run-on-projects:
         - 'mozilla-central'
-        - 'mozilla-esr115'
+        - 'mozilla-esr128'
     use-sccache: true
     fetches:
         toolchain:
@@ -115,7 +115,7 @@ win64-mingwclang/opt:
         mozconfig-variant: mingwclang
     run-on-projects:
         - 'mozilla-central'
-        - 'mozilla-esr115'
+        - 'mozilla-esr128'
     use-sccache: true
     fetches:
         toolchain:
@@ -154,7 +154,7 @@ win64-mingwclang/debug:
         mozconfig-variant: mingwclang-debug
     run-on-projects:
         - 'mozilla-central'
-        - 'mozilla-esr115'
+        - 'mozilla-esr128'
     use-sccache: true
     fetches:
         toolchain:
