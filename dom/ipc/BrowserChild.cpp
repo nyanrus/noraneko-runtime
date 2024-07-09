@@ -2542,10 +2542,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(const bool& aEnabled) {
     ProcessHangMonitor::MaybeStartPaintWhileInterruptingJS();
   }
 
-  /*@nora|INJECT|START*/
-  bool splitViewIsEnabled = Preferences::GetBool("floorp.browser.splitView.working", false);
-  mRenderLayers = splitViewIsEnabled ? true : aEnabled;
-  /*@nora|INJECT|END*/
+  mRenderLayers = aEnabled;
 
   const bool wasVisible = IsVisible();
 
