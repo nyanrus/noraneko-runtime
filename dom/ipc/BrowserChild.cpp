@@ -2543,7 +2543,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(const bool& aEnabled) {
   }
 
   mRenderLayers = aEnabled;
-
   const bool wasVisible = IsVisible();
 
   UpdateVisibility();
