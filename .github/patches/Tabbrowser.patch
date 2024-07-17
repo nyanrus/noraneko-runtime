@@ -1,0 +1,18 @@
+﻿diff --git a/browser/components/tabbrowser/content/tabbrowser.js b/browser/components/tabbrowser/content/tabbrowser.js
+index 2674dc2beb..993abd2b5f 100644
+--- a/browser/components/tabbrowser/content/tabbrowser.js
++++ b/browser/components/tabbrowser/content/tabbrowser.js
+@@ -3187,6 +3187,13 @@
+       let hiddenTabs = new Map();
+       let shouldUpdateForPinnedTabs = false;
+ 
++      for (var i = 0; i < tabDataList.length; i++) {
++        const tabData = tabDataList[i];
++        if (tabData.floorpDisableHistory) {
++          tabDataList.splice(i, 1);
++        }
++      }
++
+       // We create each tab and browser, but only insert them
+       // into a document fragment so that we can insert them all
+       // together. This prevents synch reflow for each tab
