@@ -26,9 +26,12 @@ jobs:
           cp -r ./nyanrus_release/.github temp_release
           cp ./nyanrus_release/.gitmodules temp_release
           cp -r ./nyanrus_release/noraneko temp_release
-      - name: push
+      - name: apply git patches
         run: |
           cd temp_release
+          git apply --ignore-space-change --ignore-whitespace .github/patches/*.patch
+      - name: push
+        run: |
           export FF_VERSION=$(cat browser/config/version.txt)
           git config user.name github-actions
           git config user.email github-actions@github.com
