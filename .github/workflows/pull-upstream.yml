@@ -26,7 +26,7 @@ jobs:
           cp -r ./nyanrus_release/.github temp_release
           cp ./nyanrus_release/.gitmodules temp_release
           cp -r ./nyanrus_release/noraneko temp_release
-      -name: apply git patches
+      - name: apply git patches
         run: |
           cd temp_release
           git apply --ignore-space-change --ignore-whitespace .github/patches/*.patch
