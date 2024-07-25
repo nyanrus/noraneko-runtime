@@ -118,10 +118,23 @@ jobs:
         cd ~/output
         tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
 
+    - name: compress full zstd
+      run: |
+        rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
+        cd ~/output-full
+        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin-full.tar.zst .
+
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-zstd
         compression-level: 0
         path: ~/nora-win_x64-bin.tar.zst
+
+    - name: Publish Package🎁
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-win-amd64-zstd-full
+        compression-level: 0
+        path: ~/nora-win_x64-bin-full.tar.zst
     # Publish END
