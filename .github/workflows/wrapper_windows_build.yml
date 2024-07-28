@@ -8,9 +8,16 @@ name: "(A) ⚒ Windows build"
 
 on:
   workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        required: true
 
 run-name: Windows x64 build
 jobs:
   run-main:
     name: win-x64
     uses: ./.github/workflows/windows_build.yml
+    with:
+      debug: ${{inputs.debug}}
+    
