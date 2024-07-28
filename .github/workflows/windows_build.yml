@@ -6,6 +6,10 @@
 
 on:
   workflow_call:
+    inputs:
+      debug:
+        type: boolean
+        default: true
 
 jobs:
   win-build:
@@ -101,7 +105,13 @@ jobs:
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
         # SCCACHE END
 
+        if [[ $GHA_aarch64 == 'true' ]]; then
+          echo "ac_add_options --enable-debug" >> mozconfig
+        fi
+
         ./mach --no-interactive bootstrap --application-choice browser
+      env:
+        GHA_debug: ${{inputs.debug}}
 
     - name: Mach Configure
       run: |
