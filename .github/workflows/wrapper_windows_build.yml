@@ -17,6 +17,6 @@ run-name: Windows x64 build
 jobs:
   run-main:
     name: win-x64
-    uses: ./.github/workflows/windows_build.yml
+    uses: ./windows_build.yml
     with:
       debug: ${{inputs.debug}}
