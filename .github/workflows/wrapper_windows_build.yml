@@ -20,4 +20,3 @@ jobs:
     uses: ./.github/workflows/windows_build.yml
     with:
       debug: ${{inputs.debug}}
-    
