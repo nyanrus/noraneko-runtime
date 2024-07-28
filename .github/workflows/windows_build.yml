@@ -129,6 +129,11 @@ jobs:
     - name: package
       if: inputs.package
       run: |
+        cd ./noraneko
+        npm install -g pnpm
+        pnpm i
+        pnpm tsx build.ts --production-build
+        cd ..
         ./mach package
 
     # Publish START
