@@ -135,7 +135,7 @@ jobs:
         compression-level: 0
         path: ~/nora-win_x64-bin.tar.zst
 
-     - name: compress full zstd
+    - name: compress full zstd 
       run: |
         rm ~/nora-win_x64-bin.tar.zst
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
