@@ -10,6 +10,9 @@ on:
       debug:
         type: boolean
         default: true
+      package:
+        type: boolean
+        default: false
 
 jobs:
   win-build:
@@ -123,12 +126,18 @@ jobs:
       run: |
         ./mach build
 
+    - name: package
+      if: inputs.package
+      run: |
+        ./mach package
+
     # Publish START
     - name: compress zstd
       run: |
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
         cd ~/output
         tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
+        rm -r ~/output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
@@ -143,6 +152,7 @@ jobs:
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
         cd ~/output-full
         tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin-full.tar.zst .
+        rm -r ~/output-full
 
     - name: Publish Package full🎁
       uses: actions/upload-artifact@v4
@@ -150,4 +160,12 @@ jobs:
         name: noraneko-win-amd64-zstd-full
         compression-level: 0
         path: ~/nora-win_x64-bin-full.tar.zst
+
+    - name: publish package
+      if: inputs.package
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-win-amd64-zstd-full
+        compression-level: 0
+        path: $GITHUB_WORKSPACE/obj-x86_64-pc-windows-msvc/dist/floorp-*.en-US.win64.zip
     # Publish END
