@@ -87,6 +87,10 @@ var TabStateInternal = {
     let tabData = { entries: [], lastAccessed: tab.lastAccessed };
     let browser = tab.linkedBrowser;
 
+    /*@nora:inject:start*/
+    tabData.floorpDisableHistory = tab.getAttribute("floorp-disablehistory");
+    /*@nora:inject:end*/
+
     if (tab.pinned) {
       tabData.pinned = true;
     }

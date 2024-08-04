@@ -2814,9 +2814,7 @@
           // but we were opened from another browser, set the cross group
           // opener ID:
           if (openerBrowser && !openWindowInfo) {
-            b.browsingContext.setCrossGroupOpener(
-              openerBrowser.browsingContext
-            );
+            b.browsingContext.crossGroupOpener = openerBrowser.browsingContext;
           }
         }
       } catch (e) {
@@ -2856,6 +2854,10 @@
           globalHistoryOptions,
           triggeringRemoteType,
           wasSchemelessInput,
+          hasValidUserGestureActivation:
+            !!openWindowInfo?.hasValidUserGestureActivation,
+          textDirectiveUserActivation:
+            !!openWindowInfo?.textDirectiveUserActivation,
         });
       }
 
@@ -3109,6 +3111,8 @@
         globalHistoryOptions,
         triggeringRemoteType,
         wasSchemelessInput,
+        hasValidUserGestureActivation,
+        textDirectiveUserActivation,
       }
     ) {
       if (
@@ -3173,6 +3177,8 @@
             globalHistoryOptions,
             triggeringRemoteType,
             wasSchemelessInput,
+            hasValidUserGestureActivation,
+            textDirectiveUserActivation,
           });
         } catch (ex) {
           console.error(ex);
@@ -3186,6 +3192,15 @@
       let tabToSelect = null;
       let hiddenTabs = new Map();
       let shouldUpdateForPinnedTabs = false;
+
+      /*@nora:inject:start*/
+      for (var i = 0; i < tabDataList.length; i++) {
+        const tabData = tabDataList[i];
+        if (tabData.floorpDisableHistory) {
+          tabDataList.splice(i, 1);
+        }
+      }
+      /*@nora:inject:end*/
 
       // We create each tab and browser, but only insert them
       // into a document fragment so that we can insert them all
@@ -3370,12 +3385,12 @@
     },
 
     warnAboutClosingTabs(tabsToClose, aCloseTabs, aSource) {
-      if (tabsToClose <= 1) {
-        return true;
-      }
-
+      // We want to warn about closing duplicates even if there was only a
+      // single duplicate, so we intentionally place this above the check for
+      // tabsToClose <= 1.
       const shownDupeDialogPref =
         "browser.tabs.haveShownCloseAllDuplicateTabsWarning";
+      var ps = Services.prompt;
       if (
         aCloseTabs == this.closingTabsEnum.ALL_DUPLICATES &&
         !Services.prefs.getBoolPref(shownDupeDialogPref, false)
@@ -3385,11 +3400,36 @@
         Services.prefs.setBoolPref(shownDupeDialogPref, true);
 
         window.focus();
-        const [title, text] = this.tabLocalization.formatValuesSync([
-          { id: "tabbrowser-confirm-close-duplicate-tabs-title" },
-          { id: "tabbrowser-confirm-close-duplicate-tabs-text" },
+        const [title, text, button] = this.tabLocalization.formatValuesSync([
+          { id: "tabbrowser-confirm-close-all-duplicate-tabs-title" },
+          { id: "tabbrowser-confirm-close-all-duplicate-tabs-text" },
+          {
+            id: "tabbrowser-confirm-close-all-duplicate-tabs-button-closetabs",
+          },
         ]);
-        return Services.prompt.confirm(window, title, text);
+
+        const flags =
+          ps.BUTTON_POS_0 * ps.BUTTON_TITLE_IS_STRING +
+          ps.BUTTON_POS_1 * ps.BUTTON_TITLE_CANCEL +
+          ps.BUTTON_POS_0_DEFAULT;
+
+        // buttonPressed will be 0 for close tabs, 1 for cancel.
+        const buttonPressed = ps.confirmEx(
+          window,
+          title,
+          text,
+          flags,
+          button,
+          null,
+          null,
+          null,
+          {}
+        );
+        return buttonPressed == 0;
+      }
+
+      if (tabsToClose <= 1) {
+        return true;
       }
 
       const pref =
@@ -3413,8 +3453,6 @@
 
       // Our prompt to close this window is most important, so replace others.
       gDialogBox.replaceDialogIfOpen();
-
-      var ps = Services.prompt;
 
       // default to true: if it were false, we wouldn't get this far
       var warnOnClose = { value: true };
@@ -6314,7 +6352,7 @@
         "DOMModalDialogClosed",
         event => {
           if (
-            !event.detail?.wasPermitUnload ||
+            event.detail?.promptType != "beforeunload" ||
             event.detail.areLeaving ||
             event.target.nodeName != "browser"
           ) {
