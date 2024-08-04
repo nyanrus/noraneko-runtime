@@ -1,0 +1,11 @@
+diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
+index 3bf9d51155..cd05466b7c 100644
+--- a/browser/installer/package-manifest.in
++++ b/browser/installer/package-manifest.in
+@@ -449,3 +449,6 @@ bin/libfreebl_64int_3.so
+ ; Test workers unpack artifact build packages and need `jogfile.json`
+ @RESPATH@/jogfile.json
+ #endif
++
++; [Noraneko Files]
++@RESPATH@/noraneko/*

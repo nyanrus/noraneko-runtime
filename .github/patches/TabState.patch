@@ -1,0 +1,15 @@
+diff --git a/browser/components/sessionstore/TabState.sys.mjs b/browser/components/sessionstore/TabState.sys.mjs
+index 26f5671c84..b27d6cb0cf 100644
+--- a/browser/components/sessionstore/TabState.sys.mjs
++++ b/browser/components/sessionstore/TabState.sys.mjs
+@@ -87,6 +87,10 @@ var TabStateInternal = {
+     let tabData = { entries: [], lastAccessed: tab.lastAccessed };
+     let browser = tab.linkedBrowser;
+ 
++    /*@nora:inject:start*/
++    tabData.floorpDisableHistory = tab.getAttribute("floorp-disablehistory");
++    /*@nora:inject:end*/
++
+     if (tab.pinned) {
+       tabData.pinned = true;
+     }
