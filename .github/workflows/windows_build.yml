@@ -108,7 +108,7 @@ jobs:
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
         # SCCACHE END
 
-        if [[ $GHA_aarch64 == 'true' ]]; then
+        if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
         fi
 
