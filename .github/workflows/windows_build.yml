@@ -18,10 +18,12 @@ jobs:
   win-build:
     runs-on: ubuntu-latest
     steps:
+    - run: corepack enable
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: "lts/*"
+        cache: "pnpm"
 
     - uses: actions/checkout@v4
       name: Clone 🧬
