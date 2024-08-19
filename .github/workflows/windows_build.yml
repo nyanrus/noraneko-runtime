@@ -70,7 +70,6 @@ jobs:
         sudo rm -rf /usr/local/share/chromium
         sudo rm -rf /opt/ghc
         sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
         sudo rm -rf /etc/apache2
         sudo rm -rf /etc/nginx
         sudo rm -rf /usr/local/share/chrome_driver
