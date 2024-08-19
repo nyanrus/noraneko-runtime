@@ -131,7 +131,6 @@ jobs:
       if: inputs.package
       run: |
         cd ./noraneko
-        npm install -g pnpm
         pnpm i
         pnpm tsx build.ts --build
         cd ..
