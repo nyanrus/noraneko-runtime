@@ -126,8 +126,9 @@ jobs:
       if: inputs.package
       run: |
         cd ./noraneko
-        npm i
-        npx tsx ./build.ts --build
+        npm i -g pnpm
+        pnpm i
+        pnpm tsx ./build.ts --build
         cd ..
         ./mach package
 
