@@ -127,7 +127,7 @@ jobs:
         cd ./noraneko
         npm i -g pnpm
         pnpm i
-        pnpm tsx ./build.ts --build
+        #pnpm tsx ./build.ts --build
         cd ..
         ./mach package
 
