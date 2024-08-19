@@ -132,7 +132,7 @@ jobs:
       run: |
         cd ./noraneko
         pnpm i
-        pnpm tsx build.ts --build
+        pnpm tsx ./build.ts --build
         cd ..
         ./mach package
 
