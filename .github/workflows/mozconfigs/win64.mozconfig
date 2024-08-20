@@ -22,6 +22,6 @@ mk_add_options AUTOCLOBBER=1
 # Disable telemetry
 ac_add_options MOZ_TELEMETRY_REPORTING=
 # Set branding
-ac_add_options --with-branding=noraneko/gecko/branding/unofficial
+# ac_add_options --with-branding=noraneko/gecko/branding/unofficial
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
