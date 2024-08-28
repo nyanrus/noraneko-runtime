@@ -3921,7 +3921,7 @@ void BrowserParent::GetIPCTransferableData(
   if (!transfer) {
     // Pass eDrop to get DataTransfer with external
     // drag formats cached.
-    transfer = new DataTransfer(nullptr, eDrop, true, -1);
+    transfer = new DataTransfer(nullptr, eDrop, true, Nothing());
     aSession->SetDataTransfer(transfer);
   }
   // Note, even though this fills the DataTransfer object with
@@ -3963,8 +3963,11 @@ void BrowserParent::MaybeInvokeDragSession(EventMessage aMessage) {
       session->GetSourceWindowContext(getter_AddRefs(sourceWC));
       RefPtr<WindowContext> sourceTopWC;
       session->GetSourceTopWindowContext(getter_AddRefs(sourceTopWC));
+      RefPtr<nsIPrincipal> principal;
+      session->GetTriggeringPrincipal(getter_AddRefs(principal));
       mozilla::Unused << SendInvokeChildDragSession(
-          sourceWC, sourceTopWC, std::move(ipcTransferables), action);
+          sourceWC, sourceTopWC, principal, std::move(ipcTransferables),
+          action);
     }
     return;
   }
@@ -3973,8 +3976,11 @@ void BrowserParent::MaybeInvokeDragSession(EventMessage aMessage) {
     // We need to send transferable data to child process.
     nsTArray<IPCTransferableData> ipcTransferables;
     GetIPCTransferableData(session, ipcTransferables);
-    mozilla::Unused << SendUpdateDragSession(std::move(ipcTransferables),
-                                             aMessage);
+
+    RefPtr<nsIPrincipal> principal;
+    session->GetTriggeringPrincipal(getter_AddRefs(principal));
+    mozilla::Unused << SendUpdateDragSession(
+        principal, std::move(ipcTransferables), aMessage);
   }
 }
 

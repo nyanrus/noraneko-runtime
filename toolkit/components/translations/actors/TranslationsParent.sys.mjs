@@ -100,7 +100,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "alwaysTranslateLangTags",
   ALWAYS_TRANSLATE_LANGS_PREF,
   /* aDefaultPrefValue */ "",
-  /* onUpdate */ null,
+  /* onUpdate */ () =>
+    Services.obs.notifyObservers(
+      null,
+      "translations:always-translate-languages-changed"
+    ),
   /* aTransform */ rawLangTags =>
     rawLangTags ? new Set(rawLangTags.split(",")) : new Set()
 );
@@ -113,7 +117,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "neverTranslateLangTags",
   NEVER_TRANSLATE_LANGS_PREF,
   /* aDefaultPrefValue */ "",
-  /* onUpdate */ null,
+  /* onUpdate */ () =>
+    Services.obs.notifyObservers(
+      null,
+      "translations:never-translate-languages-changed"
+    ),
   /* aTransform */ rawLangTags =>
     rawLangTags ? new Set(rawLangTags.split(",")) : new Set()
 );
@@ -812,16 +820,19 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Requests a new translations port.
    *
-   * @param {number} innerWindowId - The id of the current window.
    * @param {string} fromLanguage - The BCP-47 from-language tag.
    * @param {string} toLanguage - The BCP-47 to-language tag.
+   * @param {number} [innerWindowId] - The id of the current window.
+   *   NOTE: This value should be provided only if your port is associated with Full Page Translations.
+   *   This will associate this translations port with the TranslationsParent actor instance for the provided id,
+   *   which will mean that changes in the translation state will affect the state of the Translations URL-bar button etc.
    *
    * @returns {Promise<MessagePort | undefined>} The port for communication with the translation engine, or undefined on failure.
    */
   static async requestTranslationsPort(
-    innerWindowId,
     fromLanguage,
-    toLanguage
+    toLanguage,
+    innerWindowId
   ) {
     let translationsEngineParent;
     try {
@@ -1036,6 +1047,15 @@ export class TranslationsParent extends JSWindowActorParent {
   static #languagePairs = null;
 
   /**
+   * Clears the cached list of language pairs, notifying observers that the
+   * available language pairs have changed.
+   */
+  static #clearCachedLanguagePairs() {
+    TranslationsParent.#languagePairs = null;
+    Services.obs.notifyObservers(null, "translations:language-pairs-changed");
+  }
+
+  /**
    * Get the list of translation pairs supported by the translations engine.
    *
    * @returns {Promise<Array<LanguagePair>>}
@@ -1055,7 +1075,7 @@ export class TranslationsParent extends JSWindowActorParent {
           return Array.from(languagePairMap.values());
         });
       TranslationsParent.#languagePairs.catch(() => {
-        TranslationsParent.#languagePairs = null;
+        TranslationsParent.#clearCachedLanguagePairs();
       });
     }
     return TranslationsParent.#languagePairs;
@@ -1153,11 +1173,145 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
-   * @param {object} event
-   * @param {object} event.data
+   * Get the display name for the given language Tag.
+   *
+   * @param {string} langTag
+   * @returns {string}
+   */
+  static getLanguageDisplayName(langTag) {
+    // Services.intl.getLanguageDisplayNames takes a list of language codes and
+    // returns a list of correspoding display names. Hence the langTag is sent as a list
+    let displayName = Services.intl.getLanguageDisplayNames(undefined, [
+      langTag,
+    ]);
+    return displayName[0];
+  }
+
+  /**
+   * Handles records that were deleted in a Remote Settings "sync" event by
+   * attempting to delete any previously downloaded attachments that are
+   * associated with the deleted records.
+   *
+   * @param {RemoteSettingsClient} client
+   *  - The Remote Settings client for which to handle deleted records.
+   * @param {TranslationModelRecord[]} deletedRecords
+   *  - The list of records that were deleted from the client's database.
+   */
+  static async #handleDeletedRecords(client, deletedRecords) {
+    // Attempt to delete any downloaded attachments that are associated with deleted records.
+    const failedDeletions = [];
+    await Promise.all(
+      deletedRecords.map(async record => {
+        try {
+          if (await client.attachments.isDownloaded(record)) {
+            await client.attachments.deleteDownloaded(record);
+          }
+        } catch (error) {
+          failedDeletions.push({ record, error });
+        }
+      })
+    );
+
+    // Report deletion failures if any occurred.
+    if (failedDeletions.length) {
+      lazy.console.warn(
+        'Remote Settings "sync" event failed to delete attachments for deleted records.'
+      );
+      for (const { record, error } of failedDeletions) {
+        lazy.console.error(
+          `Failed to delete attachment for deleted record ${record.name}: ${error}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Handles records that were updated in a Remote Settings "sync" event by
+   * attempting to delete any previously downloaded attachments that are
+   * associated with the old record versions, then downloading attachments
+   * that are associated with the new record versions.
+   *
+   * @param {RemoteSettingsClient} client
+   *  - The Remote Settings client for which to handle updated records.
+   * @param {{old: TranslationModelRecord, new: TranslationModelRecord}[]} updatedRecords
+   *  - The list of records that were updated in the client's database.
+   */
+  static async #handleUpdatedRecords(client, updatedRecords) {
+    // Gather any updated records whose attachments were previously downloaded.
+    const recordsWithAttachmentsToReplace = [];
+    for (const {
+      old: recordBeforeUpdate,
+      new: recordAfterUpdate,
+    } of updatedRecords) {
+      if (await client.attachments.isDownloaded(recordBeforeUpdate)) {
+        recordsWithAttachmentsToReplace.push({
+          recordBeforeUpdate,
+          recordAfterUpdate,
+        });
+      }
+    }
+
+    // Attempt to delete all of the attachments for the old versions of the updated records.
+    const failedDeletions = [];
+    await Promise.all(
+      recordsWithAttachmentsToReplace.map(async ({ recordBeforeUpdate }) => {
+        try {
+          await client.attachments.deleteDownloaded(recordBeforeUpdate);
+        } catch (error) {
+          failedDeletions.push({ record: recordBeforeUpdate, error });
+        }
+      })
+    );
+
+    // Report deletion failures if any occurred.
+    if (failedDeletions.length) {
+      lazy.console.warn(
+        'Remote Settings "sync" event failed to delete old record attachments for updated records.'
+      );
+      for (const { record, error } of failedDeletions) {
+        lazy.console.error(
+          `Failed to delete old attachment for updated record ${record.name}: ${error.reason}`
+        );
+      }
+    }
+
+    // Attempt to download all of the attachments for the new versions of the updated records.
+    const failedDownloads = [];
+    await Promise.all(
+      recordsWithAttachmentsToReplace.map(async ({ recordAfterUpdate }) => {
+        try {
+          await client.attachments.download(recordAfterUpdate);
+        } catch (error) {
+          failedDownloads.push({ record: recordAfterUpdate, error });
+        }
+      })
+    );
+
+    // Report deletion failures if any occurred.
+    if (failedDownloads.length) {
+      lazy.console.warn(
+        'Remote Settings "sync" event failed to download new record attachments for updated records.'
+      );
+      for (const { record, error } of failedDeletions) {
+        lazy.console.error(
+          `Failed to download new attachment for updated record ${record.name}: ${error.reason}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Handles the "sync" event for the Translations Models Remote Settings collection.
+   * This is called whenever models are created, updated, or deleted from the Remote Settings database.
+   *
+   * @param {object} event - The sync event.
+   * @param {object} event.data - The data associated with the sync event.
    * @param {TranslationModelRecord[]} event.data.created
-   * @param {TranslationModelRecord[]} event.data.updated
+   *  - The list of Remote Settings records that were created in the sync event.
+   * @param {{old: TranslationModelRecord, new: TranslationModelRecord}[]} event.data.updated
+   *  - The list of Remote Settings records that were updated in the sync event.
    * @param {TranslationModelRecord[]} event.data.deleted
+   *  - The list of Remote Settings records that were deleted in the sync event.
    */
   static async #handleTranslationsModelsSync({
     data: { created, updated, deleted },
@@ -1165,14 +1319,18 @@ export class TranslationsParent extends JSWindowActorParent {
     const client = TranslationsParent.#translationModelsRemoteClient;
     if (!client) {
       lazy.console.error(
-        "Translations client was not present when receiving a sync event."
+        "Translations models client was not present when receiving a sync event."
       );
       return;
     }
 
+    // Invalidate cached data.
+    TranslationsParent.#clearCachedLanguagePairs();
+    TranslationsParent.#translationModelRecords = null;
+
     // Language model attachments will only be downloaded when they are used.
     lazy.console.log(
-      `Remote Settings "sync" event for remote language models `,
+      `Remote Settings "sync" event for language-model records`,
       {
         created,
         updated,
@@ -1180,30 +1338,59 @@ export class TranslationsParent extends JSWindowActorParent {
       }
     );
 
-    const records = await TranslationsParent.#getTranslationModelRecords();
-
-    // Remove all the deleted records.
-    for (const record of deleted) {
-      await client.attachments.deleteDownloaded(record);
-      records.delete(record.id);
+    if (deleted.length) {
+      await TranslationsParent.#handleDeletedRecords(client, deleted);
     }
 
-    // Pre-emptively remove the old downloads, and set the new updated record.
-    for (const { old: oldRecord, new: newRecord } of updated) {
-      await client.attachments.deleteDownloaded(oldRecord);
-      // The language pairs should be the same on the update, but use the old
-      // record just in case.
-      records.delete(oldRecord.id);
-      records.set(newRecord.id, newRecord);
+    if (updated.length) {
+      await TranslationsParent.#handleUpdatedRecords(client, updated);
     }
 
-    // Add the new records, but don't download any attachments.
-    for (const record of created) {
-      records.set(record.id, record);
+    // There is nothing to do for created records, since they will not have any previously downloaded attachments.
+  }
+
+  /**
+   * Handles the "sync" event for the Translations WASM Remote Settings collection.
+   * This is called whenever models are created, updated, or deleted from the Remote Settings database.
+   *
+   * @param {object} event - The sync event.
+   * @param {object} event.data - The data associated with the sync event.
+   * @param {TranslationModelRecord[]} event.data.created
+   *  - The list of Remote Settings records that were created in the sync event.
+   * @param {{old: TranslationModelRecord, new: TranslationModelRecord}[]} event.data.updated
+   *  - The list of Remote Settings records that were updated in the sync event.
+   * @param {TranslationModelRecord[]} event.data.deleted
+   *  - The list of Remote Settings records that were deleted in the sync event.
+   */
+  static async #handleTranslationsWasmSync({
+    data: { created, updated, deleted },
+  }) {
+    const client = TranslationsParent.#translationsWasmRemoteClient;
+    if (!client) {
+      lazy.console.error(
+        "Translations WASM client was not present when receiving a sync event."
+      );
+      return;
     }
+
+    lazy.console.log(`Remote Settings "sync" event for WASM records`, {
+      created,
+      updated,
+      deleted,
+    });
 
     // Invalidate cached data.
-    TranslationsParent.#languagePairs = null;
+    TranslationsParent.#bergamotWasmRecord = null;
+
+    if (deleted.length) {
+      await TranslationsParent.#handleDeletedRecords(client, deleted);
+    }
+
+    if (updated.length) {
+      await TranslationsParent.#handleUpdatedRecords(client, updated);
+    }
+
+    // There is nothing to do for created records, since they will not have any previously downloaded attachments.
   }
 
   /**
@@ -1220,6 +1407,7 @@ export class TranslationsParent extends JSWindowActorParent {
     const client = lazy.RemoteSettings("translations-models");
     TranslationsParent.#translationModelsRemoteClient = client;
     client.on("sync", TranslationsParent.#handleTranslationsModelsSync);
+
     return client;
   }
 
@@ -1474,28 +1662,8 @@ export class TranslationsParent extends JSWindowActorParent {
 
     /** @type {RemoteSettingsClient} */
     const client = lazy.RemoteSettings("translations-wasm");
-
     TranslationsParent.#translationsWasmRemoteClient = client;
-
-    client.on("sync", async ({ data: { created, updated, deleted } }) => {
-      lazy.console.log(`"sync" event for remote bergamot wasm `, {
-        created,
-        updated,
-        deleted,
-      });
-
-      // Remove all the deleted records.
-      for (const record of deleted) {
-        await client.attachments.deleteDownloaded(record);
-      }
-
-      // Remove any updated records, and download the new ones.
-      for (const { old: oldRecord } of updated) {
-        await client.attachments.deleteDownloaded(oldRecord);
-      }
-
-      // Do nothing for the created records.
-    });
+    client.on("sync", TranslationsParent.#handleTranslationsWasmSync);
 
     return client;
   }
@@ -2060,6 +2228,23 @@ export class TranslationsParent extends JSWindowActorParent {
     return results;
   }
 
+  static async getLanguageSize(language) {
+    const records = [
+      ...(await TranslationsParent.#getTranslationModelRecords()).values(),
+    ];
+
+    let downloadSize = 0;
+    await Promise.all(
+      records.map(async record => {
+        if (record.fromLang !== language && record.toLang !== language) {
+          return;
+        }
+        downloadSize += parseInt(record.attachment.size);
+      })
+    );
+    return downloadSize;
+  }
+
   /**
    * Gets the expected download size that will occur (if any) if translate is called on two given languages for display purposes.
    *
@@ -2167,6 +2352,10 @@ export class TranslationsParent extends JSWindowActorParent {
       "sync",
       TranslationsParent.#handleTranslationsModelsSync
     );
+    translationsWasmRemoteClient.on(
+      "sync",
+      TranslationsParent.#handleTranslationsWasmSync
+    );
   }
 
   /**
@@ -2182,8 +2371,8 @@ export class TranslationsParent extends JSWindowActorParent {
     TranslationsParent.#translationsWasmRemoteClient = null;
 
     // Derived data.
+    TranslationsParent.#clearCachedLanguagePairs();
     TranslationsParent.#preferredLanguages = null;
-    TranslationsParent.#languagePairs = null;
     TranslationsParent.#isTranslationsEngineSupported = null;
   }
 
@@ -2198,6 +2387,10 @@ export class TranslationsParent extends JSWindowActorParent {
     TranslationsParent.#translationModelsRemoteClient.off(
       "sync",
       TranslationsParent.#handleTranslationsModelsSync
+    );
+    TranslationsParent.#translationsWasmRemoteClient.off(
+      "sync",
+      TranslationsParent.#handleTranslationsWasmSync
     );
 
     TranslationsParent.#isTranslationsEngineMocked = false;
@@ -2710,6 +2903,14 @@ export class TranslationsParent extends JSWindowActorParent {
     return true;
   }
 
+  static getAlwaysTranslateLanguages() {
+    return lazy.alwaysTranslateLangTags;
+  }
+
+  static getNeverTranslateLanguages() {
+    return lazy.neverTranslateLangTags;
+  }
+
   /**
    * Toggle the automatically popup pref, which will either
    * enable or disable translations being offered to the user.
@@ -2888,29 +3089,33 @@ export class TranslationsParent extends JSWindowActorParent {
  * Validate some simple Wasm that uses a SIMD operation.
  */
 function detectSimdSupport() {
-  return WebAssembly.validate(
-    new Uint8Array(
-      // ```
-      // ;; Detect SIMD support.
-      // ;; Compile by running: wat2wasm --enable-all simd-detect.wat
-      //
-      // (module
-      //   (func (result v128)
-      //     i32.const 0
-      //     i8x16.splat
-      //     i8x16.popcnt
-      //   )
-      // )
-      // ```
+  try {
+    return WebAssembly.validate(
+      new Uint8Array(
+        // ```
+        // ;; Detect SIMD support.
+        // ;; Compile by running: wat2wasm --enable-all simd-detect.wat
+        //
+        // (module
+        //   (func (result v128)
+        //     i32.const 0
+        //     i8x16.splat
+        //     i8x16.popcnt
+        //   )
+        // )
+        // ```
 
-      // prettier-ignore
-      [
+        // prettier-ignore
+        [
         0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00,
         0x01, 0x7b, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x0a, 0x01, 0x08, 0x00, 0x41, 0x00,
         0xfd, 0x0f, 0xfd, 0x62, 0x0b
       ]
-    )
-  );
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -3036,7 +3241,7 @@ class TranslationsLanguageState {
   }
 
   /**
-   * The last error that occured during translation.
+   * The last error that occurred during translation.
    */
   get error() {
     return this.#error;

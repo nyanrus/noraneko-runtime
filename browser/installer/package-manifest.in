@@ -454,4 +454,4 @@ bin/libfreebl_64int_3.so
 #endif
 
 ; [Noraneko Files]
-; @RESPATH@/noraneko/*
+@RESPATH@/noraneko/*

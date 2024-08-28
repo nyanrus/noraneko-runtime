@@ -122,6 +122,13 @@
     </toolbarbutton>
   </panel>
 
+  <panel class="panel-no-padding"
+         id="ask-chat-shortcuts"
+         noautofocus="true"
+         type="arrow">
+    <vbox class="panel-subview-body"/>
+  </panel>
+
   <html:template id="screenshotsPagePanelTemplate">
     <box id="screenshotsPagePanel" hidden="true">
       <screenshots-buttons></screenshots-buttons>
@@ -368,7 +375,8 @@
          orient="vertical"
          noautofocus="true"
          norolluponanchor="true"
-         consumeoutsideclicks="false">
+         consumeoutsideclicks="false"
+         role="tooltip">
     <html:div class="tab-preview-text-container">
       <html:div class="tab-preview-title"></html:div>
       <html:div class="tab-preview-uri"></html:div>
