@@ -36,8 +36,7 @@ jobs:
 
     - name: setup Rust 🦀
       run: |
-        #packed_simd build error
-        rustup default 1.77.2
+        rustup default nightly
         rustup target add x86_64-pc-windows-msvc
 
         #? https://github.com/mozilla/sccache#known-caveats
@@ -140,6 +139,7 @@ jobs:
       if: inputs.package-full
       run: |
         rm ~/nora-win_x64-bin.tar.zst
+        rm -r ~/output
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
         cd ~/output-full
         tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin-full.tar.zst .
