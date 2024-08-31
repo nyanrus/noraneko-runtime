@@ -10,7 +10,7 @@ on:
       debug:
         type: boolean
         default: true
-      package:
+      package-full:
         type: boolean
         default: false
 
@@ -121,16 +121,6 @@ jobs:
       run: |
         ./mach build
 
-    - name: package
-      if: inputs.package
-      run: |
-        cd ./noraneko
-        npm i -g pnpm
-        pnpm i
-        #pnpm tsx ./build.ts --build
-        cd ..
-        ./mach package
-
     # Publish START
     - name: compress zstd
       run: |
@@ -147,6 +137,7 @@ jobs:
         path: ~/nora-win_x64-bin.tar.zst
 
     - name: compress full zstd 
+      if: inputs.package-full
       run: |
         rm ~/nora-win_x64-bin.tar.zst
         rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
@@ -155,17 +146,10 @@ jobs:
         rm -r ~/output-full
 
     - name: Publish Package full🎁
+      if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-zstd-full
         compression-level: 0
         path: ~/nora-win_x64-bin-full.tar.zst
-
-    - name: publish package
-      if: inputs.package
-      uses: actions/upload-artifact@v4
-      with:
-        name: noraneko-win-amd64-zstd-full
-        compression-level: 0
-        path: $GITHUB_WORKSPACE/obj-x86_64-pc-windows-msvc/dist/floorp-*.en-US.win64.zip
     # Publish END
