@@ -135,22 +135,12 @@ jobs:
       with:
         name: noraneko-win-amd64-zstd
         compression-level: 0
-        path: ~/nora-win_x64-bin.tar.zst
-
-    - name: compress full zstd 
-      if: inputs.package-full
-      run: |
-        rm ~/nora-win_x64-bin.tar.zst
-        rsync -aqL --progress obj-x86_64-pc-windows-msvc/ ~/output-full
-        cd ~/output-full
-        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin-full.tar.zst .
-        rm -r ~/output-full
+        path: ~/nora-win_x64-bin.tar.zst
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd-full
-        compression-level: 0
-        path: ~/nora-win_x64-bin-full.tar.zst
+        name: noraneko-win-amd64-zstd-full
+        path: obj-x86_64-pc-windows-msvc/
     # Publish END
