@@ -120,6 +120,7 @@ jobs:
       run: |
         ./mach build
         rm -rf ~/.cargo
+        rm -rf obj-x86_64-pc-windows-msvc/release
 
     # Publish START
     - name: compress zstd
