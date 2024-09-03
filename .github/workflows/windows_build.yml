@@ -119,6 +119,7 @@ jobs:
     - name: Build 🔨
       run: |
         ./mach build
+        rm -rf ~/.cargo
 
     # Publish START
     - name: compress zstd
