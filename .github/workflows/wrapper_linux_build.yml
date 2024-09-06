@@ -1,0 +1,26 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# © 2023 Floorp Projects & Contributors
+
+name: "(A) ⚒ Linux build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        required: true
+      package:
+        type: boolean
+        required: true
+
+run-name: Linux x64 build
+jobs:
+  run-main:
+    name: Linux-x64
+    uses: ./.github/workflows/linux_build.yml
+    with:
+      debug: ${{inputs.debug}}
+      package: ${{inputs.package}}
