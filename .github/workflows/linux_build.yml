@@ -1,0 +1,152 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# © 2023 Floorp Projects & Contributors
+
+on:
+  workflow_call:
+    inputs:
+      debug:
+        type: boolean
+        default: true
+      package-full:
+        type: boolean
+        default: false
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "lts/*"
+
+    - uses: actions/checkout@v4
+      name: Clone 🧬
+      with:
+        submodules: "recursive"
+
+    - name: Configure sccache
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: setup Rust 🦀
+      run: |
+        # Install Rust Nightly Build
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+        source $HOME/.cargo/env
+
+        #? https://github.com/mozilla/sccache#known-caveats
+        export CARGO_INCREMENTAL=0
+
+    - name: Allocate swap
+      run: |
+        echo Before:
+        free -h
+        df -h
+        echo
+        echo
+
+        sudo swapoff /mnt/swapfile
+        sudo rm /mnt/swapfile
+        sudo fallocate -l 10G /mnt/swapfile
+        sudo chmod 600 /mnt/swapfile
+        sudo mkswap /mnt/swapfile
+        sudo swapon /mnt/swapfile
+        sudo apt remove --purge -y '^dotnet-.*' '^llvm-.*' '^php.*' '^mongodb-.*' '^mysql-.*' clang azure-cli google-cloud-sdk firefox powershell rpm zsync
+        sudo apt autoremove -y
+        sudo apt clean
+        sudo rm -rf  ./git
+        sudo rm -rf /home/linuxbrew
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/graalvm
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/node_modules
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /etc/apache2
+        sudo rm -rf /etc/nginx
+        sudo rm -rf /usr/local/share/chromedriver-linux64
+        sudo rm -rf /usr/local/share/chrome_driver
+        sudo rm -rf /usr/local/share/edge_driver
+        sudo rm -rf /usr/local/share/gecko_driver
+        sudo rm -rf /usr/share/java
+        sudo rm -rf /usr/share/miniconda
+        sudo rm -rf /usr/local/share/vcpkg
+
+
+        echo
+        echo
+        echo After:
+        free -h
+        df -h
+
+    - name: Setup 🪛
+      run: |
+        cd $GITHUB_WORKSPACE
+
+        # update noraneko to latest
+        git submodule update --remote
+
+        cp ./.github/workflows/mozconfigs/linux64.mozconfig mozconfig
+
+        sudo apt install msitools -y
+
+        # SCCACHE START
+        echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
+        echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
+        echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
+        echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
+        # SCCACHE END
+
+        if [[ $GHA_debug == 'true' ]]; then
+          echo "ac_add_options --enable-debug" >> mozconfig
+        fi
+
+        ./mach --no-interactive bootstrap --application-choice browser
+      env:
+        GHA_debug: ${{inputs.debug}}
+
+    - name: Mach Configure
+      run: |
+        ./mach configure
+
+    - name: Build 🔨
+      run: |
+        ./mach build
+
+    - name: Cleanup Cargo cache 🧹
+      run: |
+        rm -rf ~/.cargo
+
+    # Publish START
+    - name: compress zstd
+      run: |
+        rsync -aqL --progress obj-x86_64-pc-linux-gnu/dist/bin/ ~/output
+        cd ~/output
+        tar -I "zstd -T0 -15" -cf ~/nora-linux_x64-bin.tar.zst .
+        rm -r ~/output
+
+    - name: Publish Package🎁
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-linux_x64-amd64-zstd
+        compression-level: 0
+        path: ~/nora-linux_x64-bin.tar.zst
+
+    - name: Publish Package full🎁
+      if: inputs.package-full
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-linux_x64-amd64-zstd-full
+
+        path: obj-x86_64-pc-linux-gnu/
+    # Publish END
