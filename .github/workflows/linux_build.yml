@@ -10,7 +10,7 @@ on:
       debug:
         type: boolean
         default: true
-      package:
+      package-full:
         type: boolean
         default: false
 
@@ -132,22 +132,21 @@ jobs:
       run: |
         rsync -aqL --progress obj-x86_64-pc-linux-gnu/dist/bin/ ~/output
         cd ~/output
-        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
+        tar -I "zstd -T0 -15" -cf ~/nora-linux_x64-bin.tar.zst .
         rm -r ~/output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd
+        name: noraneko-linux_x64-amd64-zstd
         compression-level: 0
-        path: ~/nora-win_x64-bin.tar.zst
-
+        path: ~/nora-linux_x64-bin.tar.zst
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd-full
+        name: noraneko-linux_x64-amd64-zstd-full
 
         path: obj-x86_64-pc-linux-gnu/
     # Publish END

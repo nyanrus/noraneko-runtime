@@ -12,7 +12,7 @@ on:
       debug:
         type: boolean
         required: true
-      package:
+      package-full:
         type: boolean
         required: true
 
@@ -23,4 +23,4 @@ jobs:
     uses: ./.github/workflows/linux_build.yml
     with:
       debug: ${{inputs.debug}}
-      package: ${{inputs.package}}
+      package-full: ${{inputs.package-full}}
