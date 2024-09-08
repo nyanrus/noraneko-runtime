@@ -127,58 +127,27 @@ jobs:
       run: |
         rm -rf ~/.cargo
 
-    - name: Build Noraneko 🐱
-      if: inputs.package
-      run: |
-        cd ./noraneko
-        npm install -g pnpm
-        pnpm i
-        pnpm tsx build.ts --production-build
-
-    - name: Cleanup pnmp cache 🧹
-      if: inputs.package
-      run: |
-        pnpm store prune
-        pnpm store path | xargs rm -rf
-
     # Publish START
     - name: compress zstd
       run: |
         rsync -aqL --progress obj-x86_64-pc-linux-gnu/dist/bin/ ~/output
         cd ~/output
-        tar -I "zstd -T0 -15" -cf ~/nora-linux_x64-bin.tar.zst .
+        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
         rm -r ~/output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-linux-amd64-zstd
+        name: noraneko-win-amd64-zstd
         compression-level: 0
-        path: ~/nora-linux_x64-bin.tar.zst
+        path: ~/nora-win_x64-bin.tar.zst
 
-    - name: compress full zstd
-      run: |
-        rm ~/nora-linux_x64-bin.tar.zst
-        rsync -aqL --progress obj-x86_64-pc-linux-gnu/ ~/output-full
-        cd ~/output-full
-        tar -I "zstd -T0 -15" -cf ~/nora-linux_x64-bin-full.tar.zst .
-        rm -r ~/output-full
 
     - name: Publish Package full🎁
+      if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-linux-amd64-zstd-full
-        compression-level: 0
-        path: ~/nora-linux_x64-bin-full.tar.zst
-    - name: get name of package
-      run: |
-        ls $GITHUB_WORKSPACE/
+        name: noraneko-win-amd64-zstd-full
 
-    - name: publish package
-      if: inputs.package
-      uses: actions/upload-artifact@v4
-      with:
-        name: noraneko-linux-amd64-zstd-full
-        compression-level: 0
-        path: $GITHUB_WORKSPACE/obj-x86_64-pc-linux-gnu/dist/floorp-*.en-US.linux64.zip
+        path: obj-x86_64-pc-linux-gnu/
     # Publish END
