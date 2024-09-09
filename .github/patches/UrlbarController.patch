@@ -1,0 +1,13 @@
+diff --git a/browser/components/urlbar/UrlbarController.sys.mjs b/browser/components/urlbar/UrlbarController.sys.mjs
+index 6a5152a083150..21b2728d8b2f4 100644
+--- a/browser/components/urlbar/UrlbarController.sys.mjs
++++ b/browser/components/urlbar/UrlbarController.sys.mjs
+@@ -67,7 +67,7 @@ export class UrlbarController {
+     }
+     if (
+       !options.input.window.location ||
+-      options.input.window.location.href != AppConstants.BROWSER_CHROME_URL
++      !options.input.window.location.href.startsWith(AppConstants.BROWSER_CHROME_URL)
+     ) {
+       throw new Error("input.window should be an actual browser window.");
+     }

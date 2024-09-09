@@ -1,0 +1,22 @@
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index a29d7a84e8465..1137b3ba0cc9f 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -3305,6 +3305,17 @@ var XULBrowserWindow = {
+ 
+     UpdateBackForwardCommands(gBrowser.webNavigation);
+ 
++    /*@nora:inject:start*/
++    window.gFloorpOnLocationChange.onLocationChange(
++      aWebProgress,
++      aRequest,
++      aLocationURI,
++      aFlags,
++      aIsSimulated,
++      gBrowser.selectedBrowser
++    );
++    /*@nora:inject:end*/
++
+     Services.obs.notifyObservers(
+       aWebProgress,
+       "touchbar-location-change",

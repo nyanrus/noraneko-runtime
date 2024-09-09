@@ -1,0 +1,13 @@
+diff --git a/toolkit/components/extensions/schemas/manifest.json b/toolkit/components/extensions/schemas/manifest.json
+index c255cba73842e..38a835d29fa1d 100644
+--- a/toolkit/components/extensions/schemas/manifest.json
++++ b/toolkit/components/extensions/schemas/manifest.json
+@@ -667,7 +667,7 @@
+         "choices": [
+           {
+             "type": "string",
+-            "pattern": "^resource://(\\*|\\*\\.[^*/]+|[^*/]+)/.*$|^about:"
++            "pattern": "^resource://(\\*|\\*\\.[^*/]+|[^*/]+)/.*$|^about:|^moz-extension://(\\*|\\*\\.[^*/]+|[^*/]+)/.*$"
+           }
+         ]
+       },
