@@ -88,7 +88,24 @@ var TabStateInternal = {
     let browser = tab.linkedBrowser;
 
     /*@nora:inject:start*/
+    // WorkspaceId
+    tabData.floorpWorkspaceId = tab.getAttribute(
+      "floorpWorkspaceId",
+    );
+
+    // lastShowWorkspaceId
+    tabData.floorpLastShowWorkspaceId = tab.getAttribute(
+     "floorpWorkspaceLastShowId"
+    );
+
+    // Private Container
     tabData.floorpDisableHistory = tab.getAttribute("floorp-disablehistory");
+
+    // Site Specific Browser
+    tabData.floorpSSB = tab.getAttribute("floorpSSB");
+
+    // WebPanel
+    tabData.floorpWebPanel = tab.hasAttribute("BMS-webpanel-tab");
     /*@nora:inject:end*/
 
     if (tab.pinned) {

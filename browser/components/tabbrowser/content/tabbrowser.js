@@ -3227,15 +3227,6 @@
       let hiddenTabs = new Map();
       let shouldUpdateForPinnedTabs = false;
 
-      /*@nora:inject:start*/
-      for (var i = 0; i < tabDataList.length; i++) {
-        const tabData = tabDataList[i];
-        if (tabData.floorpDisableHistory) {
-          tabDataList.splice(i, 1);
-        }
-      }
-      /*@nora:inject:end*/
-
       // We create each tab and browser, but only insert them
       // into a document fragment so that we can insert them all
       // together. This prevents synch reflow for each tab
@@ -3248,6 +3239,31 @@
         let tab;
         let tabWasReused = false;
 
+        /*@nora:inject:start*/
+        if (tabData.floorpDisableHistory) {
+          continue;
+        }
+
+        let floorpWorkspaceId,
+          floorpLastShowWorkspaceId,
+          floorpWorkspace,
+          floorpSSB;
+
+
+        floorpWorkspaceId = tabData.floorpWorkspaceId;
+        floorpLastShowWorkspaceId = tabData.floorpLastShowWorkspaceId;
+        floorpWorkspace = tabData.floorpWorkspace
+          ? tabData.floorpWorkspace
+          : Services.prefs
+              .getStringPref("floorp.browser.workspace.all")
+              .split(",")[0];
+        floorpSSB = tabData.floorpSSB;
+
+        if (floorpSSB) {
+          window.close();
+        }
+        /*@nora:inject:end*/
+
         // Re-use existing selected tab if possible to avoid the overhead of
         // selecting a new tab.
         if (
@@ -3257,6 +3273,33 @@
         ) {
           tabWasReused = true;
           tab = this.selectedTab;
+
+          /*@nora:inject:start*/
+          tab.setAttribute("floorpWorkspace", floorpWorkspace);
+          let { WorkspacesService } = ChromeUtils.importESModule(
+            "resource://floorp/WorkspacesService.mjs"
+          );
+
+          if (floorpWorkspaceId) {
+            tab.setAttribute(
+              WorkspacesService.workspacesTabAttributionId,
+              floorpWorkspaceId
+            );
+          }
+
+          if (floorpLastShowWorkspaceId) {
+            tab.setAttribute(
+              WorkspacesService.workspaceLastShowId,
+              floorpLastShowWorkspaceId
+            );
+          }
+
+          if (floorpSSB) {
+            tab.setAttribute("floorpSSB", floorpSSB);
+          }
+          /*@nora:inject:end*/
+
+
           if (!tabData.pinned) {
             this.unpinTab(tab);
           } else {
@@ -3305,6 +3348,29 @@
             skipLoad: true,
             preferredRemoteType,
           });
+
+          /*@nora:inject:start*/
+          tab.setAttribute("floorpWorkspace", floorpWorkspace);
+
+          let { WorkspacesService } = ChromeUtils.importESModule(
+            "resource://floorp/WorkspacesService.mjs"
+          );
+
+          if (floorpWorkspaceId) {
+            tab.setAttribute(
+              WorkspacesService.workspacesTabAttributionId,
+              floorpWorkspaceId
+            );
+          }
+
+          if (floorpLastShowWorkspaceId) {
+            tab.setAttribute(
+              WorkspacesService.workspaceLastShowId,
+              floorpLastShowWorkspaceId
+            );
+          }
+          /*@nora:inject:end*/
+
 
           if (select) {
             tabToSelect = tab;
@@ -4230,6 +4296,14 @@
         aTab,
         this
       );
+       /*@nora:inject:start*/
+      // Force to close & Make do not save history of the tab.
+      try {
+        this._endRemoveTab(aTab);
+      } catch (e) {
+        console.warn(e);
+      }
+      /*@nora:inject:end*/
     },
 
     _hasBeforeUnload(aTab) {

@@ -863,7 +863,10 @@ HttpObserverManager = {
       urlClassification: channel.urlClassification,
 
       // Figure out if this is an urgent request that shouldn't be batched.
-      urgentSend: (cos.classFlags & URGENT_CLASSES) > 0,
+      /*@nora:inject:start*/
+      bmsUseragent:
+        channel.browserElement?.ownerGlobal?.window?.gBmsWindow?.userAgent,
+      /*@nora:inject:end*/
     };
 
     if (originAttributes) {
