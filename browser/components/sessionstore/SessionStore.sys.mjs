@@ -1065,6 +1065,9 @@ var SessionStoreInternal = {
 
     if (state) {
       /*@nora:inject:start*/
+      // This code needs to be injected to restore the windows
+      // Some of reasons, Floorp Webpanel breaks last closed windows
+      // We consider the last closed windows as the last session
       if (!state.windows.length) {
         console.warn("Floorp Injections: No windows found in state");
         const lastSessionWindows = state._closedWindows;
@@ -4553,6 +4556,7 @@ var SessionStoreInternal = {
     }
 
     /*@nora:inject:start*/
+    // Old Workspaces code for compatibility
     let workspacesWindowId = aWindow.workspacesWindowId;
     if (workspacesWindowId) {
       winData.workspacesWindowId = workspacesWindowId;
@@ -4560,6 +4564,16 @@ var SessionStoreInternal = {
       delete winData.workspacesWindowId;
     }
 
+    // New Workspaces code
+    // Save Window Attributes for Restore Workspace feature
+    let floorpSelectedWorkspace = aWindow.floorpSelectedWorkspace;
+    if (floorpSelectedWorkspace) {
+      winData.floorpSelectedWorkspace = floorpSelectedWorkspace;
+    } else {
+      delete winData.floorpSelectedWorkspace;
+    }
+
+    // Make do not save Floorp's webpanel & PWA or SSB windows
     let floorpShouldNotRestore = !!(
       aWindow.floorpWebPanelWindow || aWindow.floorpSsbWindow
     );
@@ -5617,6 +5631,21 @@ var SessionStoreInternal = {
       }
     }
 
+    /*@nora:inject:start*/
+    const { workspacesWindowId, floorpSelectedWorkspace } = aWinData;
+    if (workspacesWindowId) {
+      aWindow.workspacesWindowId = workspacesWindowId;
+    } else {
+      aWindow.workspacesWindowId = Services.uuid.generateUUID().toString();
+    }
+
+    if (floorpSelectedWorkspace) {
+      aWindow.floorpSelectedWorkspace = floorpSelectedWorkspace;
+    } else {
+      aWindow.floorpSelectedWorkspace = null;
+    }
+    /*@nora:inject:end*/
+
     aWindow.setTimeout(() => {
       this.restoreDimensions(
         aWindow,
@@ -5625,11 +5654,7 @@ var SessionStoreInternal = {
         "screenX" in aWinData ? +aWinData.screenX : NaN,
         "screenY" in aWinData ? +aWinData.screenY : NaN,
         aWinData.sizemode || "",
-        /*@nora:inject:start*/
-        aWinData.sizemodeBeforeMinimized || "",
-        aWinData.workspacesWindowId || "",
-        aWinData.floorpShouldNotRestore || false
-        /*@nora:inject:end*/
+        aWinData.sizemodeBeforeMinimized || ""
       );
       this.restoreSidebar(aWindow, aWinData.sidebar, aWinData.isPopup);
     }, 0);
@@ -5685,10 +5710,7 @@ var SessionStoreInternal = {
     aLeft,
     aTop,
     aSizeMode,
-    aSizeModeBeforeMinimized,
-    /*@nora:inject:start*/
-    workspacesWindowId
-    /*@nora:inject:end*/
+    aSizeModeBeforeMinimized
   ) {
     var win = aWindow;
     var _this = this;
@@ -5830,15 +5852,6 @@ var SessionStoreInternal = {
             break;
         }
       }
-
-      /*@nora:inject:start*/
-      if (workspacesWindowId) {
-        aWindow.workspacesWindowId = workspacesWindowId;
-      } else {
-        aWindow.workspacesWindowId = Services.uuid.generateUUID().toString();
-      }
-      /*@nora:inject:end*/
-
       // since resizing/moving a window brings it to the foreground,
       // we might want to re-focus the last focused window
       if (this.windowToFocus) {
