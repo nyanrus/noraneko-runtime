@@ -1,8 +1,8 @@
 diff --git a/browser/components/tabbrowser/content/tabbrowser.js b/browser/components/tabbrowser/content/tabbrowser.js
-index ef857bd81f2cd..0cec794cee156 100644
+index ef857bd81f2cd..2df5c35896d46 100644
 --- a/browser/components/tabbrowser/content/tabbrowser.js
 +++ b/browser/components/tabbrowser/content/tabbrowser.js
-@@ -3239,6 +3239,31 @@
+@@ -3239,6 +3239,27 @@
          let tab;
          let tabWasReused = false;
  
@@ -13,17 +13,13 @@ index ef857bd81f2cd..0cec794cee156 100644
 +
 +        let floorpWorkspaceId,
 +          floorpLastShowWorkspaceId,
-+          floorpWorkspace,
 +          floorpSSB;
 +
 +
-+        floorpWorkspaceId = tabData.floorpWorkspaceId;
++        floorpWorkspaceId = tabData.floorpWorkspaceId ? tabData.floorpWorkspaceId : JSON.parse(
++          Services.prefs.getStringPref("floorp.workspaces.v3.data")
++        ).workspaces[0].id
 +        floorpLastShowWorkspaceId = tabData.floorpLastShowWorkspaceId;
-+        floorpWorkspace = tabData.floorpWorkspace
-+          ? tabData.floorpWorkspace
-+          : Services.prefs
-+              .getStringPref("floorp.browser.workspace.all")
-+              .split(",")[0];
 +        floorpSSB = tabData.floorpSSB;
 +
 +        if (floorpSSB) {
@@ -34,27 +30,22 @@ index ef857bd81f2cd..0cec794cee156 100644
          // Re-use existing selected tab if possible to avoid the overhead of
          // selecting a new tab.
          if (
-@@ -3248,6 +3273,33 @@
+@@ -3248,6 +3269,28 @@
          ) {
            tabWasReused = true;
            tab = this.selectedTab;
 +
 +          /*@nora:inject:start*/
-+          tab.setAttribute("floorpWorkspace", floorpWorkspace);
-+          let { WorkspacesService } = ChromeUtils.importESModule(
-+            "resource://floorp/WorkspacesService.mjs"
-+          );
-+
 +          if (floorpWorkspaceId) {
 +            tab.setAttribute(
-+              WorkspacesService.workspacesTabAttributionId,
++              "floorpWorkspaceId",
 +              floorpWorkspaceId
 +            );
 +          }
 +
 +          if (floorpLastShowWorkspaceId) {
 +            tab.setAttribute(
-+              WorkspacesService.workspaceLastShowId,
++              "floorpWorkspaceLastShowId",
 +              floorpLastShowWorkspaceId
 +            );
 +          }
@@ -68,27 +59,21 @@ index ef857bd81f2cd..0cec794cee156 100644
            if (!tabData.pinned) {
              this.unpinTab(tab);
            } else {
-@@ -3297,6 +3349,29 @@
+@@ -3297,6 +3340,23 @@
              preferredRemoteType,
            });
  
 +          /*@nora:inject:start*/
-+          tab.setAttribute("floorpWorkspace", floorpWorkspace);
-+
-+          let { WorkspacesService } = ChromeUtils.importESModule(
-+            "resource://floorp/WorkspacesService.mjs"
-+          );
-+
 +          if (floorpWorkspaceId) {
 +            tab.setAttribute(
-+              WorkspacesService.workspacesTabAttributionId,
++              "floorpWorkspaceId",
 +              floorpWorkspaceId
 +            );
 +          }
 +
 +          if (floorpLastShowWorkspaceId) {
 +            tab.setAttribute(
-+              WorkspacesService.workspaceLastShowId,
++              "floorpWorkspaceLastShowId",
 +              floorpLastShowWorkspaceId
 +            );
 +          }
@@ -98,7 +83,7 @@ index ef857bd81f2cd..0cec794cee156 100644
            if (select) {
              tabToSelect = tab;
            }
-@@ -4221,6 +4296,14 @@
+@@ -4221,6 +4281,14 @@
          aTab,
          this
        );
