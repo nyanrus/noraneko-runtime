@@ -29,7 +29,7 @@ jobs:
       - name: apply git patches
         run: |
           cd temp_release
-          git apply --ignore-space-change --ignore-whitespace .github/patches/*.patch
+          git apply --ignore-space-change --ignore-whitespace .github/patches/upstream/*.patch
       - name: push
         run: |
           cd temp_release

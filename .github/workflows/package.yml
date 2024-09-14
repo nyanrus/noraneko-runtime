@@ -67,7 +67,10 @@ jobs:
           cd ./noraneko
           pnpm install
           node --import @swc-node/register/esm-register ./build.ts --build
+          cd ..
 
       - name: package
         run: |
+          git apply --ignore-space-change --ignore-whitespace .github/patches/upstream/*.patch
+          ./mach build faster
           ./mach package
