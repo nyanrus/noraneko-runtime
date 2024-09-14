@@ -52,6 +52,7 @@ jobs:
         with:
           #name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-zstd-full'}}
           run-id: ${{inputs.artifact_workflow_run_id}}
+          github-token: ${{github.token}}
       - uses: pnpm/action-setup@v4
         with:
           version: 9
