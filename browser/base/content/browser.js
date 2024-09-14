@@ -3305,17 +3305,6 @@ var XULBrowserWindow = {
 
     UpdateBackForwardCommands(gBrowser.webNavigation);
 
-    /*@nora:inject:start*/
-    window.gFloorpOnLocationChange.onLocationChange(
-      aWebProgress,
-      aRequest,
-      aLocationURI,
-      aFlags,
-      aIsSimulated,
-      gBrowser.selectedBrowser
-    );
-    /*@nora:inject:end*/
-
     Services.obs.notifyObservers(
       aWebProgress,
       "touchbar-location-change",
