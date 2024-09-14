@@ -3246,17 +3246,13 @@
 
         let floorpWorkspaceId,
           floorpLastShowWorkspaceId,
-          floorpWorkspace,
           floorpSSB;
 
 
-        floorpWorkspaceId = tabData.floorpWorkspaceId;
+        floorpWorkspaceId = tabData.floorpWorkspaceId ? tabData.floorpWorkspaceId : JSON.parse(
+          Services.prefs.getStringPref("floorp.workspaces.v3.data")
+        ).workspaces[0].id
         floorpLastShowWorkspaceId = tabData.floorpLastShowWorkspaceId;
-        floorpWorkspace = tabData.floorpWorkspace
-          ? tabData.floorpWorkspace
-          : Services.prefs
-              .getStringPref("floorp.browser.workspace.all")
-              .split(",")[0];
         floorpSSB = tabData.floorpSSB;
 
         if (floorpSSB) {
@@ -3275,21 +3271,16 @@
           tab = this.selectedTab;
 
           /*@nora:inject:start*/
-          tab.setAttribute("floorpWorkspace", floorpWorkspace);
-          let { WorkspacesService } = ChromeUtils.importESModule(
-            "resource://floorp/WorkspacesService.mjs"
-          );
-
           if (floorpWorkspaceId) {
             tab.setAttribute(
-              WorkspacesService.workspacesTabAttributionId,
+              "floorpWorkspaceId",
               floorpWorkspaceId
             );
           }
 
           if (floorpLastShowWorkspaceId) {
             tab.setAttribute(
-              WorkspacesService.workspaceLastShowId,
+              "floorpWorkspaceLastShowId",
               floorpLastShowWorkspaceId
             );
           }
@@ -3350,22 +3341,16 @@
           });
 
           /*@nora:inject:start*/
-          tab.setAttribute("floorpWorkspace", floorpWorkspace);
-
-          let { WorkspacesService } = ChromeUtils.importESModule(
-            "resource://floorp/WorkspacesService.mjs"
-          );
-
           if (floorpWorkspaceId) {
             tab.setAttribute(
-              WorkspacesService.workspacesTabAttributionId,
+              "floorpWorkspaceId",
               floorpWorkspaceId
             );
           }
 
           if (floorpLastShowWorkspaceId) {
             tab.setAttribute(
-              WorkspacesService.workspaceLastShowId,
+              "floorpWorkspaceLastShowId",
               floorpLastShowWorkspaceId
             );
           }
