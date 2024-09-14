@@ -104,5 +104,5 @@ jobs:
       - name: package
         run: |
           git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
-          ./mach build faster
+          ./mach build
           ./mach package
