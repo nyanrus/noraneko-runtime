@@ -1,0 +1,72 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+name: "(A) 📦️ Package"
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options:
+          - win-x64
+          - linux-x64
+      artifact_workflow_run_id:
+        type: string
+        required: true
+
+run-name: 📦️ Package ${{inputs.platform == 'win-x64' && 'Windows x64' || 'Linux x64'}}
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+      - name: Setup 🪛
+        run: |
+          cd $GITHUB_WORKSPACE
+
+          # update noraneko to latest
+          git submodule update --remote
+
+          cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
+
+          sudo apt install msitools -y
+
+          # SCCACHE START
+          echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
+          echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
+          echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
+          echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
+          # SCCACHE END
+
+          #if [[ $GHA_debug == 'true' ]]; then
+          #  echo "ac_add_options --enable-debug" >> mozconfig
+          #fi
+
+          ./mach --no-interactive bootstrap --application-choice browser
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-zstd-full'}}
+          run-id: ${{inputs.artifact_workflow_run_id}}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 20
+
+      - name: Build noraneko
+        run: |
+          cd ./noraneko
+          pnpm install
+          node --import @swc-node/register/esm-register ./build.ts --build
+
+      - name: package
+        run: |
+          ./mach package
