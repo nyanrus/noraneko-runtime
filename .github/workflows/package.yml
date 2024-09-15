@@ -108,6 +108,8 @@ jobs:
           rm -r obj-x86_64-pc-windows-msvc
           mv obj-x86_64-pc-windows-msvc-cp obj-x86_64-pc-windows-msvc
           chmod -R 777 obj-x86_64-pc-windows-msvc
+          # `config.status is out of date with respect to .mozconfig.json`
+          touch obj-x86_64-pc-windows-msvc/config.status
           
       - uses: pnpm/action-setup@v4
         with:
