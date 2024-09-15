@@ -16,7 +16,7 @@ on:
         type: boolean
         required: true
 
-run-name: Windows x64 build
+run-name: Windows x64 build ${{inputs.debug == 'true' && 'Debug' || ''}} ${{inputs.package-full == 'true' && 'Full' || ''}}
 jobs:
   run-main:
     name: win-x64
