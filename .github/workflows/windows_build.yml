@@ -120,7 +120,6 @@ jobs:
       run: |
         ./mach build
         rm -rf ~/.cargo
-        rm -rf obj-x86_64-pc-windows-msvc/release
 
     # Publish START
     - name: compress zstd
@@ -135,12 +134,14 @@ jobs:
       with:
         name: noraneko-win-amd64-zstd
         compression-level: 0
-        path: ~/nora-win_x64-bin.tar.zst
+        path: ~/nora-win_x64-bin.tar.zst
+
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd-full
+        name: noraneko-win-amd64-zstd-full
+
         path: obj-x86_64-pc-windows-msvc/
     # Publish END
