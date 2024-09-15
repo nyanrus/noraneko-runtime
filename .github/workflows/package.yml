@@ -87,9 +87,9 @@ jobs:
           ./mach --no-interactive bootstrap --application-choice browser
       - name: Mach configure
         run: |
-          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
           echo "ac_add_options --enable-artifact-builds" >> mozconfig
           ./mach configure
+          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
