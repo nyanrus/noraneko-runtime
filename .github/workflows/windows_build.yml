@@ -122,26 +122,25 @@ jobs:
         rm -rf ~/.cargo
 
     # Publish START
-    - name: compress zstd
+    - name: rsync binaries
       run: |
-        rsync -aqL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
-        cd ~/output
-        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
-        rm -r ~/output
+        rsync -aqhL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-zstd
         compression-level: 0
-        path: ~/nora-win_x64-bin.tar.zst
-
+        path: ~/output
+    - name: rsync binaries full
+      run: |
+        rm -r ~/output
+        rsync -aqhL --progress obj-x86_64-pc-windows-msvc/ ~/output-full --delete
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd-full
-
-        path: obj-x86_64-pc-windows-msvc/
+        name: noraneko-win-amd64-full
+        path: ~/output-full/
     # Publish END
