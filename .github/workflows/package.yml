@@ -79,13 +79,21 @@ jobs:
           #fi
 
           ./mach --no-interactive bootstrap --application-choice browser
+      - name: Mach configure
+        run: |
+          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
+          ./mach configure
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-zstd-full'}}
           run-id: ${{inputs.artifact_workflow_run_id}}
           github-token: ${{github.token}}
-          path: obj-x86_64-pc-windows-msvc
+          path: obj-x86_64-pc-windows-msvc-cp
+      - name: Move files
+        run: |
+          mv -n obj-x86_64-pc-windows-msvc-cp/* obj-x86_64-pc-windows-msvc/
+          rm -r obj-x86_64-pc-windows-msvc-cp
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -103,6 +111,5 @@ jobs:
 
       - name: package
         run: |
-          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
           ./mach build
           ./mach package
