@@ -94,22 +94,19 @@ jobs:
           ./mach --no-interactive bootstrap --application-choice browser
       - name: Mach configure
         run: |
-          #git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
+          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
+          echo "ac_add_options --enable-artifact-builds" >> mozconfig
           ./mach configure
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-full'}}
+          name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-moz-artifact'}}
           run-id: ${{inputs.artifact_workflow_run_id}}
           github-token: ${{github.token}}
-          path: obj-x86_64-pc-windows-msvc-cp
-      - name: Move files
+          path: ~/
+      - name: Set to use artifact
         run: |
-          rm -r obj-x86_64-pc-windows-msvc
-          mv obj-x86_64-pc-windows-msvc-cp obj-x86_64-pc-windows-msvc
-          chmod -R 777 obj-x86_64-pc-windows-msvc
-          # `config.status is out of date with respect to .mozconfig.json`
-          # touch obj-x86_64-pc-windows-msvc/config.status
+          export MOZ_ARTIFACT_FILE=$(~/noraneko-*-win64.zip)
           
       - uses: pnpm/action-setup@v4
         with:
@@ -123,10 +120,27 @@ jobs:
         run: |
           cd ./noraneko
           pnpm install
-          #node --import @swc-node/register/esm-register ./build.ts --build
+          pnpm build --build
           cd ..
 
-      - name: package
+      - name: build
         run: |
           ./mach build
+      - name: Inject noraneko
+        run: |
+          cd ./noraneko
+          pnpm build --build
+          cd ..
+      - name: Package noraneko
+        run: |
           ./mach package
+      - name: Publish Package 🎁
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-win-amd64-moz-artifact
+          path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
+      - name: Publish Installer 🎁
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-win-amd64-installer
+          path: obj-x86_64-pc-windows-msvc/dist/install/sea/*
