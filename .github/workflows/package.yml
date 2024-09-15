@@ -62,6 +62,13 @@ jobs:
           script: |
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: setup Rust 🦀
+        run: |
+          rustup default nightly
+          rustup target add x86_64-pc-windows-msvc
+
+          #? https://github.com/mozilla/sccache#known-caveats
+          export CARGO_INCREMENTAL=0
       - name: Setup 🪛
         run: |
           cd $GITHUB_WORKSPACE
