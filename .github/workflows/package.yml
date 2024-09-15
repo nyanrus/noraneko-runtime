@@ -105,8 +105,9 @@ jobs:
           path: obj-x86_64-pc-windows-msvc-cp
       - name: Move files
         run: |
-          mv -n obj-x86_64-pc-windows-msvc-cp/* obj-x86_64-pc-windows-msvc/
-          rm -r obj-x86_64-pc-windows-msvc-cp
+          rm -r obj-x86_64-pc-windows-msvc
+          mv obj-x86_64-pc-windows-msvc-cp obj-x86_64-pc-windows-msvc
+          
       - uses: pnpm/action-setup@v4
         with:
           version: 9
