@@ -452,6 +452,3 @@ bin/libfreebl_64int_3.so
 ; Test workers unpack artifact build packages and need `jogfile.json`
 @RESPATH@/jogfile.json
 #endif
-
-; [Noraneko Files]
-@RESPATH@/noraneko/*
