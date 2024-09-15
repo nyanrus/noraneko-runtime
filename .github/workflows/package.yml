@@ -126,5 +126,5 @@ jobs:
 
       - name: package
         run: |
-          ./mach build
+          ./mach build faster
           ./mach package
