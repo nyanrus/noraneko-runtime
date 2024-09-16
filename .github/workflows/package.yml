@@ -99,7 +99,7 @@ jobs:
           path: ~/
       - name: Set to use artifact
         run: |
-          export MOZ_ARTIFACT_FILE=$(~/noraneko-*-win64.zip)
+          export MOZ_ARTIFACT_FILE=$(~/noraneko-*.win64.zip)
           
       - uses: pnpm/action-setup@v4
         with:
