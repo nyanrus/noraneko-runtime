@@ -13,10 +13,4 @@ index b3ab5e8ca5..c0bc9929fc 100644
  ; [Extensions]
  @RESPATH@/components/extensions-toolkit.manifest
  @RESPATH@/browser/components/extensions-browser.manifest
-@@ -452,6 +456,3 @@ bin/libfreebl_64int_3.so
- ; Test workers unpack artifact build packages and need `jogfile.json`
- @RESPATH@/jogfile.json
- #endif
--
--; [Noraneko Files]
--@RESPATH@/noraneko/*
+

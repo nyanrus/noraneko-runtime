@@ -95,6 +95,9 @@ jobs:
 
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
+        # Copy Noraneko Branding
+        cp -r ./noraneko/gecko/branding/* ./browser/branding/
+
         sudo apt install msitools -y
 
         # SCCACHE START
@@ -119,6 +122,7 @@ jobs:
     - name: Build 🔨
       run: |
         ./mach build
+        ./mach package
         rm -rf ~/.cargo
 
     # Publish START
@@ -129,18 +133,14 @@ jobs:
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd
-        compression-level: 0
+        name: noraneko-win-amd64-dev
+        compression-level: 9
         path: ~/output
-    - name: rsync binaries full
-      run: |
-        rm -r ~/output
-        rsync -aqhL --progress obj-x86_64-pc-windows-msvc/ ~/output-full --delete
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-full
-        path: ~/output-full/
+        name: noraneko-win-amd64-moz-artifact
+        path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
     # Publish END

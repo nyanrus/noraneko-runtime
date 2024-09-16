@@ -78,14 +78,10 @@ jobs:
 
           cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
-          sudo apt install msitools -y
+          # Copy Noraneko Branding
+          cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
-          # SCCACHE START
-          echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
-          echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
-          echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
-          echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
-          # SCCACHE END
+          sudo apt install msitools -y
 
           #if [[ $GHA_debug == 'true' ]]; then
           #  echo "ac_add_options --enable-debug" >> mozconfig
@@ -94,22 +90,16 @@ jobs:
           ./mach --no-interactive bootstrap --application-choice browser
       - name: Mach configure
         run: |
-          #git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
+          echo "ac_add_options --enable-artifact-builds" >> mozconfig
           ./mach configure
+          git apply --ignore-space-change --ignore-whitespace .github/patches/packaging/*.patch
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-full'}}
+          name: ${{inputs.platform == 'win-x64' && 'noraneko-win-amd64-moz-artifact'}}
           run-id: ${{inputs.artifact_workflow_run_id}}
           github-token: ${{github.token}}
-          path: obj-x86_64-pc-windows-msvc-cp
-      - name: Move files
-        run: |
-          rm -r obj-x86_64-pc-windows-msvc
-          mv obj-x86_64-pc-windows-msvc-cp obj-x86_64-pc-windows-msvc
-          chmod -R 777 obj-x86_64-pc-windows-msvc
-          # `config.status is out of date with respect to .mozconfig.json`
-          # touch obj-x86_64-pc-windows-msvc/config.status
+          path: ~/
           
       - uses: pnpm/action-setup@v4
         with:
@@ -118,15 +108,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
+      - name: Install Git-cinnabar
+        run: |
+          cargo install --locked git-cinnabar
+          git cinnabar setup
       - name: Build noraneko
         run: |
           cd ./noraneko
           pnpm install
-          #node --import @swc-node/register/esm-register ./build.ts --build
+          pnpm build --release-build-before
           cd ..
 
-      - name: package
+      - name: build
         run: |
-          ./mach build
+          MOZ_ARTIFACT_FILE=$(echo ~/noraneko-*.win64.zip) ./mach build
+      - name: Inject noraneko
+        run: |
+          cd ./noraneko
+          pnpm build --release-build-after
+          cd ..
+      - name: Package noraneko
+        run: |
           ./mach package
+      - name: Publish Package 🎁
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-win-amd64-moz-artifact
+          path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
+      - name: Publish Installer 🎁
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-win-amd64-installer
+          path: obj-x86_64-pc-windows-msvc/dist/install/sea/*
