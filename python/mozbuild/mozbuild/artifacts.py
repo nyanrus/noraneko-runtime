@@ -792,7 +792,7 @@ class MacArtifactJob(ArtifactJob):
 
 class WinArtifactJob(ArtifactJob):
     package_re = r"public/build/target\.(zip|tar\.gz)$"
-    product = "noraneko"
+    product = "firefox"
 
     _package_artifact_patterns = {
         "{product}/dependentlibs.list",
