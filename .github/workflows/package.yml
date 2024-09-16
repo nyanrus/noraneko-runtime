@@ -79,7 +79,7 @@ jobs:
           cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
           # Copy Noraneko Branding
-          # cp -r ./noraneko/gecko/branding/* ./browser/branding/
+          cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
           sudo apt install msitools -y
 
