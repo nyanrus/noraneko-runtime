@@ -113,7 +113,7 @@ jobs:
         run: |
           cd ./noraneko
           pnpm install
-          pnpm build --build
+          pnpm build --release-build-before
           cd ..
 
       - name: build
@@ -122,7 +122,7 @@ jobs:
       - name: Inject noraneko
         run: |
           cd ./noraneko
-          pnpm build --build
+          pnpm build --release-build-after
           cd ..
       - name: Package noraneko
         run: |
