@@ -30,6 +30,7 @@ jobs:
         run: |
           cd temp_release
           git apply --ignore-space-change --ignore-whitespace .github/patches/upstream/*.patch
+          cp -f .github/workflows/setup.ico other-licenses/7zstub/firefox/setup.ico
       - name: push
         run: |
           cd temp_release
