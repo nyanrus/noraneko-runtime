@@ -95,6 +95,9 @@ jobs:
 
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
+        # Copy Noraneko Branding
+        cp ./noraneko/gecko/branding/* ./browser/branding/
+
         sudo apt install msitools -y
 
         # SCCACHE START
