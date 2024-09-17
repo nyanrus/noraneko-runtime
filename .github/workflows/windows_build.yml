@@ -7,6 +7,9 @@
 on:
   workflow_call:
     inputs:
+      release:
+        type: boolean
+        default: false
       debug:
         type: boolean
         default: true
@@ -107,13 +110,20 @@ jobs:
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
         # SCCACHE END
 
+        
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
+          echo "ac_add_options RUSTC_OPT_LEVEL=3" >> mozconfig
+        fi
+        if [[ $GHA_release == 'true' ]]; then
+          echo "ac_add_options --enable-release" >> mozconfig
+          # https://searchfox.org/mozilla-central/rev/c169f7d0287c1a6a5dd7469864135e605eed765f/docs/setup/configuring_build_options.rst#259
         fi
 
         ./mach --no-interactive bootstrap --application-choice browser
       env:
         GHA_debug: ${{inputs.debug}}
+        GHA_release: $((inputs.release}}
 
     - name: Mach Configure
       run: |
