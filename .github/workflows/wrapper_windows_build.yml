@@ -9,6 +9,9 @@ name: "(A) ⚒ Windows build"
 on:
   workflow_dispatch:
     inputs:
+      release:
+        type: boolean
+        required: true
       debug:
         type: boolean
         required: true
@@ -24,3 +27,4 @@ jobs:
     with:
       debug: ${{inputs.debug}}
       package-full: ${{inputs.package-full}}
+      release: ${{inputs.release}}
