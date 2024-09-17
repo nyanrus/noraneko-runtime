@@ -80,7 +80,7 @@ jobs:
         run: |
           cd ./noraneko
           pnpm install
-          pnpm build --release-build-before
+          NODE_ENV='production' pnpm build --release-build-before
           cd ..
 
       - name: build
