@@ -9,6 +9,9 @@ name: "(A) ⚒ Windows build"
 on:
   workflow_dispatch:
     inputs:
+      release:
+        type: boolean
+        required: true
       debug:
         type: boolean
         required: true
@@ -16,7 +19,7 @@ on:
         type: boolean
         required: true
 
-run-name: Windows x64 build
+run-name: Windows x64 build ${{toJSON(inputs.debug) == 'true' && 'Debug' || ''}} ${{toJSON(inputs.package-full) == 'true' && 'Full' || ''}}
 jobs:
   run-main:
     name: win-x64
@@ -24,3 +27,4 @@ jobs:
     with:
       debug: ${{inputs.debug}}
       package-full: ${{inputs.package-full}}
+      release: ${{inputs.release}}

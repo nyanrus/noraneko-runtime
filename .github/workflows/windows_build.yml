@@ -7,6 +7,9 @@
 on:
   workflow_call:
     inputs:
+      release:
+        type: boolean
+        default: false
       debug:
         type: boolean
         default: true
@@ -95,6 +98,9 @@ jobs:
 
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
+        # Copy Noraneko Branding
+        cp -r ./noraneko/gecko/branding/* ./browser/branding/
+
         sudo apt install msitools -y
 
         # SCCACHE START
@@ -104,13 +110,20 @@ jobs:
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
         # SCCACHE END
 
+        
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
+          echo "ac_add_options RUSTC_OPT_LEVEL=3" >> mozconfig
+        fi
+        if [[ $GHA_release == 'true' ]]; then
+          echo "ac_add_options --enable-release" >> mozconfig
+          # https://searchfox.org/mozilla-central/rev/c169f7d0287c1a6a5dd7469864135e605eed765f/docs/setup/configuring_build_options.rst#259
         fi
 
         ./mach --no-interactive bootstrap --application-choice browser
       env:
         GHA_debug: ${{inputs.debug}}
+        GHA_release: $((inputs.release}}
 
     - name: Mach Configure
       run: |
@@ -119,28 +132,25 @@ jobs:
     - name: Build 🔨
       run: |
         ./mach build
+        ./mach package
         rm -rf ~/.cargo
-        rm -rf obj-x86_64-pc-windows-msvc/release
 
     # Publish START
-    - name: compress zstd
+    - name: rsync binaries
       run: |
-        rsync -aqL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
-        cd ~/output
-        tar -I "zstd -T0 -15" -cf ~/nora-win_x64-bin.tar.zst .
-        rm -r ~/output
+        rsync -aqhL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd
-        compression-level: 0
-        path: ~/nora-win_x64-bin.tar.zst
+        name: noraneko-win-amd64-dev
+        compression-level: 9
+        path: ~/output
 
     - name: Publish Package full🎁
       if: inputs.package-full
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-zstd-full
-        path: obj-x86_64-pc-windows-msvc/
+        name: noraneko-win-amd64-moz-artifact
+        path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
     # Publish END
