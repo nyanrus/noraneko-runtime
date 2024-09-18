@@ -1,0 +1,16 @@
+diff --git a/toolkit/components/extensions/webrequest/WebRequest.sys.mjs b/toolkit/components/extensions/webrequest/WebRequest.sys.mjs
+index 584ffad1383f6..b2f8ee3c375d4 100644
+--- a/toolkit/components/extensions/webrequest/WebRequest.sys.mjs
++++ b/toolkit/components/extensions/webrequest/WebRequest.sys.mjs
+@@ -863,7 +863,10 @@ HttpObserverManager = {
+       urlClassification: channel.urlClassification,
+ 
+       // Figure out if this is an urgent request that shouldn't be batched.
+-      urgentSend: (cos.classFlags & URGENT_CLASSES) > 0,
++      /*@nora:inject:start*/
++      bmsUseragent:
++        channel.browserElement?.ownerGlobal?.window?.gBmsWindow?.userAgent,
++      /*@nora:inject:end*/
+     };
+ 
+     if (originAttributes) {

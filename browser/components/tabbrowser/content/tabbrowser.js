@@ -3227,15 +3227,6 @@
       let hiddenTabs = new Map();
       let shouldUpdateForPinnedTabs = false;
 
-      /*@nora:inject:start*/
-      for (var i = 0; i < tabDataList.length; i++) {
-        const tabData = tabDataList[i];
-        if (tabData.floorpDisableHistory) {
-          tabDataList.splice(i, 1);
-        }
-      }
-      /*@nora:inject:end*/
-
       // We create each tab and browser, but only insert them
       // into a document fragment so that we can insert them all
       // together. This prevents synch reflow for each tab
@@ -3248,6 +3239,27 @@
         let tab;
         let tabWasReused = false;
 
+        /*@nora:inject:start*/
+        if (tabData.floorpDisableHistory) {
+          continue;
+        }
+
+        let floorpWorkspaceId,
+          floorpLastShowWorkspaceId,
+          floorpSSB;
+
+
+        floorpWorkspaceId = tabData.floorpWorkspaceId ? tabData.floorpWorkspaceId : JSON.parse(
+          Services.prefs.getStringPref("floorp.workspaces.v3.data")
+        ).workspaces[0].id
+        floorpLastShowWorkspaceId = tabData.floorpLastShowWorkspaceId;
+        floorpSSB = tabData.floorpSSB;
+
+        if (floorpSSB) {
+          window.close();
+        }
+        /*@nora:inject:end*/
+
         // Re-use existing selected tab if possible to avoid the overhead of
         // selecting a new tab.
         if (
@@ -3257,6 +3269,28 @@
         ) {
           tabWasReused = true;
           tab = this.selectedTab;
+
+          /*@nora:inject:start*/
+          if (floorpWorkspaceId) {
+            tab.setAttribute(
+              "floorpWorkspaceId",
+              floorpWorkspaceId
+            );
+          }
+
+          if (floorpLastShowWorkspaceId) {
+            tab.setAttribute(
+              "floorpWorkspaceLastShowId",
+              floorpLastShowWorkspaceId
+            );
+          }
+
+          if (floorpSSB) {
+            tab.setAttribute("floorpSSB", floorpSSB);
+          }
+          /*@nora:inject:end*/
+
+
           if (!tabData.pinned) {
             this.unpinTab(tab);
           } else {
@@ -3305,6 +3339,23 @@
             skipLoad: true,
             preferredRemoteType,
           });
+
+          /*@nora:inject:start*/
+          if (floorpWorkspaceId) {
+            tab.setAttribute(
+              "floorpWorkspaceId",
+              floorpWorkspaceId
+            );
+          }
+
+          if (floorpLastShowWorkspaceId) {
+            tab.setAttribute(
+              "floorpWorkspaceLastShowId",
+              floorpLastShowWorkspaceId
+            );
+          }
+          /*@nora:inject:end*/
+
 
           if (select) {
             tabToSelect = tab;
@@ -4230,6 +4281,14 @@
         aTab,
         this
       );
+       /*@nora:inject:start*/
+      // Force to close & Make do not save history of the tab.
+      try {
+        this._endRemoveTab(aTab);
+      } catch (e) {
+        console.warn(e);
+      }
+      /*@nora:inject:end*/
     },
 
     _hasBeforeUnload(aTab) {
