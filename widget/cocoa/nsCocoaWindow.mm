@@ -164,6 +164,8 @@ void nsCocoaWindow::DestroyNativeWindow() {
   // window will definitely no longer be shown.
   Show(false);
 
+  [mWindow removeTrackingArea];
+
   [mWindow releaseJSObjects];
   // We want to unhook the delegate here because we don't want events
   // sent to it after this object has been destroyed.
@@ -523,6 +525,8 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect& aRect,
   // Make the window use CoreAnimation from the start, so that we don't
   // switch from a non-CA window to a CA-window in the middle.
   mWindow.contentView.wantsLayer = YES;
+
+  [mWindow createTrackingArea];
 
   // Make sure the window starts out not draggable by the background.
   // We will turn it on as necessary.
@@ -2765,9 +2769,6 @@ void nsCocoaWindow::CocoaWindowDidResize() {
 }
 
 - (void)windowDidResize:(NSNotification*)aNotification {
-  BaseWindow* window = [aNotification object];
-  [window updateTrackingArea];
-
   if (!mGeckoWindow) return;
 
   mGeckoWindow->CocoaWindowDidResize();
@@ -2835,6 +2836,16 @@ void nsCocoaWindow::CocoaWindowDidResize() {
   }
   if ([titlebarContainerView respondsToSelector:@selector(setTransparent:)]) {
     [titlebarContainerView setTransparent:NO];
+  }
+
+  if (@available(macOS 11.0, *)) {
+    if ([window isKindOfClass:[ToolbarWindow class]]) {
+      // In order to work around a drawing bug with windows in full screen
+      // mode, disable titlebar separators for full screen windows of the
+      // ToolbarWindow class. The drawing bug was filed as FB9056136. See bug
+      // 1700211 and bug 1912338 for more details.
+      window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+    }
   }
 
   if (!mGeckoWindow) {
@@ -3094,7 +3105,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
 @end
 
 @interface BaseWindow (Private)
-- (void)removeTrackingArea;
 - (void)cursorUpdated:(NSEvent*)aEvent;
 - (void)reflowTitlebarElements;
 @end
@@ -3169,7 +3179,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
   mDrawTitle = NO;
   mTouchBar = nil;
   mIsAnimationSuppressed = NO;
-  [self updateTrackingArea];
 
   return self;
 }
@@ -3265,7 +3274,6 @@ static NSImage* GetMenuMaskImage() {
 
 - (void)dealloc {
   [mTouchBar release];
-  [self removeTrackingArea];
   ChildViewMouseTracker::OnDestroyWindow(self);
   [super dealloc];
 }
@@ -3385,13 +3393,11 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
   mViewWithTrackingArea = nil;
 }
 
-- (void)updateTrackingArea {
-  [self removeTrackingArea];
-
+- (void)createTrackingArea {
   mViewWithTrackingArea = [self.trackingAreaView retain];
-  const NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited |
-                                        NSTrackingMouseMoved |
-                                        NSTrackingActiveAlways;
+  const NSTrackingAreaOptions options =
+      NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
+      NSTrackingActiveAlways | NSTrackingInVisibleRect;
   mTrackingArea =
       [[NSTrackingArea alloc] initWithRect:[mViewWithTrackingArea bounds]
                                    options:options
@@ -3522,15 +3528,16 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
   if (aWindow) {
     // When entering full screen mode, titlebar accessory views are inserted
     // into a floating NSWindow which houses the window titlebar and toolbars.
-    // In order to work around a drawing bug with titlebarAppearsTransparent
-    // windows in full screen mode, disable titlebar separators for all
-    // NSWindows that this view is used in, including the floating full screen
-    // toolbar window. The drawing bug was filed as FB9056136. See bug 1700211
-    // for more details.
+    // In order to work around a drawing bug with windows in full screen mode,
+    // disable titlebar separators for all NSWindows that this view is used in
+    // that are not of the ToolbarWindow class, such as the floating full
+    // screen toolbar window. The drawing bug was filed as FB9056136. See bug
+    // 1700211 and bug 1912338 for more details.
     if (@available(macOS 11.0, *)) {
-      aWindow.titlebarSeparatorStyle = aWindow.titlebarAppearsTransparent
-                                           ? NSTitlebarSeparatorStyleNone
-                                           : NSTitlebarSeparatorStyleAutomatic;
+      aWindow.titlebarSeparatorStyle =
+          [aWindow isKindOfClass:[ToolbarWindow class]]
+              ? NSTitlebarSeparatorStyleAutomatic
+              : NSTitlebarSeparatorStyleNone;
     }
   }
 }
@@ -3768,26 +3775,6 @@ static bool ShouldShiftByMenubarHeightInFullscreen(nsCocoaWindow* aWindow) {
     // content area, so that event would have wrong position information. So
     // we'll send a mouse move event with the correct new position.
     ChildViewMouseTracker::ResendLastMouseMoveEvent();
-  }
-}
-
-// When entering full screen mode, titlebar accessory views are inserted
-// into a floating NSWindow which houses the window titlebar and toolbars.
-// In order to work around a drawing bug with titlebarAppearsTransparent
-// windows in full screen mode, disable titlebar separators for all
-// NSWindows that this view is used in, including the floating full screen
-// toolbar window. The drawing bug was filed as FB9056136. See bug 1700211
-// for more details.
-- (void)setTitlebarAppearsTransparent:(BOOL)aState {
-  BOOL stateChanged = self.titlebarAppearsTransparent != aState;
-  [super setTitlebarAppearsTransparent:aState];
-
-  if (stateChanged) {
-    if (@available(macOS 11.0, *)) {
-      self.titlebarSeparatorStyle = self.titlebarAppearsTransparent
-                                        ? NSTitlebarSeparatorStyleNone
-                                        : NSTitlebarSeparatorStyleAutomatic;
-    }
   }
 }
 

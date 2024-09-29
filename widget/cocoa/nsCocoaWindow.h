@@ -71,8 +71,9 @@ enum class NativeKeyBindingsType : uint8_t;
 - (void)mouseEntered:(NSEvent*)aEvent;
 - (void)mouseExited:(NSEvent*)aEvent;
 - (void)mouseMoved:(NSEvent*)aEvent;
-- (void)updateTrackingArea;
 - (NSView*)trackingAreaView;
+- (void)createTrackingArea;
+- (void)removeTrackingArea;
 
 - (void)setBeingShown:(BOOL)aValue;
 - (BOOL)isBeingShown;
@@ -178,7 +179,6 @@ enum class NativeKeyBindingsType : uint8_t;
   NSRect mWindowButtonsRect;
 }
 - (void)setDrawsContentsIntoWindowFrame:(BOOL)aState;
-- (void)setTitlebarAppearsTransparent:(BOOL)aState;
 - (void)placeWindowButtons:(NSRect)aRect;
 - (NSRect)windowButtonsRect;
 - (void)windowMainStateChanged;
