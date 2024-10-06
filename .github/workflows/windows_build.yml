@@ -16,6 +16,9 @@ on:
       package-full:
         type: boolean
         default: false
+      code-coverage:
+        type: boolean
+        default: false
 
 jobs:
   win-build:
@@ -119,11 +122,16 @@ jobs:
           echo "ac_add_options --enable-release" >> mozconfig
           # https://searchfox.org/mozilla-central/rev/c169f7d0287c1a6a5dd7469864135e605eed765f/docs/setup/configuring_build_options.rst#259
         fi
+        if [[ $GHA_codecov == 'true' ]]; then
+          echo "ac_add_options --enable-coverage" >> mozconfig
+          #https://searchfox.org/mozilla-central/rev/abeb2aa5df6f02de3c12c54ff7b0865c34c3fde9/browser/config/mozconfigs/win64/code-coverage#10
+        fi
 
         ./mach --no-interactive bootstrap --application-choice browser
       env:
         GHA_debug: ${{inputs.debug}}
-        GHA_release: $((inputs.release}}
+        GHA_release: ${{inputs.release}}
+        GHA_codecov: ${{inputs.code-coverage}}
 
     - name: Mach Configure
       run: |
