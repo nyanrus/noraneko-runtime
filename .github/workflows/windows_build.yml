@@ -125,6 +125,14 @@ jobs:
         if [[ $GHA_codecov == 'true' ]]; then
           echo "ac_add_options --enable-coverage" >> mozconfig
           #https://searchfox.org/mozilla-central/rev/abeb2aa5df6f02de3c12c54ff7b0865c34c3fde9/browser/config/mozconfigs/win64/code-coverage#10
+          echo 'if [ -d "$MOZ_FETCHES_DIR/clang" ]; then' >> mozconfig
+          echo '    CLANG_LIB_DIR="$(cd $MOZ_FETCHES_DIR/clang/lib/clang/* && cd lib/windows && pwd)"' >> mozconfig
+          echo '    export LDFLAGS="clang_rt.profile-x86_64.lib"' >> mozconfig
+          echo 'fi' >> mozconfig
+          
+          echo "export RUSTFLAGS="-Ccodegen-units=1 -Zprofile -Cpanic=abort -Zpanic_abort_tests -Coverflow-checks=off"' >> mozconfig
+          echo "export RUSTDOCFLAGS="-Cpanic=abort"' >> mozconfig
+
         fi
 
         ./mach --no-interactive bootstrap --application-choice browser
