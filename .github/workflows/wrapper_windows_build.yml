@@ -18,8 +18,11 @@ on:
       package-full:
         type: boolean
         required: true
+      code-coverage:
+        type: boolean
+        required: true
 
-run-name: Windows x64 build ${{toJSON(inputs.debug) == 'true' && 'Debug' || ''}} ${{toJSON(inputs.package-full) == 'true' && 'Full' || ''}}
+run-name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-full) == 'true' && ' Full' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
 jobs:
   run-main:
     name: win-x64
@@ -28,3 +31,4 @@ jobs:
       debug: ${{inputs.debug}}
       package-full: ${{inputs.package-full}}
       release: ${{inputs.release}}
+      code-coverage: ${{inputs.code-coverage}}
