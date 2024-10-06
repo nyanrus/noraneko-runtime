@@ -130,8 +130,8 @@ jobs:
           echo '    export LDFLAGS="clang_rt.profile-x86_64.lib"' >> mozconfig
           echo 'fi' >> mozconfig
           
-          echo "export RUSTFLAGS="-Ccodegen-units=1 -Zprofile -Cpanic=abort -Zpanic_abort_tests -Coverflow-checks=off"' >> mozconfig
-          echo "export RUSTDOCFLAGS="-Cpanic=abort"' >> mozconfig
+          echo 'export RUSTFLAGS="-Ccodegen-units=1 -Zprofile -Cpanic=abort -Zpanic_abort_tests -Coverflow-checks=off"' >> mozconfig
+          echo 'export RUSTDOCFLAGS="-Cpanic=abort"' >> mozconfig
 
         fi
 
