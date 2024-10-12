@@ -1,8 +1,8 @@
 diff --git a/browser/components/tabbrowser/content/tabbrowser.js b/browser/components/tabbrowser/content/tabbrowser.js
-index ef857bd81f2cd..2df5c35896d46 100644
+index 14de79b543..8b2a27e594 100644
 --- a/browser/components/tabbrowser/content/tabbrowser.js
 +++ b/browser/components/tabbrowser/content/tabbrowser.js
-@@ -3239,6 +3239,27 @@
+@@ -3279,6 +3279,27 @@
          let tab;
          let tabWasReused = false;
  
@@ -28,9 +28,9 @@ index ef857bd81f2cd..2df5c35896d46 100644
 +        /*@nora:inject:end*/
 +
          // Re-use existing selected tab if possible to avoid the overhead of
-         // selecting a new tab.
-         if (
-@@ -3248,6 +3269,28 @@
+         // selecting a new tab. For now, we only do this for horizontal tabs;
+         // we'll let tabs.js handle pinning for vertical tabs until we unify
+@@ -3291,6 +3312,27 @@
          ) {
            tabWasReused = true;
            tab = this.selectedTab;
@@ -55,11 +55,10 @@ index ef857bd81f2cd..2df5c35896d46 100644
 +          }
 +          /*@nora:inject:end*/
 +
-+
            if (!tabData.pinned) {
              this.unpinTab(tab);
            } else {
-@@ -3297,6 +3340,23 @@
+@@ -3340,6 +3382,22 @@
              preferredRemoteType,
            });
  
@@ -79,14 +78,14 @@ index ef857bd81f2cd..2df5c35896d46 100644
 +          }
 +          /*@nora:inject:end*/
 +
-+
            if (select) {
              tabToSelect = tab;
            }
-@@ -4221,6 +4281,14 @@
+@@ -4234,6 +4292,16 @@
          aTab,
          this
        );
++
 +       /*@nora:inject:start*/
 +      // Force to close & Make do not save history of the tab.
 +      try {
@@ -95,6 +94,7 @@ index ef857bd81f2cd..2df5c35896d46 100644
 +        console.warn(e);
 +      }
 +      /*@nora:inject:end*/
++
      },
  
      _hasBeforeUnload(aTab) {

@@ -1,5 +1,5 @@
 diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
-index bee5309c04775..a2c59ab666a99 100644
+index a3c3f46dff..e5f033ddf4 100644
 --- a/browser/base/content/browser-init.js
 +++ b/browser/base/content/browser-init.js
 @@ -126,11 +126,19 @@ var gBrowserInit = {
@@ -27,8 +27,8 @@ index bee5309c04775..a2c59ab666a99 100644
  
      gBrowser = window._gBrowser;
      delete window._gBrowser;
-@@ -145,7 +153,9 @@ var gBrowserInit = {
-     ).content;
+@@ -157,7 +165,9 @@ var gBrowserInit = {
+     }
      for (let area of CustomizableUI.areas) {
        let type = CustomizableUI.getAreaType(area);
 -      if (type == CustomizableUI.TYPE_TOOLBAR) {
@@ -38,7 +38,7 @@ index bee5309c04775..a2c59ab666a99 100644
          let node = document.getElementById(area);
          CustomizableUI.registerToolbarNode(node);
        }
-@@ -932,6 +942,95 @@ var gBrowserInit = {
+@@ -950,6 +960,95 @@ var gBrowserInit = {
        //                      window (for this case, all other arguments are
        //                      ignored).
        let uri = window.arguments?.[0];
@@ -134,7 +134,7 @@ index bee5309c04775..a2c59ab666a99 100644
        if (!uri || window.XULElement.isInstance(uri)) {
          return null;
        }
-@@ -1099,9 +1198,17 @@ var gBrowserInit = {
+@@ -1117,9 +1216,16 @@ var gBrowserInit = {
      // Final window teardown, do this last.
      gBrowser.destroy();
      window.XULBrowserWindow = null;
@@ -142,7 +142,6 @@ index bee5309c04775..a2c59ab666a99 100644
 -      .QueryInterface(Ci.nsIInterfaceRequestor)
 -      .getInterface(Ci.nsIAppWindow).XULBrowserWindow = null;
 -    window.browserDOMWindow = null;
-+
 +    /*@nora:inject:start*/
 +    let webPanelId = new URL(window.location.href).searchParams.get(
 +      "floorpWebPanelId"
