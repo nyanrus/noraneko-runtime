@@ -117,6 +117,7 @@ jobs:
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
           echo "ac_add_options RUSTC_OPT_LEVEL=3" >> mozconfig
+          git apply --ignore-space-change  --reject --ignore-whitespace .github/patches/dev/*.patch
         fi
         if [[ $GHA_release == 'true' ]]; then
           echo "ac_add_options --enable-release" >> mozconfig
