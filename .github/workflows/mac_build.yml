@@ -1,0 +1,188 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# © 2023 Floorp Projects & Contributors
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+      debug:
+        type: boolean
+        default: true
+      package-full:
+        type: boolean
+        default: false
+      code-coverage:
+        type: boolean
+        default: false
+      MOZ_BUILD_DATE:
+        type: string
+        required: true
+        default: ""
+    secrets:
+      MACOS_CROSS_TOOLS_KEY:
+        description: macOS cross tools 7z password
+        required: true
+
+jobs:
+  win-build:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        runs-on: ["ubuntu-latest"]
+        arch: [x86_64, aarch64]
+    steps:
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "latest"
+    - uses: actions/checkout@v4
+      name: Clone 🧬
+      with:
+        submodules: "recursive"
+
+    - name: Configure sccache
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: setup Rust 🦀
+      run: |
+        if [[ $GHA_ARCH == 'x86_64' ]];then
+            rustup target add x86_64-apple-darwin --toolchain stable
+        else
+            rustup target add aarch64-apple-darwin --toolchain stable
+        fi
+
+        #? https://github.com/mozilla/sccache#known-caveats
+        export CARGO_INCREMENTAL=0
+      env:
+        GHA_ARCH: ${{matrix.arch}}
+
+    - name: Allocate swap
+      run: |
+        echo Before:
+        free -h
+        df -h
+
+        echo
+        echo
+
+        sudo swapoff /mnt/swapfile
+        sudo rm /mnt/swapfile
+        sudo fallocate -l 10G /mnt/swapfile
+        sudo chmod 600 /mnt/swapfile
+        sudo mkswap /mnt/swapfile
+        sudo swapon /mnt/swapfile
+
+        sudo apt autoremove -y
+        sudo apt clean
+        sudo rm -rf  ./git
+        sudo rm -rf /home/linuxbrew
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/graalvm
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /etc/apache2
+        sudo rm -rf /etc/nginx
+        sudo rm -rf /usr/local/share/chrome_driver
+        sudo rm -rf /usr/local/share/edge_driver
+        sudo rm -rf /usr/local/share/gecko_driver
+        sudo rm -rf /usr/share/java
+        sudo rm -rf /usr/share/miniconda
+        sudo rm -rf /usr/local/share/vcpkg
+
+
+        echo
+        echo
+
+        echo After:
+        free -h
+        df -h
+
+    - name: Download macOS Cross Tools
+      run: |
+        get -P /home/runner/cross-tools/ https://repo.ablaze.one/data/floorp/macos-cross-tools/macOS-cross-tools.7z
+        7z x -y -p${{ secrets.MACOS_CROSS_TOOLS_KEY }} /home/runner/cross-tools/macOS-cross-tools.7z -o/home/runner/cross-tools/
+
+    - name: Setup 🪛
+      run: |
+        if [[ -n ${{ inputs.MOZ_BUILD_DATE }} ]];then
+          export MOZ_BUILD_DATE=${{ inputs.MOZ_BUILD_DATE }}
+        fi
+
+        cd $GITHUB_WORKSPACE
+
+        # update noraneko to latest
+        git submodule update --remote
+
+        if [[ $GHA_ARCH == 'x86_64' ]];then
+          cp ./.github/workflows/mozconfigs/macosx64.mozconfig mozconfig
+        else
+          cp ./.github/workflows/mozconfigs/macosx64-aarch64.mozconfig mozconfig
+        fi
+
+        # Copy Noraneko Branding
+        cp -r ./noraneko/gecko/branding/* ./browser/branding/
+
+        sudo apt install msitools -y
+
+        # SCCACHE START
+        echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
+        echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
+        echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
+        echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
+        # SCCACHE END
+
+        ./mach --no-interactive bootstrap --application-choice browser
+      env:
+        GHA_debug: ${{inputs.debug}}
+        GHA_release: ${{inputs.release}}
+        GHA_codecov: ${{inputs.code-coverage}}
+
+    - name: Mach Configure
+      run: |
+        if [[ -n ${{ inputs.MOZ_BUILD_DATE }} ]];then
+          export MOZ_BUILD_DATE=${{ inputs.MOZ_BUILD_DATE }}
+        fi
+
+        ./mach configure
+
+    - name: Build 🔨
+      run: |
+        if [[ -n ${{ inputs.MOZ_BUILD_DATE }} ]];then
+          export MOZ_BUILD_DATE=${{ inputs.MOZ_BUILD_DATE }}
+        fi
+
+        ./mach build
+        ./mach package
+        rm -rf ~/.cargo
+
+    # Publish START
+    - name: rsync binaries
+      run: |
+        rsync -aqhL --progress obj-${{ matrix.arch }}-apple-darwin/dist/bin/ ~/output
+
+    - name: Publish Package🎁
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-mac-${{ matrix.arch }}-dev
+        compression-level: 9
+        path: ~/output
+
+    - name: Publish Package full🎁
+      if: inputs.package-full
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-mac-${{ matrix.arch }}-moz-artifact
+        path: obj-${{ matrix.arch }}-apple-darwin/dist/noraneko-*.zip
+    # Publish END
