@@ -97,6 +97,7 @@ jobs:
         git submodule update --remote
 
         cp ./.github/workflows/mozconfigs/linux64.mozconfig mozconfig
+        cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
         sudo apt install msitools -y
 
@@ -130,10 +131,8 @@ jobs:
     # Publish START
     - name: compress zstd
       run: |
-        rsync -aqL --progress obj-x86_64-pc-linux-gnu/dist/bin/ ~/output
-        cd ~/output
-        tar -I "zstd -T0 -15" -cf ~/nora-linux_x64-bin.tar.zst .
-        rm -r ~/output
+        cd obj-x86_64-pc-linux-gnu/dist/bin
+        tar -I "zstd -T0 -15" -chf ~/nora-linux_x64-bin.tar.zst .
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
