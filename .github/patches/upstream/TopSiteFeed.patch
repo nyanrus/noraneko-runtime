@@ -1,8 +1,8 @@
 diff --git a/browser/components/newtab/lib/TopSitesFeed.sys.mjs b/browser/components/newtab/lib/TopSitesFeed.sys.mjs
-index 211a987e2f..5c1ca9dfda 100644
+index 928961fb5d..bcda101e53 100644
 --- a/browser/components/newtab/lib/TopSitesFeed.sys.mjs
 +++ b/browser/components/newtab/lib/TopSitesFeed.sys.mjs
-@@ -332,7 +332,16 @@ export class ContileIntegration {
+@@ -334,7 +334,16 @@ export class ContileIntegration {
    constructor(topSitesFeed) {
      this._topSitesFeed = topSitesFeed;
      this._lastPeriodicUpdate = 0;
@@ -19,8 +19,8 @@ index 211a987e2f..5c1ca9dfda 100644
 +    ];
      // The Share-of-Voice object managed by Shepherd and sent via Contile.
      this._sov = null;
-   }
-@@ -483,6 +492,7 @@ export class ContileIntegration {
+     this.cache = this.PersistentCache(CACHE_KEY, true);
+@@ -492,6 +501,7 @@ export class ContileIntegration {
  
    // eslint-disable-next-line max-statements
    async _fetchSites() {
