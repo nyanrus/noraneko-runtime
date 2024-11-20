@@ -139,8 +139,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-linux_x64-amd64-dev
-        compression-level: 0
-        path: ~/nora-linux_x64-bin.tar.zst
+        path: ~/nora-linux_x64-bin.tar
 
     - name: Publish Package full🎁
       if: inputs.package-full
