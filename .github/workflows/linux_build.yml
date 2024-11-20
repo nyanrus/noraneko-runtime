@@ -123,6 +123,7 @@ jobs:
     - name: Build 🔨
       run: |
         ./mach build
+        ./mach package
 
     - name: Cleanup Cargo cache 🧹
       run: |
