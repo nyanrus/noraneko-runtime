@@ -1,0 +1,42 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# © 2023 Floorp Projects & Contributors
+
+name: "(A) ⚒ Mac build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        required: true
+      package-full:
+        type: boolean
+        required: true
+
+run-name: Mac x64 build
+jobs:
+  get-buildid:
+    runs-on: ubuntu-latest
+    outputs:
+      buildids: ${{ steps.get.outputs.bid }}
+    steps:
+      - id: get
+        shell: bash -xe {0}
+        run: |
+          bdat=`date +"%Y%m%d%I%M%S"`
+          echo "bid=${bdat}" >> $GITHUB_OUTPUT
+
+  run-main:
+    needs: [get-buildid]
+    name: Mac-x64
+    uses: ./.github/workflows/mac_build.yml
+    with:
+      debug: ${{inputs.debug}}
+      package-full: ${{inputs.package-full}}
+      MOZ_BUILD_DATE: ${{needs.get-buildid.outputs.buildids}}
+    secrets:
+      MACOS_CROSS_TOOLS_KEY: ${{secrets.MACOS_CROSS_TOOLS_KEY}}
+
