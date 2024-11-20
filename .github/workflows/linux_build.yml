@@ -129,10 +129,10 @@ jobs:
         rm -rf ~/.cargo
 
     # Publish START
-    - name: compress zstd
+    - name: create tar archive
       run: |
         cd obj-x86_64-pc-linux-gnu/dist/bin
-        tar -I "zstd -T0 -15" -chf ~/nora-linux_x64-bin.tar.zst .
+        tar -chf ~/nora-linux_x64-bin.tar .
 
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
