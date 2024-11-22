@@ -696,35 +696,53 @@ class FullPageTranslationsTestUtils {
       `{"fromLanguage":"${fromLangDisplay}","toLanguage":"${toLangDisplay}"}`
     );
   }
+
   /**
    * Asserts that the Spanish test page has been translated by checking
    * that the H1 element has been modified from its original form.
    *
-   * @param {string} fromLanguage - The BCP-47 language tag being translated from.
-   * @param {string} toLanguage - The BCP-47 language tag being translated into.
-   * @param {Function} runInPage - Allows running a closure in the content page.
-   * @param {string} message - An optional message to log to info.
-   * @param {ChromeWindow} [win]
+   * @param {object} options - The options for the assertion.
+   *
+   * @param {string} options.fromLanguage - The BCP-47 language tag being translated from.
+   * @param {string} options.toLanguage - The BCP-47 language tag being translated into.
+   * @param {Function} options.runInPage - Allows running a closure in the content page.
+   * @param {boolean} [options.endToEndTest=false] - Whether this assertion is for an end-to-end test.
+   * @param {string} [options.message] - An optional message to log to info.
+   * @param {ChromeWindow} [options.win=window] - The window in which to perform the check (defaults to the current window).
    */
-  static async assertPageIsTranslated(
+  static async assertPageIsTranslated({
     fromLanguage,
     toLanguage,
     runInPage,
+    endToEndTest = false,
     message = null,
-    win = window
-  ) {
+    win = window,
+  }) {
     if (message) {
       info(message);
     }
     info("Checking that the page is translated");
-    const callback = async (TranslationsTest, { fromLang, toLang }) => {
-      const { getH1 } = TranslationsTest.getSelectors();
-      await TranslationsTest.assertTranslationResult(
-        "The page's H1 is translated.",
-        getH1,
-        `DON QUIJOTE DE LA MANCHA [${fromLang} to ${toLang}, html]`
-      );
-    };
+    let callback;
+    if (endToEndTest) {
+      callback = async TranslationsTest => {
+        const { getH1 } = TranslationsTest.getSelectors();
+        await TranslationsTest.assertTranslationResult(
+          "The page's H1 is translated.",
+          getH1,
+          "Don Quixote de La Mancha"
+        );
+      };
+    } else {
+      callback = async (TranslationsTest, { fromLang, toLang }) => {
+        const { getH1 } = TranslationsTest.getSelectors();
+        await TranslationsTest.assertTranslationResult(
+          "The page's H1 is translated.",
+          getH1,
+          `DON QUIJOTE DE LA MANCHA [${fromLang} to ${toLang}, html]`
+        );
+      };
+    }
+
     await runInPage(callback, { fromLang: fromLanguage, toLang: toLanguage });
     await FullPageTranslationsTestUtils.assertLangTagIsShownOnTranslationsButton(
       fromLanguage,
@@ -1236,12 +1254,15 @@ class FullPageTranslationsTestUtils {
    * @param {boolean} config.pivotTranslation
    *  - True if the expected translation is a pivot translation, otherwise false.
    *    Affects the number of expected downloads.
+   * @param {Function} config.onOpenPanel
+   *  - A function to run as soon as the panel opens.
    * @param {ChromeWindow} [config.win]
    *  - An optional ChromeWindow, for multi-window tests.
    */
   static async clickTranslateButton({
     downloadHandler = null,
     pivotTranslation = false,
+    onOpenPanel = null,
     win = window,
   } = {}) {
     logAction();
@@ -1256,6 +1277,16 @@ class FullPageTranslationsTestUtils {
       win
     );
 
+    let panelOpenCallbackPromise;
+    if (onOpenPanel) {
+      panelOpenCallbackPromise =
+        FullPageTranslationsTestUtils.waitForPanelPopupEvent(
+          "popupshown",
+          () => {},
+          onOpenPanel
+        );
+    }
+
     if (downloadHandler) {
       await FullPageTranslationsTestUtils.assertTranslationsButton(
         { button: true, circleArrows: true, locale: false, icon: true },
@@ -1264,6 +1295,8 @@ class FullPageTranslationsTestUtils {
       );
       await downloadHandler(pivotTranslation ? 2 : 1);
     }
+
+    await panelOpenCallbackPromise;
   }
 
   /**
@@ -2964,5 +2997,44 @@ class TranslationsSettingsTestUtils {
     };
 
     return elements;
+  }
+
+  /**
+   * Utility function to handle the click event for a `moz-button` element that controls
+   * the Download/Remove Language functionality.
+   *
+   * The button's icon reflects the current state of the language (downloaded, loading, or removed),
+   * which is represented by a corresponding CSS class.
+   *
+   * When this button is clicked for any language, the function waits for the button's state and icon
+   * to update. It then checks whether the button's state and icon match the expected state as defined
+   * by the test case, and logs the respective message provided by the test case.
+   *
+   * @param {Element} langButton - The `moz-button` element representing the download/remove button.
+   * @param {string} buttonIcon - The expected CSS class representing the button's state/icon (e.g., download, loading, or remove icon).
+   * @param {string} logMsg - A custom log message provided by the test case indicating the expected result.
+   */
+
+  static async downaloadButtonClick(langButton, buttonIcon, logMsg) {
+    if (
+      !langButton.parentNode
+        .querySelector("moz-button")
+        .classList.contains(buttonIcon)
+    ) {
+      await BrowserTestUtils.waitForMutationCondition(
+        langButton.parentNode.querySelector("moz-button"),
+        { attributes: true, attributeFilter: ["class"] },
+        () =>
+          langButton.parentNode
+            .querySelector("moz-button")
+            .classList.contains(buttonIcon)
+      );
+    }
+    ok(
+      langButton.parentNode
+        .querySelector("moz-button")
+        .classList.contains(buttonIcon),
+      logMsg
+    );
   }
 }

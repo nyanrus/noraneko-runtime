@@ -168,13 +168,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsIWidgetListener* GetWidgetListener() const override;
   void SetWidgetListener(nsIWidgetListener* alistener) override;
   void Destroy() override;
-  void SetParent(nsIWidget* aNewParent) override {};
-  nsIWidget* GetParent() override;
-  nsIWidget* GetTopLevelWidget() override;
-  nsIWidget* GetSheetWindowParent(void) override;
   float GetDPI() override;
-  void AddChild(nsIWidget* aChild) override;
-  void RemoveChild(nsIWidget* aChild) override;
 
   void GetWorkspaceID(nsAString& workspaceID) override;
   void MoveToWorkspace(const nsAString& workspaceID) override;
@@ -287,9 +281,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
       const LayoutDeviceIntRect& aButtonRect) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
-  already_AddRefed<nsIWidget> CreateChild(
-      const LayoutDeviceIntRect& aRect, InitData* aInitData = nullptr,
-      bool aForceUseIWidgetParent = false) override;
+  already_AddRefed<nsIWidget> CreateChild(const LayoutDeviceIntRect& aRect,
+                                          InitData&) final;
   void AttachViewToTopLevel(bool aUseAttachedEvents) override;
   nsIWidgetListener* GetAttachedWidgetListener() const override;
   void SetAttachedWidgetListener(nsIWidgetListener* aListener) override;
@@ -347,7 +340,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
                          ByMoveToRect = ByMoveToRect::No);
 
   // Should be called by derived implementations to notify on system color and
-  // theme changes.
+  // theme changes. (Only one invocation per change is needed, not one
+  // invocation per change per window.)
   void NotifyThemeChanged(mozilla::widget::ThemeChangeKind);
 
   void NotifyAPZOfDPIChange();
@@ -362,8 +356,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   bool IsSmallPopup() const;
 
   PopupLevel GetPopupLevel() { return mPopupLevel; }
-
-  void ReparentNativeWidget(nsIWidget* aNewParent) override {}
 
   const SizeConstraints GetSizeConstraints() override;
   void SetSizeConstraints(const SizeConstraints& aConstraints) override;

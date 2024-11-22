@@ -109,17 +109,9 @@ Sets the scalar to the maximum of the current and the passed value
 ``recordEvent``
 ~~~~~~~~~~~~~~~
 
-.. code-block:: js
+As of Firefox 132, this method is a no-op. See Bug 1894533.
 
-  browser.telemetry.recordEvent(category, method, object, value, extra);
-
-Record an event in Telemetry. Throws when trying to record an unknown event.
-
-* ``category`` - *(string)* The category name.
-* ``method`` - *(string)* The method name.
-* ``object`` - *(string)* The object name.
-* ``value`` - *(optional, string)* An optional string value to record.
-* ``extra`` - *(optional, object)* An optional object of the form (string -> string). It should only contain registered extra keys.
+Instead, use :doc:`Glean APIs <../../glean/user/glean_for_legacy_events>` to record events.
 
 ``registerScalars``
 ~~~~~~~~~~~~~~~~~~~
@@ -136,23 +128,13 @@ Register new scalars to record them from addons. See :ref:`registerscalars` for 
 ``registerEvents``
 ~~~~~~~~~~~~~~~~~~
 
-.. code-block:: js
+As of Firefox 132, this method is a no-op. See Bug 1894533.
 
-  browser.telemetry.registerEvents(category, data);
-
-Register new events to record them from addons. See :ref:`registerevents` for more details.
-
-* ``category`` - *(string)* The unique category the events are registered in.
-* ``data`` - *(object)* An object that contains registration data for 1+ events. Each property name is the category name, and the corresponding property value is an object of EventData_ type.
+Instead, use :doc:`Glean event definitions <../../glean/user/glean_for_legacy_events>` for your extension's events.
 
 ``setEventRecordingEnabled``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: js
+As of Firefox 133, this method is a no-op. Event recording is enabled by default unconditionally. See Bug 1920562.
 
-  browser.telemetry.setEventRecordingEnabled(category, enabled);
-
-Enable recording of events in a category. Events default to recording disabled. This allows to toggle recording for all events in the specified category.
-
-* ``category`` - *(string)* The category name.
-* ``enabled`` - *(boolean)* Whether recording is enabled for events in that category.
+Instead, use :doc:`Glean event definitions <../../glean/user/glean_for_legacy_events>` for your extension's events.

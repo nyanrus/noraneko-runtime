@@ -107,7 +107,7 @@ class MenuDialogMiddleware(
             is MenuAction.FindInPage -> launchFindInPage()
             is MenuAction.OpenInApp -> openInApp(context.store)
             is MenuAction.OpenInFirefox -> openInFirefox()
-            is MenuAction.InstallAddon -> installAddon(action.addon)
+            is MenuAction.InstallAddon -> installAddon(context.store, action.addon)
             is MenuAction.CustomMenuItemAction -> customMenuItemAction(action.intent, action.url)
             is MenuAction.ToggleReaderView -> toggleReaderView(state = currentState)
             is MenuAction.CustomizeReaderView -> customizeReaderView()
@@ -170,6 +170,13 @@ class MenuDialogMiddleware(
     ) = scope.launch {
         try {
             val addons = addonManager.getAddons()
+
+            if (addons.any { it.isInstalled() }) {
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(false))
+                store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true))
+                return@launch
+            }
+
             val recommendedAddons = addons
                 .filter { !it.isInstalled() }
                 .shuffled()
@@ -181,6 +188,7 @@ class MenuDialogMiddleware(
                         recommendedAddons = recommendedAddons,
                     ),
                 )
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(true))
             }
         } catch (e: AddonManagerException) {
             logger.error("Failed to query extensions", e)
@@ -313,6 +321,7 @@ class MenuDialogMiddleware(
         redirect.appIntent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK
 
         appLinksUseCases.openAppLink.invoke(redirect.appIntent)
+        onDismiss()
     }
 
     private fun openInFirefox() = scope.launch {
@@ -321,12 +330,29 @@ class MenuDialogMiddleware(
     }
 
     private fun installAddon(
+        store: Store<MenuState, MenuAction>,
         addon: Addon,
     ) = scope.launch {
+        if (addon.isInstalled()) {
+            return@launch
+        }
+
+        store.dispatch(
+            MenuAction.UpdateInstallAddonInProgress(
+                addon = addon,
+            ),
+        )
+
         addonManager.installAddon(
             url = addon.downloadUrl,
             installationMethod = InstallationMethod.MANAGER,
+            onSuccess = {
+                store.dispatch(MenuAction.InstallAddonSuccess(addon = addon))
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(false))
+                store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true))
+            },
             onError = { e ->
+                store.dispatch(MenuAction.InstallAddonFailed(addon = addon))
                 logger.error("Failed to install addon", e)
             },
         )
@@ -369,8 +395,6 @@ class MenuDialogMiddleware(
                 enable = shouldRequestDesktopMode,
                 tabId = tabId,
             )
-        } else {
-            settings.openNextTabInDesktopMode = shouldRequestDesktopMode
         }
 
         onDismiss()

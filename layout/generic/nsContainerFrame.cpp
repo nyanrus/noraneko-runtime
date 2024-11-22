@@ -788,21 +788,25 @@ void nsContainerFrame::SyncFrameViewAfterReflow(nsPresContext* aPresContext,
   }
 }
 
-void nsContainerFrame::DoInlineMinISize(gfxContext* aRenderingContext,
+void nsContainerFrame::DoInlineMinISize(const IntrinsicSizeInput& aInput,
                                         InlineMinISizeData* aData) {
-  auto handleChildren = [aRenderingContext](auto frame, auto data) {
+  auto handleChildren = [&](auto frame, auto data) {
     for (nsIFrame* kid : frame->mFrames) {
-      kid->AddInlineMinISize(aRenderingContext, data);
+      const IntrinsicSizeInput kidInput(aInput, kid->GetWritingMode(),
+                                        GetWritingMode());
+      kid->AddInlineMinISize(kidInput, data);
     }
   };
   DoInlineIntrinsicISize(aData, handleChildren);
 }
 
-void nsContainerFrame::DoInlinePrefISize(gfxContext* aRenderingContext,
+void nsContainerFrame::DoInlinePrefISize(const IntrinsicSizeInput& aInput,
                                          InlinePrefISizeData* aData) {
-  auto handleChildren = [aRenderingContext](auto frame, auto data) {
+  auto handleChildren = [&](auto frame, auto data) {
     for (nsIFrame* kid : frame->mFrames) {
-      kid->AddInlinePrefISize(aRenderingContext, data);
+      const IntrinsicSizeInput kidInput(aInput, kid->GetWritingMode(),
+                                        GetWritingMode());
+      kid->AddInlinePrefISize(kidInput, data);
     }
   };
   DoInlineIntrinsicISize(aData, handleChildren);
@@ -833,17 +837,20 @@ LogicalSize nsContainerFrame::ComputeAutoSize(
     AutoMaybeDisableFontInflation an(this);
 
     WritingMode tableWM = GetParent()->GetWritingMode();
+    const IntrinsicSizeInput input(
+        aRenderingContext, Some(aCBSize.ConvertTo(GetWritingMode(), aWM)),
+        Nothing());
     if (aWM.IsOrthogonalTo(tableWM)) {
       // For an orthogonal caption on a block-dir side of the table, shrink-wrap
       // to min-isize.
-      result.ISize(aWM) = GetMinISize(aRenderingContext);
+      result.ISize(aWM) = GetMinISize(input);
     } else {
       // The outer frame constrains our available isize to the isize of
       // the table.  Grow if our min-isize is bigger than that, but not
       // larger than the containing block isize.  (It would really be nice
       // to transmit that information another way, so we could grow up to
       // the table's available isize, but that's harder.)
-      nscoord min = GetMinISize(aRenderingContext);
+      nscoord min = GetMinISize(input);
       if (min > aCBSize.ISize(aWM)) {
         min = aCBSize.ISize(aWM);
       }
@@ -2191,15 +2198,16 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
 
   auto* parentFrame = GetParent();
   const bool isGridItem = IsGridItem();
-  const bool isFlexItem =
-      IsFlexItem() && !parentFrame->HasAnyStateBits(
-                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
-  // This variable only gets meaningfully set if isFlexItem is true.  It
-  // indicates which axis (in this frame's own WM) corresponds to its
-  // flex container's main axis.
-  LogicalAxis flexMainAxis = LogicalAxis::Block;
-  if (isFlexItem && nsFlexContainerFrame::IsItemInlineAxisMainAxis(this)) {
-    flexMainAxis = LogicalAxis::Inline;
+
+  // flexItemMainAxis is set if this frame is a flex item in a modern flexbox
+  // layout. It indicates which logical axis (in this frame's own WM)
+  // corresponds to its flex container's main axis.
+  Maybe<LogicalAxis> flexItemMainAxis;
+  if (IsFlexItem() && !parentFrame->HasAnyStateBits(
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX)) {
+    flexItemMainAxis = Some(nsFlexContainerFrame::IsItemInlineAxisMainAxis(this)
+                                ? LogicalAxis::Inline
+                                : LogicalAxis::Block);
   }
 
   // Handle intrinsic sizes and their interaction with
@@ -2224,21 +2232,22 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
                                              boxSizingAdjust.ISize(aWM);
 
   nscoord iSize, minISize, maxISize, bSize, minBSize, maxBSize;
-  enum class Stretch {
-    // stretch to fill the CB (preserving intrinsic ratio) in the relevant axis
-    StretchPreservingRatio,
-    // stretch to fill the CB in the relevant axis
+  enum class FillCB {
+    // No stretching or clamping in the relevant axis.
+    No,
+    // Stretch to fill the containing block size in the relevant axis while
+    // preserving the aspect-ratio. If both axes are stretched, the aspect-ratio
+    // will be disregarded.
     Stretch,
-    // no stretching in the relevant axis
-    NoStretch,
+    // Clamp to fill the containing block size in the relevant axis while
+    // preserving the aspect-ratio. If both axes are clamped, the aspect-ratio
+    // is respected, and the dimensions do not overflow the containing block
+    // size.
+    Clamp,
   };
-  // just to avoid having to type these out everywhere:
-  const auto eStretchPreservingRatio = Stretch::StretchPreservingRatio;
-  const auto eStretch = Stretch::Stretch;
-  const auto eNoStretch = Stretch::NoStretch;
 
-  Stretch stretchI = eNoStretch;  // stretch behavior in the inline axis
-  Stretch stretchB = eNoStretch;  // stretch behavior in the block axis
+  FillCB inlineFillCB = FillCB::No;  // fill CB behavior in the inline axis
+  FillCB blockFillCB = FillCB::No;   // fill CB behavior in the block axis
 
   const bool isOrthogonal = aWM.IsOrthogonalTo(parentFrame->GetWritingMode());
   const LogicalSize fallbackIntrinsicSize(aWM, kFallbackIntrinsicSize);
@@ -2250,6 +2259,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   const bool hasIntrinsicBSize = maybeIntrinsicBSize.isSome();
   nscoord intrinsicBSize = std::max(0, maybeIntrinsicBSize.valueOr(0));
 
+  Maybe<nscoord> iSizeToFillCB;
+  Maybe<nscoord> bSizeToFillCB;
   if (!isAutoOrMaxContentISize) {
     iSize = ComputeISizeValue(aRenderingContext, aWM, aCBSize, boxSizingAdjust,
                               boxSizingToMarginEdgeISize, styleISize,
@@ -2267,13 +2278,13 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
             isOrthogonal ? stylePos->UsedAlignSelf(GetParent()->Style())._0
                          : stylePos->UsedJustifySelf(GetParent()->Style())._0;
         if (inlineAxisAlignment == StyleAlignFlags::STRETCH) {
-          stretchI = eStretch;
+          inlineFillCB = FillCB::Stretch;
         }
       }
-      if (stretchI != eNoStretch ||
+      if (inlineFillCB != FillCB::No ||
           aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) {
-        iSize = std::max(nscoord(0), cbSize - aBorderPadding.ISize(aWM) -
-                                         aMargin.ISize(aWM));
+        iSizeToFillCB.emplace(std::max(
+            0, cbSize - aBorderPadding.ISize(aWM) - aMargin.ISize(aWM)));
       }
     } else {
       // Reset this flag to avoid applying the clamping below.
@@ -2281,10 +2292,13 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     }
   }
 
+  // Flex items ignore their min & max sizing properties in their flex
+  // container's main-axis. (Those properties get applied later in the flexbox
+  // algorithm.)
+  const bool isFlexItemInlineAxisMainAxis =
+      flexItemMainAxis && *flexItemMainAxis == LogicalAxis::Inline;
   const auto& maxISizeCoord = stylePos->MaxISize(aWM);
-
-  if (!maxISizeCoord.IsNone() &&
-      !(isFlexItem && flexMainAxis == LogicalAxis::Inline)) {
+  if (!maxISizeCoord.IsNone() && !isFlexItemInlineAxisMainAxis) {
     maxISize = ComputeISizeValue(aRenderingContext, aWM, aCBSize,
                                  boxSizingAdjust, boxSizingToMarginEdgeISize,
                                  maxISizeCoord, styleBSize, aspectRatio, aFlags)
@@ -2293,14 +2307,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     maxISize = nscoord_MAX;
   }
 
-  // NOTE: Flex items ignore their min & max sizing properties in their
-  // flex container's main-axis.  (Those properties get applied later in
-  // the flexbox algorithm.)
-
   const auto& minISizeCoord = stylePos->MinISize(aWM);
-
-  if (!minISizeCoord.IsAuto() &&
-      !(isFlexItem && flexMainAxis == LogicalAxis::Inline)) {
+  if (!minISizeCoord.IsAuto() && !isFlexItemInlineAxisMainAxis) {
     minISize = ComputeISizeValue(aRenderingContext, aWM, aCBSize,
                                  boxSizingAdjust, boxSizingToMarginEdgeISize,
                                  minISizeCoord, styleBSize, aspectRatio, aFlags)
@@ -2330,13 +2338,13 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
             !isOrthogonal ? stylePos->UsedAlignSelf(GetParent()->Style())._0
                           : stylePos->UsedJustifySelf(GetParent()->Style())._0;
         if (blockAxisAlignment == StyleAlignFlags::STRETCH) {
-          stretchB = eStretch;
+          blockFillCB = FillCB::Stretch;
         }
       }
-      if (stretchB != eNoStretch ||
+      if (blockFillCB != FillCB::No ||
           aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize)) {
-        bSize = std::max(nscoord(0), cbSize - aBorderPadding.BSize(aWM) -
-                                         aMargin.BSize(aWM));
+        bSizeToFillCB.emplace(std::max(
+            0, cbSize - aBorderPadding.BSize(aWM) - aMargin.BSize(aWM)));
       }
     } else {
       // Reset this flag to avoid applying the clamping below.
@@ -2344,10 +2352,14 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     }
   }
 
+  // Flex items ignore their min & max sizing properties in their flex
+  // container's main-axis. (Those properties get applied later in the flexbox
+  // algorithm.)
+  const bool isFlexItemBlockAxisMainAxis =
+      flexItemMainAxis && *flexItemMainAxis == LogicalAxis::Block;
   const auto& maxBSizeCoord = stylePos->MaxBSize(aWM);
-
   if (!nsLayoutUtils::IsAutoBSize(maxBSizeCoord, aCBSize.BSize(aWM)) &&
-      !(isFlexItem && flexMainAxis == LogicalAxis::Block)) {
+      !isFlexItemBlockAxisMainAxis) {
     maxBSize = nsLayoutUtils::ComputeBSizeValue(
         aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
         maxBSizeCoord.AsLengthPercentage());
@@ -2356,9 +2368,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   }
 
   const auto& minBSizeCoord = stylePos->MinBSize(aWM);
-
   if (!nsLayoutUtils::IsAutoBSize(minBSizeCoord, aCBSize.BSize(aWM)) &&
-      !(isFlexItem && flexMainAxis == LogicalAxis::Block)) {
+      !isFlexItemBlockAxisMainAxis) {
     minBSize = nsLayoutUtils::ComputeBSizeValue(
         aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
         minBSizeCoord.AsLengthPercentage());
@@ -2368,6 +2379,16 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
 
   NS_ASSERTION(aCBSize.ISize(aWM) != NS_UNCONSTRAINEDSIZE,
                "Our containing block must not have unconstrained inline-size!");
+  MOZ_ASSERT(!(inlineFillCB != FillCB::No ||
+               aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) ||
+                 iSizeToFillCB,
+             "iSizeToFillCB must be valid when stretching or clamping in the "
+             "inline axis!");
+  MOZ_ASSERT(!(blockFillCB != FillCB::No ||
+               aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize)) ||
+                 bSizeToFillCB,
+             "bSizeToFillCB must be valid when stretching or clamping in the "
+             "block axis!");
 
   // Now calculate the used values for iSize and bSize:
   if (isAutoOrMaxContentISize) {
@@ -2397,8 +2418,9 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
       // or 'normal' codepath.  We use the ratio-preserving 'normal' codepath
       // unless we have 'stretch' in the other axis.
       if (aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize) &&
-          stretchI != eStretch && tentISize > iSize) {
-        stretchI = (stretchB == eStretch ? eStretch : eStretchPreservingRatio);
+          inlineFillCB != FillCB::Stretch && tentISize > *iSizeToFillCB) {
+        inlineFillCB =
+            (blockFillCB == FillCB::Stretch ? FillCB::Stretch : FillCB::Clamp);
       }
 
       if (hasIntrinsicBSize) {
@@ -2412,47 +2434,50 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
 
       // (ditto the comment about clamping the inline size above)
       if (aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize) &&
-          stretchB != eStretch && tentBSize > bSize) {
-        stretchB = (stretchI == eStretch ? eStretch : eStretchPreservingRatio);
+          blockFillCB != FillCB::Stretch && tentBSize > *bSizeToFillCB) {
+        blockFillCB =
+            (inlineFillCB == FillCB::Stretch ? FillCB::Stretch : FillCB::Clamp);
       }
 
-      if (stretchI == eStretch) {
-        tentISize = iSize;  // * / 'stretch'
-        if (stretchB == eStretch) {
-          tentBSize = bSize;  // 'stretch' / 'stretch'
-        } else if (stretchB == eStretchPreservingRatio && aspectRatio) {
-          // 'normal' / 'stretch'
+      // The slash notation is the used value of "align-self / justify-self".
+      if (inlineFillCB == FillCB::Stretch) {
+        tentISize = *iSizeToFillCB;  // * / 'stretch'
+        if (blockFillCB == FillCB::Stretch) {
+          tentBSize = *bSizeToFillCB;  // 'stretch' / 'stretch'
+        } else if (aspectRatio) {
+          // * (except 'stretch') / 'stretch'
           tentBSize = aspectRatio.ComputeRatioDependentSize(
-              LogicalAxis::Block, aWM, iSize, boxSizingAdjust);
+              LogicalAxis::Block, aWM, *iSizeToFillCB, boxSizingAdjust);
         }
-      } else if (stretchB == eStretch) {
-        tentBSize = bSize;  // 'stretch' / * (except 'stretch')
-        if (stretchI == eStretchPreservingRatio && aspectRatio) {
-          // 'stretch' / 'normal'
+      } else if (blockFillCB == FillCB::Stretch) {
+        tentBSize = *bSizeToFillCB;  // 'stretch' / * (except 'stretch')
+        if (aspectRatio) {
           tentISize = aspectRatio.ComputeRatioDependentSize(
-              LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
+              LogicalAxis::Inline, aWM, *bSizeToFillCB, boxSizingAdjust);
         }
-      } else if (stretchI == eStretchPreservingRatio && aspectRatio) {
-        tentISize = iSize;  // * (except 'stretch') / 'normal'
+      } else if (inlineFillCB == FillCB::Clamp && aspectRatio) {
+        tentISize = *iSizeToFillCB;  // * (except 'stretch') / 'normal'
         tentBSize = aspectRatio.ComputeRatioDependentSize(
-            LogicalAxis::Block, aWM, iSize, boxSizingAdjust);
-        if (stretchB == eStretchPreservingRatio && tentBSize > bSize) {
-          // Stretch within the CB size with preserved intrinsic ratio.
-          tentBSize = bSize;  // 'normal' / 'normal'
+            LogicalAxis::Block, aWM, *iSizeToFillCB, boxSizingAdjust);
+        if (blockFillCB == FillCB::Clamp && tentBSize > *bSizeToFillCB) {
+          // Clamp within the CB size with preserved aspect ratio.
+          tentBSize = *bSizeToFillCB;  // 'normal' / 'normal'
           tentISize = aspectRatio.ComputeRatioDependentSize(
-              LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
+              LogicalAxis::Inline, aWM, *bSizeToFillCB, boxSizingAdjust);
         }
-      } else if (stretchB == eStretchPreservingRatio && aspectRatio) {
-        tentBSize = bSize;  // 'normal' / * (except 'normal' and 'stretch')
+      } else if (blockFillCB == FillCB::Clamp && aspectRatio) {
+        // 'normal' / * (except 'normal' and 'stretch')
+        tentBSize = *bSizeToFillCB;
         tentISize = aspectRatio.ComputeRatioDependentSize(
-            LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
+            LogicalAxis::Inline, aWM, *bSizeToFillCB, boxSizingAdjust);
       }
 
       // ComputeAutoSizeWithIntrinsicDimensions preserves the ratio when
       // applying the min/max-size.  We don't want that when we have 'stretch'
       // in either axis because tentISize/tentBSize is likely not according to
       // ratio now.
-      if (aspectRatio && stretchI != eStretch && stretchB != eStretch) {
+      if (aspectRatio && inlineFillCB != FillCB::Stretch &&
+          blockFillCB != FillCB::Stretch) {
         nsSize autoSize = nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(
             minISize, minBSize, maxISize, maxBSize, tentISize, tentBSize);
         // The nsSize that ComputeAutoSizeWithIntrinsicDimensions returns will
@@ -2469,40 +2494,39 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     } else {
       // 'auto' iSize, non-'auto' bSize
       bSize = CSSMinMax(bSize, minBSize, maxBSize);
-      if (stretchI != eStretch) {
-        if (aspectRatio) {
-          iSize = aspectRatio.ComputeRatioDependentSize(
-              LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
-        } else if (hasIntrinsicISize) {
-          if (!(aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize) &&
-                intrinsicISize > iSize)) {
-            iSize = intrinsicISize;
-          }  // else - leave iSize as is to fill the CB
-        } else {
-          iSize = fallbackIntrinsicSize.ISize(aWM);
-        }
-      }  // else - leave iSize as is to fill the CB
+      if (inlineFillCB == FillCB::Stretch) {
+        iSize = *iSizeToFillCB;
+      } else if (aspectRatio) {
+        iSize = aspectRatio.ComputeRatioDependentSize(LogicalAxis::Inline, aWM,
+                                                      bSize, boxSizingAdjust);
+      } else if (hasIntrinsicISize) {
+        iSize = aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize) &&
+                        intrinsicISize > *iSizeToFillCB
+                    ? *iSizeToFillCB
+                    : intrinsicISize;
+      } else {
+        iSize = fallbackIntrinsicSize.ISize(aWM);
+      }
       iSize = CSSMinMax(iSize, minISize, maxISize);
     }
   } else {
     if (isAutoBSize) {
       // non-'auto' iSize, 'auto' bSize
       iSize = CSSMinMax(iSize, minISize, maxISize);
-      if (stretchB != eStretch) {
-        if (aspectRatio) {
-          bSize = aspectRatio.ComputeRatioDependentSize(LogicalAxis::Block, aWM,
-                                                        iSize, boxSizingAdjust);
-        } else if (hasIntrinsicBSize) {
-          if (!(aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize) &&
-                intrinsicBSize > bSize)) {
-            bSize = intrinsicBSize;
-          }  // else - leave bSize as is to fill the CB
-        } else {
-          bSize = fallbackIntrinsicSize.BSize(aWM);
-        }
-      }  // else - leave bSize as is to fill the CB
+      if (blockFillCB == FillCB::Stretch) {
+        bSize = *bSizeToFillCB;
+      } else if (aspectRatio) {
+        bSize = aspectRatio.ComputeRatioDependentSize(LogicalAxis::Block, aWM,
+                                                      iSize, boxSizingAdjust);
+      } else if (hasIntrinsicBSize) {
+        bSize = aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize) &&
+                        intrinsicBSize > *bSizeToFillCB
+                    ? *bSizeToFillCB
+                    : intrinsicBSize;
+      } else {
+        bSize = fallbackIntrinsicSize.BSize(aWM);
+      }
       bSize = CSSMinMax(bSize, minBSize, maxBSize);
-
     } else {
       // non-'auto' iSize, non-'auto' bSize
       iSize = CSSMinMax(iSize, minISize, maxISize);

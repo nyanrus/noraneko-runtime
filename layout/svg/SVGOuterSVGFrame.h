@@ -45,7 +45,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(SVGOuterSVGFrame)
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const IntrinsicSizeInput& aInput,
                          IntrinsicISizeType aType) override;
 
   IntrinsicSize GetIntrinsicSize() override;
@@ -61,9 +61,6 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
-
-  void DidReflow(nsPresContext* aPresContext,
-                 const ReflowInput* aReflowInput) override;
 
   void UnionChildOverflow(mozilla::OverflowAreas& aOverflowAreas,
                           bool aAsIfScrolled) override;

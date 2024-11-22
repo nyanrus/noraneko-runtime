@@ -492,6 +492,10 @@ uint32_t AudioSendStream::OnBitrateUpdated(BitrateAllocationUpdate update) {
   return 0;
 }
 
+absl::optional<DataRate> AudioSendStream::GetUsedRate() const {
+  return channel_send_->GetUsedRate();
+}
+
 void AudioSendStream::SetTransportOverhead(
     int transport_overhead_per_packet_bytes) {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
@@ -514,6 +518,7 @@ void AudioSendStream::UpdateOverheadPerPacket() {
   if (registered_with_allocator_) {
     ConfigureBitrateObserver();
   }
+  channel_send_->RegisterPacketOverhead(overhead_per_packet_bytes);
 }
 
 size_t AudioSendStream::TestOnlyGetPerPacketOverheadBytes() const {
@@ -559,9 +564,10 @@ bool AudioSendStream::SetupSendCodec(const Config& new_config) {
   const auto& spec = *new_config.send_codec_spec;
 
   RTC_DCHECK(new_config.encoder_factory);
-  std::unique_ptr<AudioEncoder> encoder =
-      new_config.encoder_factory->MakeAudioEncoder(
-          spec.payload_type, spec.format, new_config.codec_pair_id);
+  std::unique_ptr<AudioEncoder> encoder = new_config.encoder_factory->Create(
+      env_, spec.format,
+      {.payload_type = spec.payload_type,
+       .codec_pair_id = new_config.codec_pair_id});
 
   if (!encoder) {
     RTC_DLOG(LS_ERROR) << "Unable to create encoder for "
@@ -807,7 +813,8 @@ void AudioSendStream::ConfigureBitrateObserver() {
           constraints->min.bps<uint32_t>(), constraints->max.bps<uint32_t>(), 0,
           priority_bitrate.bps(), true,
           allocation_settings_.bitrate_priority.value_or(
-              config_.bitrate_priority)});
+              config_.bitrate_priority),
+          TrackRateElasticity::kCanContributeUnusedRate});
 
   registered_with_allocator_ = true;
 }

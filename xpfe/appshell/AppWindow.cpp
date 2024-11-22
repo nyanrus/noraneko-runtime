@@ -210,10 +210,9 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   }
 
   mWindow->SetWidgetListener(&mWidgetListenerDelegate);
-  rv = mWindow->Create((nsIWidget*)parentWidget,  // Parent nsIWidget
-                       nullptr,                   // Native parent widget
-                       deskRect,                  // Widget dimensions
-                       &widgetInitData);          // Widget initialization data
+  rv = mWindow->Create(parentWidget.get(),  // Parent nsIWidget
+                       deskRect,            // Widget dimensions
+                       &widgetInitData);    // Widget initialization data
   NS_ENSURE_SUCCESS(rv, rv);
 
   LayoutDeviceIntRect r = mWindow->GetClientBounds();
@@ -238,9 +237,9 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   mDocShell->SetTreeOwner(mChromeTreeOwner);
 
   r.MoveTo(0, 0);
-  NS_ENSURE_SUCCESS(mDocShell->InitWindow(nullptr, mWindow, r.X(), r.Y(),
-                                          r.Width(), r.Height()),
-                    NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(
+      mDocShell->InitWindow(mWindow, r.X(), r.Y(), r.Width(), r.Height()),
+      NS_ERROR_FAILURE);
 
   // Attach a WebProgress listener.during initialization...
   mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
@@ -492,8 +491,7 @@ NS_IMETHODIMP AppWindow::RollupAllPopups() {
 // AppWindow::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP AppWindow::InitWindow(nativeWindow aParentNativeWindow,
-                                    nsIWidget* parentWidget, int32_t x,
+NS_IMETHODIMP AppWindow::InitWindow(nsIWidget* parentWidget, int32_t x,
                                     int32_t y, int32_t cx, int32_t cy) {
   // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
@@ -826,28 +824,6 @@ NS_IMETHODIMP AppWindow::SetParentWidget(nsIWidget* aParentWidget) {
   return NS_OK;
 }
 
-NS_IMETHODIMP AppWindow::GetParentNativeWindow(
-    nativeWindow* aParentNativeWindow) {
-  NS_ENSURE_ARG_POINTER(aParentNativeWindow);
-
-  nsCOMPtr<nsIWidget> parentWidget;
-  NS_ENSURE_SUCCESS(GetParentWidget(getter_AddRefs(parentWidget)),
-                    NS_ERROR_FAILURE);
-
-  if (parentWidget) {
-    *aParentNativeWindow = parentWidget->GetNativeData(NS_NATIVE_WIDGET);
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP AppWindow::SetParentNativeWindow(
-    nativeWindow aParentNativeWindow) {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
-  return NS_OK;
-}
-
 NS_IMETHODIMP AppWindow::GetNativeHandle(nsAString& aNativeHandle) {
   nsCOMPtr<nsIWidget> mainWidget;
   NS_ENSURE_SUCCESS(GetMainWidget(getter_AddRefs(mainWidget)),
@@ -895,10 +871,26 @@ NS_IMETHODIMP AppWindow::SetVisibility(bool aVisibility) {
   mDocShell->SetVisibility(aVisibility);
   // Store locally so it doesn't die on us. 'Show' can result in the window
   // being closed with AppWindow::Destroy being called. That would set
-  // mWindow to null and posibly destroy the nsIWidget while its Show method
+  // mWindow to null and possibly destroy the nsIWidget while its Show method
   // is on the stack. We need to keep it alive until Show finishes.
   nsCOMPtr<nsIWidget> window = mWindow;
   window->Show(aVisibility);
+
+  // NOTE(emilio): A bit hacky, but we need to synchronously trigger resizes
+  // for remote frames here if we're a sized popup (mDominantClientSize=true).
+  //
+  // This is because what we do to show a popup window with a specified size is
+  // to wait until the chrome loads (and gets sized, and thus laid out at a
+  // particular pre-size), then size the window, and call Show(), which ends up
+  // here.
+  //
+  // After bug 1917458, that remote browser resize would happen asynchronously,
+  // which means content might be able to observe the old size unexpectedly.
+  if (aVisibility && mDominantClientSize) {
+    if (RefPtr doc = mDocShell->GetDocument()) {
+      doc->SynchronouslyUpdateRemoteBrowserDimensions();
+    }
+  }
 
   nsCOMPtr<nsIWindowMediator> windowMediator(
       do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
@@ -1850,6 +1842,8 @@ nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
     }
   }
 
+  settings.verticalTabs = Preferences::GetBool("sidebar.verticalTabs", false);
+
   Unused << PersistPreXULSkeletonUIValues(settings);
 #endif
 
@@ -2420,7 +2414,7 @@ void AppWindow::IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
       // TODO: Make this more generic perhaps?
       if (prefWidthAttr.EqualsLiteral("min-width")) {
         if (auto* f = element->GetPrimaryFrame(FlushType::Frames)) {
-          const auto& coord = f->StylePosition()->mMinWidth;
+          const auto& coord = f->StylePosition()->GetMinWidth();
           if (coord.ConvertsToLength()) {
             prefWidth = CSSPixel::FromAppUnitsRounded(coord.ToLength());
           }

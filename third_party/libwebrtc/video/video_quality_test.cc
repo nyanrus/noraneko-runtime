@@ -317,13 +317,11 @@ std::unique_ptr<VideoEncoder> VideoQualityTest::CreateVideoEncoder(
     const SdpVideoFormat& format,
     VideoAnalyzer* analyzer) {
   std::unique_ptr<VideoEncoder> encoder;
-  if (format.name == "VP8") {
-    encoder = std::make_unique<SimulcastEncoderAdapter>(
-        env, encoder_factory_.get(), nullptr, format);
-  } else if (format.name == "FakeCodec") {
+  if (format.name == "FakeCodec") {
     encoder = FakeVideoEncoderFactory().Create(env, format);
   } else {
-    encoder = encoder_factory_->Create(env, format);
+    encoder = std::make_unique<SimulcastEncoderAdapter>(
+        env, encoder_factory_.get(), nullptr, format);
   }
 
   std::vector<FileWrapper> encoded_frame_dump_files;
@@ -619,9 +617,7 @@ void VideoQualityTest::FillScalabilitySettings(
     encoder_config.spatial_layers = params->ss[video_idx].spatial_layers;
     encoder_config.simulcast_layers = std::vector<VideoStream>(num_streams);
     encoder_config.video_stream_factory =
-        rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-            params->video[video_idx].codec, cricket::kDefaultVideoMaxQpVpx,
-            params->screenshare[video_idx].enabled, true, encoder_info);
+        rtc::make_ref_counted<cricket::EncoderStreamFactory>(encoder_info);
     params->ss[video_idx].streams =
         encoder_config.video_stream_factory->CreateEncoderStreams(
             env().field_trials(), params->video[video_idx].width,
@@ -801,11 +797,6 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       video_encoder_configs_[video_idx].simulcast_layers =
           params_.ss[video_idx].streams;
     }
-    video_encoder_configs_[video_idx].video_stream_factory =
-        rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-            params_.video[video_idx].codec,
-            params_.ss[video_idx].streams[0].max_qp,
-            params_.screenshare[video_idx].enabled, true, encoder_info);
 
     video_encoder_configs_[video_idx].spatial_layers =
         params_.ss[video_idx].spatial_layers;
@@ -825,6 +816,7 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       // Fill out codec settings.
       video_encoder_configs_[video_idx].content_type =
           VideoEncoderConfig::ContentType::kScreen;
+      video_encoder_configs_[video_idx].legacy_conference_mode = true;
       degradation_preference_ = DegradationPreference::MAINTAIN_RESOLUTION;
       if (params_.video[video_idx].codec == "VP8") {
         VideoCodecVP8 vp8_settings = VideoEncoder::GetDefaultVp8Settings();
@@ -1249,7 +1241,7 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
       InitializeAudioDevice(&send_call_config, &recv_call_config,
                             params_.audio.use_real_adm);
 
-    CreateCalls(send_call_config, recv_call_config);
+    CreateCalls(std::move(send_call_config), std::move(recv_call_config));
     send_transport = CreateSendTransport();
     recv_transport = CreateReceiveTransport();
   });
@@ -1476,7 +1468,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
       InitializeAudioDevice(&send_call_config, &recv_call_config,
                             params_.audio.use_real_adm);
 
-    CreateCalls(send_call_config, recv_call_config);
+    CreateCalls(std::move(send_call_config), std::move(recv_call_config));
 
     // TODO(minyue): consider if this is a good transport even for audio only
     // calls.

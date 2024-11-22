@@ -580,21 +580,25 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
 
   void testNullSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testNull(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testObjectSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testObject(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testUndefinedSet(Condition cond, const ValueOperand& value,
                         Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testUndefined(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
+  void cmpPtr(Register lhs, const Imm32 rhs) { cmpl(rhs, lhs); }
   void cmpPtr(Register lhs, const ImmWord rhs) { cmpl(Imm32(rhs.value), lhs); }
   void cmpPtr(Register lhs, const ImmPtr imm) {
     cmpPtr(lhs, ImmWord(uintptr_t(imm.value)));

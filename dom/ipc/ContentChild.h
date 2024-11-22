@@ -120,7 +120,7 @@ class ContentChild final : public PContentChild,
                  const mozilla::dom::ipc::StructuredCloneData& aInitialData,
                  bool aIsReadyForBackgroundProcessing);
 
-  void InitSharedUASheets(Maybe<base::SharedMemoryHandle>&& aHandle,
+  void InitSharedUASheets(Maybe<SharedMemoryHandle>&& aHandle,
                           uintptr_t aAddress);
 
   void InitGraphicsDeviceData(const ContentDeviceData& aData);
@@ -246,17 +246,20 @@ class ContentChild final : public PContentChild,
       const ChromeRegistryItem& item);
 
   mozilla::ipc::IPCResult RecvClearStyleSheetCache(
-      const Maybe<RefPtr<nsIPrincipal>>& aForPrincipal,
-      const Maybe<nsCString>& aBaseDomain);
+      const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
+      const Maybe<nsCString>& aSchemelessSite,
+      const Maybe<OriginAttributesPattern>& aPattern);
 
   mozilla::ipc::IPCResult RecvClearScriptCache(
-      const Maybe<RefPtr<nsIPrincipal>>& aForPrincipal,
-      const Maybe<nsCString>& aBaseDomain);
+      const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
+      const Maybe<nsCString>& aSchemelessSite,
+      const Maybe<OriginAttributesPattern>& aPattern);
 
   mozilla::ipc::IPCResult RecvClearImageCacheFromPrincipal(
       nsIPrincipal* aPrincipal);
-  mozilla::ipc::IPCResult RecvClearImageCacheFromBaseDomain(
-      const nsCString& aBaseDomain);
+  mozilla::ipc::IPCResult RecvClearImageCacheFromSite(
+      const nsCString& aSchemelessSite,
+      const OriginAttributesPattern& aPattern);
   mozilla::ipc::IPCResult RecvClearImageCache(const bool& privateLoader,
                                               const bool& chrome);
 
@@ -307,11 +310,14 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvRegisterStringBundles(
       nsTArray<StringBundleDescriptor>&& stringBundles);
 
+  mozilla::ipc::IPCResult RecvSimpleURIUnknownRemoteSchemes(
+      nsTArray<nsCString>&& aRemoteSchemes);
+
   mozilla::ipc::IPCResult RecvUpdateL10nFileSources(
       nsTArray<L10nFileSourceDescriptor>&& aDescriptors);
 
   mozilla::ipc::IPCResult RecvUpdateSharedData(
-      const FileDescriptor& aMapFile, const uint32_t& aMapSize,
+      SharedMemoryHandle&& aMapHandle, const uint32_t& aMapSize,
       nsTArray<IPCBlob>&& aBlobs, nsTArray<nsCString>&& aChangedKeys);
 
   mozilla::ipc::IPCResult RecvFontListChanged();
@@ -331,7 +337,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvRebuildFontList(const bool& aFullRebuild);
   mozilla::ipc::IPCResult RecvFontListShmBlockAdded(
       const uint32_t& aGeneration, const uint32_t& aIndex,
-      base::SharedMemoryHandle&& aHandle);
+      SharedMemoryHandle&& aHandle);
 
   mozilla::ipc::IPCResult RecvUpdateAppLocales(
       nsTArray<nsCString>&& aAppLocales);
@@ -346,8 +352,9 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvFlushMemory(const nsString& reason);
 
-  mozilla::ipc::IPCResult RecvActivateA11y();
+  mozilla::ipc::IPCResult RecvActivateA11y(uint64_t aCacheDomains);
   mozilla::ipc::IPCResult RecvShutdownA11y();
+  mozilla::ipc::IPCResult RecvSetCacheDomains(uint64_t aCacheDomains);
 
   mozilla::ipc::IPCResult RecvApplicationForeground();
   mozilla::ipc::IPCResult RecvApplicationBackground();
@@ -506,9 +513,9 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvSetXPCOMProcessAttributes(
       XPCOMInitData&& aXPCOMInit, const StructuredCloneData& aInitialData,
       FullLookAndFeel&& aLookAndFeelData, SystemFontList&& aFontList,
-      Maybe<base::SharedMemoryHandle>&& aSharedUASheetHandle,
+      Maybe<SharedMemoryHandle>&& aSharedUASheetHandle,
       const uintptr_t& aSharedUASheetAddress,
-      nsTArray<base::SharedMemoryHandle>&& aSharedFontListBlocks,
+      nsTArray<SharedMemoryHandle>&& aSharedFontListBlocks,
       const bool& aIsReadyForBackgroundProcessing);
 
   mozilla::ipc::IPCResult RecvProvideAnonymousTemporaryFile(
@@ -538,7 +545,7 @@ class ContentChild final : public PContentChild,
   // for use during gfx initialization.
   SystemFontList& SystemFontList() { return mFontList; }
 
-  nsTArray<base::SharedMemoryHandle>& SharedFontListBlocks() {
+  nsTArray<SharedMemoryHandle>& SharedFontListBlocks() {
     return mSharedFontListBlocks;
   }
 
@@ -827,7 +834,7 @@ class ContentChild final : public PContentChild,
   // Temporary storage for look and feel data.
   FullLookAndFeel mLookAndFeelData;
   // Temporary storage for list of shared-fontlist memory blocks.
-  nsTArray<base::SharedMemoryHandle> mSharedFontListBlocks;
+  nsTArray<SharedMemoryHandle> mSharedFontListBlocks;
 
   AppInfo mAppInfo;
 

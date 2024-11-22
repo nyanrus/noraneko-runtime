@@ -311,8 +311,8 @@ function assertSearchStringIsInUrlbar(
   searchString,
   {
     win = window,
-    pageProxyState = "valid",
-    userTypedValue = null,
+    pageProxyState = "invalid",
+    userTypedValue = searchString,
     persistSearchTerms = true,
   } = {}
 ) {
@@ -321,8 +321,9 @@ function assertSearchStringIsInUrlbar(
     searchString,
     `Search string should be the urlbar value.`
   );
+  let state = win.gURLBar.getBrowserState(win.gBrowser.selectedBrowser);
   Assert.equal(
-    win.gBrowser.selectedBrowser.searchTerms,
+    state.persist.searchTerms,
     searchString,
     `Search terms should match.`
   );

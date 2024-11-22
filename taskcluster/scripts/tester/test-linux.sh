@@ -166,9 +166,7 @@ fi
 if $NEED_WINDOW_MANAGER; then
     # This is read by xsession to select the window manager
     . /etc/lsb-release
-    if [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "16.04" ]; then
-        echo DESKTOP_SESSION=ubuntu > $HOME/.xsessionrc
-    elif [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "18.04" ]; then
+    if [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "18.04" ]; then
         echo export DESKTOP_SESSION=gnome > $HOME/.xsessionrc
         echo export XDG_CURRENT_DESKTOP=GNOME > $HOME/.xsessionrc
         if [ $MOZ_ENABLE_WAYLAND ]; then
@@ -178,6 +176,13 @@ if $NEED_WINDOW_MANAGER; then
         fi
     else
         :
+    fi
+
+    # Start a session bus early instead of leaving it to Xsession, so that we
+    # can use it for access to e.g. gnome-keyring or the screencast API
+    if test -z "$DBUS_SESSION_BUS_ADDRESS" ; then
+        # if not found, launch a new one
+        eval `dbus-launch --sh-syntax`
     fi
 
     # DISPLAY has already been set above
@@ -200,10 +205,6 @@ if $NEED_WINDOW_MANAGER; then
     # This starts the gnome-keyring-daemon with an unlocked login keyring. libsecret uses this to
     # store secrets. Firefox uses libsecret to store a key that protects sensitive information like
     # credit card numbers.
-    if test -z "$DBUS_SESSION_BUS_ADDRESS" ; then
-        # if not found, launch a new one
-        eval `dbus-launch --sh-syntax`
-    fi
     eval `echo '' | /usr/bin/gnome-keyring-daemon -r -d --unlock --components=secrets`
 
     # Run mutter as nested wayland compositor to provide Wayland environment
@@ -234,7 +235,7 @@ elif [[ $NEED_COMPIZ == true ]] && [[ $RELEASE == 18.04 ]]; then
 fi
 
 # Bug 1607713 - set cursor position to 0,0 to avoid odd libx11 interaction
-if [ $NEED_WINDOW_MANAGER ] && [ $DISPLAY == ':0' ]; then
+if $NEED_WINDOW_MANAGER && [ $DISPLAY == ':0' ]; then
     xwit -root -warp 0 0
 fi
 

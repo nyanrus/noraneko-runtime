@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-use std::{path::Path, sync::Arc};
+use std::{cell::OnceCell, path::Path, sync::Arc};
 
 use interrupt_support::{SqlInterruptHandle, SqlInterruptScope};
 use parking_lot::{Mutex, MutexGuard};
@@ -13,22 +13,24 @@ use rusqlite::{
     types::{FromSql, ToSql},
     Connection, OpenFlags, OptionalExtension,
 };
-use sql_support::{open_database::open_database_with_flags, ConnExt};
+use sql_support::{open_database::open_database_with_flags, repeat_sql_vars, ConnExt};
 
 use crate::{
     config::{SuggestGlobalConfig, SuggestProviderConfig},
     error::RusqliteResultExt,
     fakespot,
-    keyword::full_keyword,
+    geoname::GeonameCache,
     pocket::{split_keyword, KeywordConfidence},
     provider::SuggestionProvider,
     rs::{
         DownloadedAmoSuggestion, DownloadedAmpSuggestion, DownloadedAmpWikipediaSuggestion,
-        DownloadedFakespotSuggestion, DownloadedMdnSuggestion, DownloadedPocketSuggestion,
-        DownloadedWeatherData, DownloadedWikipediaSuggestion, Record, SuggestRecordId,
+        DownloadedExposureSuggestion, DownloadedFakespotSuggestion, DownloadedMdnSuggestion,
+        DownloadedPocketSuggestion, DownloadedWikipediaSuggestion, Record, SuggestRecordId,
     },
     schema::{clear_database, SuggestConnectionInitializer},
     suggestion::{cook_raw_suggestion_url, AmpSuggestionType, Suggestion},
+    util::full_keyword,
+    weather::WeatherCache,
     Result, SuggestionQuery,
 };
 
@@ -183,11 +185,18 @@ impl WriteScope<'_> {
 pub(crate) struct SuggestDao<'a> {
     pub conn: &'a Connection,
     pub scope: &'a SqlInterruptScope,
+    pub weather_cache: OnceCell<WeatherCache>,
+    pub geoname_cache: OnceCell<GeonameCache>,
 }
 
 impl<'a> SuggestDao<'a> {
     fn new(conn: &'a Connection, scope: &'a SqlInterruptScope) -> Self {
-        Self { conn, scope }
+        Self {
+            conn,
+            scope,
+            weather_cache: std::cell::OnceCell::new(),
+            geoname_cache: std::cell::OnceCell::new(),
+        }
     }
 
     // =============== High level API ===============
@@ -713,42 +722,6 @@ impl<'a> SuggestDao<'a> {
         Ok(suggestions)
     }
 
-    /// Fetches weather suggestions
-    pub fn fetch_weather_suggestions(&self, query: &SuggestionQuery) -> Result<Vec<Suggestion>> {
-        // Weather keywords are matched by prefix but the query must be at least
-        // three chars long. Unlike the prefix matching of other suggestion
-        // types, the query doesn't need to contain the first full word.
-        if query.keyword.len() < 3 {
-            return Ok(vec![]);
-        }
-
-        let keyword_lowercased = &query.keyword.trim().to_lowercase();
-        let suggestions = self.conn.query_rows_and_then_cached(
-            r#"
-            SELECT
-              s.score
-            FROM
-              suggestions s
-            JOIN
-              keywords k
-              ON k.suggestion_id = s.id
-            WHERE
-              s.provider = :provider
-              AND (k.keyword BETWEEN :keyword AND :keyword || X'FFFF')
-             "#,
-            named_params! {
-                ":keyword": keyword_lowercased,
-                ":provider": SuggestionProvider::Weather
-            },
-            |row| -> Result<Suggestion> {
-                Ok(Suggestion::Weather {
-                    score: row.get::<_, f64>("score")?,
-                })
-            },
-        )?;
-        Ok(suggestions)
-    }
-
     /// Fetches fakespot suggestions
     pub fn fetch_fakespot_suggestions(&self, query: &SuggestionQuery) -> Result<Vec<Suggestion>> {
         self.conn.query_rows_and_then_cached(
@@ -803,6 +776,83 @@ impl<'a> SuggestDao<'a> {
                 })
             },
         )
+    }
+
+    /// Fetches exposure suggestions
+    pub fn fetch_exposure_suggestions(&self, query: &SuggestionQuery) -> Result<Vec<Suggestion>> {
+        // A single exposure suggestion can be spread across multiple remote
+        // settings records, for example if it has very many keywords. On ingest
+        // we will insert one row in `exposure_custom_details` and one row in
+        // `suggestions` per record, but that's only an implementation detail.
+        // Logically, and for consumers, there's only ever at most one exposure
+        // suggestion with a given exposure suggestion type.
+        //
+        // Why do insertions this way? It's how other suggestions work, and it
+        // lets us perform relational operations on suggestions, records, and
+        // keywords. For example, when a record is deleted we can look up its ID
+        // in `suggestions`, join the keywords table on the suggestion ID, and
+        // delete the keywords that were added by that record.
+
+        let Some(suggestion_types) = query
+            .provider_constraints
+            .as_ref()
+            .and_then(|c| c.exposure_suggestion_types.as_ref())
+        else {
+            return Ok(vec![]);
+        };
+
+        let keyword = query.keyword.to_lowercase();
+        let params = rusqlite::params_from_iter(
+            std::iter::once(&SuggestionProvider::Exposure as &dyn ToSql)
+                .chain(std::iter::once(&keyword as &dyn ToSql))
+                .chain(suggestion_types.iter().map(|t| t as &dyn ToSql)),
+        );
+        self.conn.query_rows_and_then_cached(
+            &format!(
+                r#"
+                    SELECT DISTINCT
+                      d.type
+                    FROM
+                      suggestions s
+                    JOIN
+                      exposure_custom_details d
+                      ON d.suggestion_id = s.id
+                    JOIN
+                      keywords k
+                      ON k.suggestion_id = s.id
+                    WHERE
+                      s.provider = ?
+                      AND k.keyword = ?
+                      AND d.type IN ({})
+                    ORDER BY
+                      d.type
+                    "#,
+                repeat_sql_vars(suggestion_types.len())
+            ),
+            params,
+            |row| -> Result<Suggestion> {
+                Ok(Suggestion::Exposure {
+                    suggestion_type: row.get("type")?,
+                    score: 1.0,
+                })
+            },
+        )
+    }
+
+    pub fn is_exposure_suggestion_ingested(&self, record_id: &SuggestRecordId) -> Result<bool> {
+        Ok(self.conn.exists(
+            r#"
+            SELECT
+              id
+            FROM
+              suggestions
+            WHERE
+              record_id = :record_id
+            "#,
+            named_params! {
+                ":record_id": record_id.as_str(),
+            },
+        )?)
     }
 
     /// Inserts all suggestions from a downloaded AMO attachment into
@@ -1032,29 +1082,36 @@ impl<'a> SuggestDao<'a> {
         Ok(())
     }
 
-    /// Inserts weather record data into the database.
-    pub fn insert_weather_data(
+    /// Inserts exposure suggestion records data into the database.
+    pub fn insert_exposure_suggestions(
         &mut self,
         record_id: &SuggestRecordId,
-        data: &DownloadedWeatherData,
+        suggestion_type: &str,
+        suggestions: &[DownloadedExposureSuggestion],
     ) -> Result<()> {
+        // `suggestion.keywords()` can yield duplicates for exposure
+        // suggestions, so ignore failures on insert in the uniqueness
+        // constraint on `(suggestion_id, keyword)`.
+        let mut keyword_insert = KeywordInsertStatement::new_with_or_ignore(self.conn)?;
         let mut suggestion_insert = SuggestionInsertStatement::new(self.conn)?;
-        let mut keyword_insert = KeywordInsertStatement::new(self.conn)?;
-        self.scope.err_if_interrupted()?;
-        let suggestion_id = suggestion_insert.execute(
-            record_id,
-            "",
-            "",
-            data.weather.score.unwrap_or(DEFAULT_SUGGESTION_SCORE),
-            SuggestionProvider::Weather,
-        )?;
-        for (index, keyword) in data.weather.keywords.iter().enumerate() {
-            keyword_insert.execute(suggestion_id, keyword, None, index)?;
+        let mut exposure_insert = ExposureInsertStatement::new(self.conn)?;
+        for suggestion in suggestions {
+            self.scope.err_if_interrupted()?;
+            let suggestion_id = suggestion_insert.execute(
+                record_id,
+                "", // title, not used by exposure suggestions
+                "", // url, not used by exposure suggestions
+                DEFAULT_SUGGESTION_SCORE,
+                SuggestionProvider::Exposure,
+            )?;
+            exposure_insert.execute(suggestion_id, suggestion_type)?;
+
+            // Exposure suggestions don't use `rank` but `(suggestion_id, rank)`
+            // must be unique since there's an index on that tuple.
+            for (rank, keyword) in suggestion.keywords().enumerate() {
+                keyword_insert.execute(suggestion_id, &keyword, None, rank)?;
+            }
         }
-        self.put_provider_config(
-            SuggestionProvider::Weather,
-            &SuggestProviderConfig::from(data),
-        )?;
         Ok(())
     }
 
@@ -1099,6 +1156,9 @@ impl<'a> SuggestDao<'a> {
     /// Deletes all suggestions associated with a Remote Settings record from
     /// the database.
     pub fn drop_suggestions(&mut self, record_id: &SuggestRecordId) -> Result<()> {
+        // If you update this, you probably need to update
+        // `schema::clear_database()` too!
+        //
         // Call `err_if_interrupted` before each statement since these have historically taken a
         // long time and caused shutdown hangs.
 
@@ -1115,6 +1175,11 @@ impl<'a> SuggestDao<'a> {
         self.scope.err_if_interrupted()?;
         self.conn.execute_cached(
             "DELETE FROM prefix_keywords WHERE suggestion_id IN (SELECT id from suggestions WHERE record_id = :record_id)",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
+            "DELETE FROM keywords_metrics WHERE record_id = :record_id",
             named_params! { ":record_id": record_id.as_str() },
         )?;
         self.scope.err_if_interrupted()?;
@@ -1150,6 +1215,22 @@ impl<'a> SuggestDao<'a> {
             "DELETE FROM yelp_custom_details WHERE record_id = :record_id",
             named_params! { ":record_id": record_id.as_str() },
         )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
+            "DELETE FROM geonames WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
+            "DELETE FROM geonames_metrics WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+
+        // Invalidate these caches since we might have deleted a record their
+        // contents are based on.
+        self.weather_cache.take();
+        self.geoname_cache.take();
+
         Ok(())
     }
 
@@ -1302,10 +1383,10 @@ impl<'a> FullKeywordInserter<'a> {
 // for providers like Mdn, Pocket, and Weather, which have relatively small number of records
 // compared to Amp/Wikipedia.
 
-struct SuggestionInsertStatement<'conn>(rusqlite::Statement<'conn>);
+pub(crate) struct SuggestionInsertStatement<'conn>(rusqlite::Statement<'conn>);
 
 impl<'conn> SuggestionInsertStatement<'conn> {
-    fn new(conn: &'conn Connection) -> Result<Self> {
+    pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
         Ok(Self(conn.prepare(
             "INSERT INTO suggestions(
                  record_id,
@@ -1320,7 +1401,7 @@ impl<'conn> SuggestionInsertStatement<'conn> {
     }
 
     /// Execute the insert and return the `suggestion_id` for the new row
-    fn execute(
+    pub(crate) fn execute(
         &mut self,
         record_id: &SuggestRecordId,
         title: &str,
@@ -1498,10 +1579,32 @@ impl<'conn> FakespotInsertStatement<'conn> {
     }
 }
 
-struct KeywordInsertStatement<'conn>(rusqlite::Statement<'conn>);
+struct ExposureInsertStatement<'conn>(rusqlite::Statement<'conn>);
+
+impl<'conn> ExposureInsertStatement<'conn> {
+    fn new(conn: &'conn Connection) -> Result<Self> {
+        Ok(Self(conn.prepare(
+            "INSERT INTO exposure_custom_details(
+                 suggestion_id,
+                 type
+             )
+             VALUES(?, ?)
+             ",
+        )?))
+    }
+
+    fn execute(&mut self, suggestion_id: i64, suggestion_type: &str) -> Result<()> {
+        self.0
+            .execute((suggestion_id, suggestion_type))
+            .with_context("exposure insert")?;
+        Ok(())
+    }
+}
+
+pub(crate) struct KeywordInsertStatement<'conn>(rusqlite::Statement<'conn>);
 
 impl<'conn> KeywordInsertStatement<'conn> {
-    fn new(conn: &'conn Connection) -> Result<Self> {
+    pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
         Ok(Self(conn.prepare(
             "INSERT INTO keywords(
                  suggestion_id,
@@ -1514,7 +1617,20 @@ impl<'conn> KeywordInsertStatement<'conn> {
         )?))
     }
 
-    fn execute(
+    pub(crate) fn new_with_or_ignore(conn: &'conn Connection) -> Result<Self> {
+        Ok(Self(conn.prepare(
+            "INSERT OR IGNORE INTO keywords(
+                 suggestion_id,
+                 keyword,
+                 full_keyword_id,
+                 rank
+             )
+             VALUES(?, ?, ?, ?)
+             ",
+        )?))
+    }
+
+    pub(crate) fn execute(
         &mut self,
         suggestion_id: i64,
         keyword: &str,
@@ -1562,6 +1678,36 @@ impl<'conn> PrefixKeywordInsertStatement<'conn> {
                 rank,
             ))
             .with_context("prefix keyword insert")?;
+        Ok(())
+    }
+}
+
+pub(crate) struct KeywordMetricsInsertStatement<'conn>(rusqlite::Statement<'conn>);
+
+impl<'conn> KeywordMetricsInsertStatement<'conn> {
+    pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
+        Ok(Self(conn.prepare(
+            "INSERT INTO keywords_metrics(
+                 record_id,
+                 provider,
+                 max_length,
+                 max_word_count
+             )
+             VALUES(?, ?, ?, ?)
+             ",
+        )?))
+    }
+
+    pub(crate) fn execute(
+        &mut self,
+        record_id: &SuggestRecordId,
+        provider: SuggestionProvider,
+        max_len: usize,
+        max_word_count: usize,
+    ) -> Result<()> {
+        self.0
+            .execute((record_id.as_str(), provider, max_len, max_word_count))
+            .with_context("keyword metrics insert")?;
         Ok(())
     }
 }

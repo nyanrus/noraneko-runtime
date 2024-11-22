@@ -35,7 +35,7 @@ export class LinkHandlerParent extends JSWindowActorParent {
           return;
         }
 
-        if (aMsg.data.canUseForTab) {
+        if (!aMsg.data.isRichIcon) {
           let tab = gBrowser.getTabForBrowser(browser);
           if (tab.hasAttribute("busy")) {
             tab.setAttribute("pendingicon", "true");
@@ -46,13 +46,6 @@ export class LinkHandlerParent extends JSWindowActorParent {
         break;
 
       case "Link:SetIcon":
-        // Cache the most recent icon and rich icon locally.
-        if (aMsg.data.canUseForTab) {
-          this.icon = aMsg.data;
-        } else {
-          this.richIcon = aMsg.data;
-        }
-
         if (!gBrowser) {
           return;
         }
@@ -67,7 +60,7 @@ export class LinkHandlerParent extends JSWindowActorParent {
           return;
         }
 
-        if (aMsg.data.canUseForTab) {
+        if (!aMsg.data.isRichIcon) {
           this.clearPendingIcon(gBrowser, browser);
         }
 
@@ -108,11 +101,11 @@ export class LinkHandlerParent extends JSWindowActorParent {
     {
       pageURL,
       originalURL,
-      canUseForTab,
       expiration,
       iconURL,
       canStoreIcon,
       beforePageShow,
+      isRichIcon,
     }
   ) {
     let tab = gBrowser.getTabForBrowser(browser);
@@ -120,7 +113,7 @@ export class LinkHandlerParent extends JSWindowActorParent {
       return;
     }
 
-    if (canUseForTab) {
+    if (!isRichIcon) {
       this.clearPendingIcon(gBrowser, browser);
     }
 
@@ -144,18 +137,21 @@ export class LinkHandlerParent extends JSWindowActorParent {
     }
     if (canStoreIcon) {
       try {
-        lazy.PlacesUtils.favicons.setFaviconForPage(
-          Services.io.newURI(pageURL),
-          Services.io.newURI(originalURL),
-          iconURI,
-          expiration && lazy.PlacesUtils.toPRTime(expiration)
-        );
+        lazy.PlacesUtils.favicons
+          .setFaviconForPage(
+            Services.io.newURI(pageURL),
+            Services.io.newURI(originalURL),
+            iconURI,
+            expiration && lazy.PlacesUtils.toPRTime(expiration),
+            isRichIcon
+          )
+          .catch(console.error);
       } catch (ex) {
         console.error(ex);
       }
     }
 
-    if (canUseForTab) {
+    if (!isRichIcon) {
       gBrowser.setIcon(tab, iconURL, originalURL, null, beforePageShow);
     }
   }

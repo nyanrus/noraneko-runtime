@@ -87,7 +87,7 @@ cookie.banners:
     notification_emails:
       - tihuang@mozilla.com
       - pbz@mozilla.com
-    expires: 134
+    expires: 135
     labels:
       - top_hit
       - top_hit_opt_in
@@ -139,7 +139,7 @@ cookie.banners:
     notification_emails:
       - tihuang@mozilla.com
       - pbz@mozilla.com
-    expires: 134
+    expires: 135
     labels:
       - top_hit
       - top_hit_opt_in
@@ -185,7 +185,7 @@ cookie.banners:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
     data_sensitivity:
       - interaction
     extra_keys:
@@ -198,7 +198,6 @@ cookie.banners:
       has_click_rule:
         description: There is a matching click rule for the reloading domain.
         type: boolean
-    telemetry_mirror: Cookie_banner_Reload_Browser
   cookie_injection_fail:
     type: counter
     description: >
@@ -215,7 +214,7 @@ cookie.banners:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   google_gdpr_choice_cookie:
     type: labeled_string
     description: >
@@ -310,7 +309,7 @@ cookie.banners.click:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
     labels:
       - success
       - success_cookie_injected
@@ -341,7 +340,7 @@ cookie.banners.click:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   query_selector_run_count_per_window_frame:
     type: custom_distribution
     bucket_count: 20
@@ -360,7 +359,7 @@ cookie.banners.click:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   query_selector_run_duration_per_window_top_level:
     type: custom_distribution
     bucket_count: 8
@@ -379,7 +378,7 @@ cookie.banners.click:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   query_selector_run_duration_per_window_frame:
     type: custom_distribution
     bucket_count: 8
@@ -398,7 +397,7 @@ cookie.banners.click:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
 cookie.banners.cmp:
   ratio_handled_by_cmp_rule:
     type: rate
@@ -416,7 +415,7 @@ cookie.banners.cmp:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   detected_cmp:
     type: labeled_counter
     description: >
@@ -433,7 +432,7 @@ cookie.banners.cmp:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
   result:
     type: labeled_counter
     description: >
@@ -452,7 +451,7 @@ cookie.banners.cmp:
     notification_emails:
       - pbz@mozilla.com
       - tihuang@mozilla.com
-    expires: 134
+    expires: 135
     labels:
       - success
       - success_dom_content_loaded

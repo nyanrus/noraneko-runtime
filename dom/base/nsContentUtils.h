@@ -228,6 +228,7 @@ enum EventNameType {
   EventNameType_SVGSVG = 0x0008,      // the svg element
   EventNameType_SMIL = 0x0010,        // smil elements
   EventNameType_HTMLBodyOrFramesetOnly = 0x0020,
+  EventNameType_HTMLMedia = 0x0040,
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
@@ -1091,28 +1092,6 @@ class nsContentUtils {
    *         (if GetComposedDoc returns nullptr)
    */
   static mozilla::PresShell* GetPresShellForContent(const nsIContent* aContent);
-
-  /**
-   * Method to do security and content policy checks on the image URI
-   *
-   * @param aURI uri of the image to be loaded
-   * @param aNode, the context the image is loaded in (eg an element)
-   * @param aLoadingDocument the document we belong to
-   * @param aLoadingPrincipal the principal doing the load
-   * @param [aContentPolicyType=nsIContentPolicy::TYPE_INTERNAL_IMAGE]
-   * (Optional) The CP content type to use
-   * @param aImageBlockingStatus the nsIContentPolicy blocking status for this
-   *        image.  This will be set even if a security check fails for the
-   *        image, to some reasonable REJECT_* value.  This out param will only
-   *        be set if it's non-null.
-   * @return true if the load can proceed, or false if it is blocked.
-   *         Note that aImageBlockingStatus, if set will always be an ACCEPT
-   *         status if true is returned and always be a REJECT_* status if
-   *         false is returned.
-   */
-  static bool CanLoadImage(nsIURI* aURI, nsINode* aNode,
-                           Document* aLoadingDocument,
-                           nsIPrincipal* aLoadingPrincipal);
 
   /**
    * Returns true if objects in aDocument shouldn't initiate image loads.
@@ -2748,6 +2727,12 @@ class nsContentUtils {
   static bool IsJavascriptMIMEType(const nsAString& aMIMEType);
   static bool IsJavascriptMIMEType(const nsACString& aMIMEType);
 
+  /**
+   * Returns true if the given MIME type string is a valid JSON MIME type,
+   * otherwise false.
+   */
+  static bool IsJsonMimeType(const nsAString& aMimeType);
+
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
 
@@ -3605,8 +3590,6 @@ class nsContentUtils {
           aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
-  static nsINode* GetCommonShadowIncludingAncestorHelper(nsINode* aNode1,
-                                                         nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(
       nsIContent* aContent1, nsIContent* aContent2);
 
@@ -3730,6 +3713,9 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
 
     case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
       return ExtContentPolicy::TYPE_FETCH;
+
+    case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
+      return ExtContentPolicy::TYPE_OTHER;
 
     case nsIContentPolicy::TYPE_INVALID:
     case nsIContentPolicy::TYPE_OTHER:

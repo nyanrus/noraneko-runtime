@@ -733,7 +733,7 @@ nsresult nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow) {
     nscoord height = p2a * mBounds.height;
 
     mViewManager->SetWindowDimensions(width, height);
-    mPresContext->SetVisibleArea(nsRect(0, 0, width, height));
+    mPresContext->SetInitialVisibleArea(nsRect(0, 0, width, height));
     // We rely on the default zoom not being initialized until here.
     mPresContext->RecomputeBrowsingContextDependentData();
   }
@@ -2216,8 +2216,7 @@ nsresult nsDocumentViewer::MakeWindow(const nsSize& aSize,
     return NS_OK;
   }
 
-  bool shouldAttach = ShouldAttachToTopLevel();
-
+  const bool shouldAttach = ShouldAttachToTopLevel();
   if (shouldAttach) {
     // If the old view is already attached to our parent, detach
     DetachFromTopLevelWidget();
@@ -2242,27 +2241,12 @@ nsresult nsDocumentViewer::MakeWindow(const nsSize& aSize,
   // because when they're displayed, they're painted into *another* document's
   // widget.
   if (!mDocument->IsResourceDoc() && (mParentWidget || !aContainerView)) {
-    // pass in a native widget to be the parent widget ONLY if the view
-    // hierarchy will stand alone. otherwise the view will find its own parent
-    // widget and "do the right thing" to establish a parent/child widget
-    // relationship
-    widget::InitData initData;
-    widget::InitData* initDataPtr;
-    if (!mParentWidget) {
-      initDataPtr = &initData;
-      initData.mWindowType = widget::WindowType::Invisible;
-    } else {
-      initDataPtr = nullptr;
-    }
-
     if (shouldAttach) {
       // Reuse the top level parent widget.
       rv = view->AttachToTopLevelWidget(mParentWidget);
       mAttachedToParent = true;
-    } else if (!aContainerView && mParentWidget) {
-      rv = view->CreateWidgetForParent(mParentWidget, initDataPtr, true, false);
     } else {
-      rv = view->CreateWidget(initDataPtr, true, false);
+      rv = view->CreateWidget(mParentWidget, true, false);
     }
     if (NS_FAILED(rv)) return rv;
   }
@@ -2351,9 +2335,12 @@ nsresult nsDocumentViewer::CreateDeviceContext(nsView* aContainerView) {
   if (!widget) {
     widget = mParentWidget;
   }
+
+#ifndef XP_MACOSX
   if (widget) {
     widget = widget->GetTopLevelWidget();
   }
+#endif
 
   mDeviceContext = new nsDeviceContext();
   mDeviceContext->Init(widget);
@@ -2622,10 +2609,11 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocumentViewer::GetContentSize(
     const nscoord minISize = wm.IsVertical() ? constraints.mMinSize.height
                                              : constraints.mMinSize.width;
     const nscoord maxISize = wm.IsVertical() ? aMaxHeight : aMaxWidth;
+    const IntrinsicSizeInput input(rcx.get(), Nothing(), Nothing());
     if (aPrefWidth) {
-      prefISize = std::max(root->GetMinISize(rcx.get()), aPrefWidth);
+      prefISize = std::max(root->GetMinISize(input), aPrefWidth);
     } else {
-      prefISize = root->GetPrefISize(rcx.get());
+      prefISize = root->GetPrefISize(input);
     }
     prefISize = nsPresContext::RoundUpAppUnitsToCSSPixel(
         std::max(minISize, std::min(prefISize, maxISize)));
@@ -2650,6 +2638,15 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocumentViewer::GetContentSize(
   NS_ENSURE_TRUE(shellArea.width != NS_UNCONSTRAINEDSIZE &&
                      shellArea.height != NS_UNCONSTRAINEDSIZE,
                  NS_ERROR_FAILURE);
+
+  // Leave our viewport in a consistent state.
+  {
+    auto newBounds = LayoutDeviceIntRect::FromAppUnitsToOutside(
+                         shellArea, presContext->AppUnitsPerDevPixel())
+                         .ToUnknownRect();
+    newBounds.MoveTo(mBounds.TopLeft());
+    SetBounds(newBounds);
+  }
 
   // Ceil instead of rounding here, so we can actually guarantee showing all the
   // content.
@@ -3247,11 +3244,11 @@ bool nsDocumentViewer::ShouldAttachToTopLevel() {
   }
 
   // We always attach when using puppet widgets
-  if (nsIWidget::UsePuppetWidgets()) {
+  if (nsIWidget::UsePuppetWidgets() || mParentWidget->IsPuppetWidget()) {
     return true;
   }
 
-  // FIXME(emilio): Can we unify this between macOS and aother platforms?
+  // TODO(emilio, bug 1919165): Unify this between macOS and other platforms?
 #ifdef XP_MACOSX
   return false;
 #else

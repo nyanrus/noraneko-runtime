@@ -5,11 +5,9 @@
 package org.mozilla.fenix.components
 
 import android.view.View
-import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import androidx.annotation.UiThread
 import androidx.annotation.VisibleForTesting
-import androidx.core.view.isVisible
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
@@ -30,7 +28,10 @@ import org.mozilla.fenix.components.appstate.AppState
  * @param view The [FindInPageBar] view to display.
  * @param engineView the browser in which the queries will be made and which needs to be better positioned
  * to suit the find in page bar.
- * @param toolbars [View]s that the find in page bar will hide/show while it is being displayed/hidden.
+ * @param toolbarsHideCallback Callback to hide all toolbars to ensure an unobstructed browser page
+ * in which to search and present results.
+ * @param toolbarsResetCallback Callback to reset the toolbars to how they should be displayed
+ * after this feature is dismissed.
  * @param findInPageHeight The height of the find in page bar.
  */
 class FindInPageIntegration(
@@ -39,12 +40,19 @@ class FindInPageIntegration(
     private val sessionId: String? = null,
     private val view: FindInPageBar,
     private val engineView: EngineView,
-    private val toolbars: List<ViewGroup?>,
+    private val toolbarsHideCallback: () -> Unit,
+    private val toolbarsResetCallback: () -> Unit,
     private val findInPageHeight: Int = view.context.resources.getDimensionPixelSize(R.dimen.browser_toolbar_height),
 ) : LifecycleAwareFeature, UserInteractionHandler {
     @VisibleForTesting
     internal val feature by lazy { FindInPageFeature(store, view, engineView, ::onClose) }
-    private var engineViewLayoutData: EngineViewLayoutData? = null
+    private var _isFeatureActive = false
+
+    /**
+     * Check if the find in page feature is active in this instant.
+     */
+    val isFeatureActive
+        get() = _isFeatureActive
 
     override fun start() {
         feature.start()
@@ -61,8 +69,10 @@ class FindInPageIntegration(
 
     private fun onClose() {
         view.visibility = View.GONE
-        restorePreviousLayout()
+        getEngineViewsLayoutParams().bottomMargin = 0
+        toolbarsResetCallback.invoke()
         appStore.dispatch(FindInPageAction.FindInPageDismissed)
+        _isFeatureActive = false
     }
 
     /**
@@ -75,7 +85,9 @@ class FindInPageIntegration(
 
     private fun onLaunch(view: View, feature: LifecycleAwareFeature) {
         store.state.findCustomTabOrSelectedTab(sessionId)?.let { tab ->
-            prepareLayoutForFindBar()
+            _isFeatureActive = true
+            toolbarsHideCallback.invoke()
+            getEngineViewsLayoutParams().bottomMargin = findInPageHeight
 
             view.visibility = View.VISIBLE
             (feature as FindInPageFeature).bind(tab)
@@ -83,52 +95,7 @@ class FindInPageIntegration(
         }
     }
 
-    private fun restorePreviousLayout() {
-        toolbars.forEach { it?.isVisible = true }
-        restoreEngineViewLayoutData()
-    }
-
-    private fun prepareLayoutForFindBar() {
-        storeEngineViewLayoutData()
-        toolbars.forEach { it?.isVisible = false }
-        expandEngineView()
-    }
-
-    private fun storeEngineViewLayoutData() {
-        val engineViewLayoutParams = getEngineViewsLayoutParams()
-        engineViewLayoutData = EngineViewLayoutData(
-            topMargin = engineViewLayoutParams.topMargin,
-            bottomMargin = engineViewLayoutParams.bottomMargin,
-            translationY = getEngineViewParent().translationY,
-        )
-    }
-
-    private fun restoreEngineViewLayoutData() {
-        engineViewLayoutData?.let {
-            val engineViewLayoutParams = getEngineViewsLayoutParams()
-            engineViewLayoutParams.topMargin = it.topMargin
-            engineViewLayoutParams.bottomMargin = it.bottomMargin
-            getEngineViewParent().translationY = it.translationY
-        }
-        engineView.setDynamicToolbarMaxHeight(toolbars.sumOf { it?.height ?: 0 })
-    }
-
-    private fun expandEngineView() {
-        // Ensure the webpage occupies all screen estate minus the find in page bar.
-        val layoutParams = getEngineViewsLayoutParams()
-        layoutParams.topMargin = 0
-        layoutParams.bottomMargin = findInPageHeight
-        getEngineViewParent().translationY = 0f
-        engineView.setDynamicToolbarMaxHeight(findInPageHeight)
-    }
-
     private fun getEngineViewParent() = engineView.asView().parent as View
 
     private fun getEngineViewsLayoutParams() = getEngineViewParent().layoutParams as MarginLayoutParams
-
-    private data class EngineViewLayoutData(
-        val topMargin: Int,
-        val bottomMargin: Int,
-        val translationY: Float,
-    )
 }

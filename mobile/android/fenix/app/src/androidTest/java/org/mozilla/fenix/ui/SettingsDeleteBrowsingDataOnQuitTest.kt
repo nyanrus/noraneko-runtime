@@ -8,6 +8,7 @@ import android.Manifest
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.espresso.Espresso.pressBack
+import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
@@ -19,7 +20,6 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getStorageTestAsset
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
@@ -213,7 +213,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Open microphone")
         }.clickStartMicrophoneButton {
             verifyMicrophonePermissionPrompt(testPageSubstring)
             selectRememberPermissionDecision()
@@ -227,13 +227,14 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         restartApp(composeTestRule.activityRule)
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Open microphone")
         }.clickStartMicrophoneButton {
             verifyMicrophonePermissionPrompt(testPageSubstring)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416052
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun deleteCachedFilesOnQuitTest() {
         val pocketTopArticles = getStringResource(R.string.pocket_pinned_top_articles)

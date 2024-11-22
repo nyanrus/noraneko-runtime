@@ -164,23 +164,6 @@ set_config("MOZ_FOLD_LIBS", fold_libs)
 # Some of the options here imply an option from js/moz.configure,
 # so, need to be declared before the include.
 
-option(
-    "--enable-jprof",
-    env="MOZ_JPROF",
-    help="Enable jprof profiling tool (needs mozilla/tools/jprof)",
-)
-
-
-@depends("--enable-jprof")
-def jprof(value):
-    if value:
-        return True
-
-
-set_config("MOZ_JPROF", jprof)
-set_define("MOZ_JPROF", jprof)
-imply_option("--enable-profiling", jprof)
-
 option("--disable-gecko-profiler", help="Disable the Gecko profiler")
 
 
@@ -866,7 +849,7 @@ def av1(value):
 
 @depends(target, when=av1 & compile_environment)
 def dav1d_asm(target):
-    if target.cpu in ("aarch64", "x86", "x86_64"):
+    if target.cpu in ("arm", "aarch64", "x86", "x86_64"):
         return True
 
 
@@ -1156,7 +1139,6 @@ def telemetry_on_by_default(reporting, is_nightly):
 
 
 set_define("MOZ_TELEMETRY_ON_BY_DEFAULT", True, when=telemetry_on_by_default)
-
 
 # Miscellaneous programs
 # ==============================================================
@@ -3496,9 +3478,6 @@ option(
 
 set_config("MOZ_SANDBOX", True, when="--enable-sandbox")
 set_define("MOZ_SANDBOX", True, when="--enable-sandbox")
-
-with only_when(depends(target.kernel)(lambda k: k not in ("Darwin", "WINNT"))):
-    set_define("MOZ_CONTENT_TEMP_DIR", True, when="--enable-sandbox")
 
 # Searching of system directories for extensions.
 # ==============================================================

@@ -12,7 +12,6 @@ import android.view.ViewConfiguration.getLongPressTimeout
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.intent.rule.IntentsTestRule
 import androidx.test.rule.ActivityTestRule
-import androidx.test.uiautomator.UiSelector
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import org.junit.rules.TestRule
 import org.mozilla.fenix.HomeActivity
@@ -49,12 +48,10 @@ class HomeActivityTestRule(
         isHomeOnboardingDialogEnabled: Boolean = settings.showHomeOnboardingDialog &&
             FenixOnboarding(appContext).userHasBeenOnboarded(),
         isPocketEnabled: Boolean = settings.showPocketRecommendationsFeature,
-        isJumpBackInCFREnabled: Boolean = settings.shouldShowJumpBackInCFR,
         isNavigationBarCFREnabled: Boolean = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled: Boolean = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled: Boolean = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled: Boolean = !settings.userKnowsAboutPwas,
-        isTCPCFREnabled: Boolean = settings.shouldShowTotalCookieProtectionCFR,
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
@@ -64,15 +61,14 @@ class HomeActivityTestRule(
         isNavigationToolbarEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         isSetAsDefaultBrowserPromptEnabled: Boolean = settings.setAsDefaultBrowserPromptForExistingUsersEnabled,
+        shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
-        this.isJumpBackInCFREnabled = isJumpBackInCFREnabled
         this.isNavigationBarCFREnabled = isNavigationBarCFREnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
         this.isRecentlyVisitedFeatureEnabled = isRecentlyVisitedFeatureEnabled
         this.isPWAsPromptEnabled = isPWAsPromptEnabled
-        this.isTCPCFREnabled = isTCPCFREnabled
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
@@ -82,6 +78,7 @@ class HomeActivityTestRule(
         this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.isSetAsDefaultBrowserPromptEnabled = isSetAsDefaultBrowserPromptEnabled
+        this.shouldUseBottomToolbar = shouldUseBottomToolbar
     }
 
     /**
@@ -113,7 +110,6 @@ class HomeActivityTestRule(
         Log.i(TAG, "afterActivityFinished: Trying to reset all feature flags")
         resetAllFeatureFlags()
         Log.i(TAG, "afterActivityFinished: Successfully performed the reset of all feature flags")
-        closeNotificationShade()
     }
 
     companion object {
@@ -122,8 +118,6 @@ class HomeActivityTestRule(
          * app features that would otherwise negatively impact most tests.
          *
          * The disabled features are:
-         *  - the Jump back in CFR,
-         *  - the Total Cookie Protection CFR,
          *  - the PWA prompt dialog,
          *  - the wallpaper onboarding.
          */
@@ -136,14 +130,15 @@ class HomeActivityTestRule(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
             skipOnboarding = skipOnboarding,
-            isJumpBackInCFREnabled = false,
             isPWAsPromptEnabled = false,
-            isTCPCFREnabled = false,
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             composeTopSitesEnabled = composeTopSitesEnabled,
             isMicrosurveyEnabled = false,
             isSetAsDefaultBrowserPromptEnabled = false,
+            // workaround for toolbar at top position by default
+            // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+            shouldUseBottomToolbar = true,
         )
     }
 }
@@ -172,12 +167,10 @@ class HomeActivityIntentTestRule internal constructor(
         isHomeOnboardingDialogEnabled: Boolean = settings.showHomeOnboardingDialog &&
             FenixOnboarding(appContext).userHasBeenOnboarded(),
         isPocketEnabled: Boolean = settings.showPocketRecommendationsFeature,
-        isJumpBackInCFREnabled: Boolean = settings.shouldShowJumpBackInCFR,
         isNavigationBarCFREnabled: Boolean = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled: Boolean = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled: Boolean = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled: Boolean = !settings.userKnowsAboutPwas,
-        isTCPCFREnabled: Boolean = settings.shouldShowTotalCookieProtectionCFR,
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
@@ -187,15 +180,14 @@ class HomeActivityIntentTestRule internal constructor(
         isNavigationToolbarEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         isSetAsDefaultBrowserPromptEnabled: Boolean = settings.setAsDefaultBrowserPromptForExistingUsersEnabled,
+        shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
-        this.isJumpBackInCFREnabled = isJumpBackInCFREnabled
         this.isNavigationBarCFREnabled = isNavigationBarCFREnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
         this.isRecentlyVisitedFeatureEnabled = isRecentlyVisitedFeatureEnabled
         this.isPWAsPromptEnabled = isPWAsPromptEnabled
-        this.isTCPCFREnabled = isTCPCFREnabled
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
@@ -205,6 +197,7 @@ class HomeActivityIntentTestRule internal constructor(
         this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.isSetAsDefaultBrowserPromptEnabled = isSetAsDefaultBrowserPromptEnabled
+        this.shouldUseBottomToolbar = shouldUseBottomToolbar
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -248,7 +241,6 @@ class HomeActivityIntentTestRule internal constructor(
     override fun afterActivityFinished() {
         super.afterActivityFinished()
         setLongTapTimeout(longTapUserPreference)
-        closeNotificationShade()
         Log.i(TAG, "afterActivityFinished: Trying to reset all feature flags")
         resetAllFeatureFlags()
         Log.i(TAG, "afterActivityFinished: Successfully performed the reset of all feature flags")
@@ -264,12 +256,10 @@ class HomeActivityIntentTestRule internal constructor(
         isHomeOnboardingDialogEnabled =
             settings.showHomeOnboardingDialog && FenixOnboarding(appContext).userHasBeenOnboarded()
         isPocketEnabled = settings.showPocketRecommendationsFeature
-        isJumpBackInCFREnabled = settings.shouldShowJumpBackInCFR
         isNavigationBarCFREnabled = settings.shouldShowNavigationBarCFR
         isRecentTabsFeatureEnabled = settings.showRecentTabsFeature
         isRecentlyVisitedFeatureEnabled = settings.historyMetadataUIFeature
         isPWAsPromptEnabled = !settings.userKnowsAboutPwas
-        isTCPCFREnabled = settings.shouldShowTotalCookieProtectionCFR
         isWallpaperOnboardingEnabled = settings.showWallpaperOnboarding
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
@@ -278,6 +268,7 @@ class HomeActivityIntentTestRule internal constructor(
         isNavigationToolbarEnabled = settings.navigationToolbarEnabled
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
         isSetAsDefaultBrowserPromptEnabled = settings.setAsDefaultBrowserPromptForExistingUsersEnabled
+        shouldUseBottomToolbar = settings.shouldUseBottomToolbar
     }
 
     companion object {
@@ -286,8 +277,6 @@ class HomeActivityIntentTestRule internal constructor(
          * app features that would otherwise negatively impact most tests.
          *
          * The disabled features are:
-         *  - the Jump back in CFR,
-         *  - the Total Cookie Protection CFR,
          *  - the PWA prompt dialog,
          *  - the wallpaper onboarding.
          */
@@ -300,14 +289,15 @@ class HomeActivityIntentTestRule internal constructor(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
             skipOnboarding = skipOnboarding,
-            isJumpBackInCFREnabled = false,
             isPWAsPromptEnabled = false,
-            isTCPCFREnabled = false,
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             composeTopSitesEnabled = composeTopSitesEnabled,
             isMicrosurveyEnabled = false,
             isSetAsDefaultBrowserPromptEnabled = false,
+            // workaround for toolbar at top position by default
+            // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+            shouldUseBottomToolbar = true,
         )
     }
 }
@@ -335,15 +325,4 @@ private fun skipOnboardingBeforeLaunch() {
     Log.i(TAG, "skipOnboardingBeforeLaunch: Trying to skip the onboarding before launching the app")
     FenixOnboarding(appContext).finish()
     Log.i(TAG, "skipOnboardingBeforeLaunch: Successfully skipped the onboarding before launching the app")
-}
-
-private fun closeNotificationShade() {
-    if (mDevice.findObject(
-            UiSelector().resourceId("com.android.systemui:id/notification_stack_scroller"),
-        ).exists()
-    ) {
-        Log.i(TAG, "closeNotificationShade: Trying to press device home button")
-        mDevice.pressHome()
-        Log.i(TAG, "closeNotificationShade: Pressed the device home button")
-    }
 }

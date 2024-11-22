@@ -6,6 +6,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use gleam::gl;
+use webrender::ChunkPool;
 use std::cell::RefCell;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use std::ffi::OsString;
@@ -1161,6 +1162,23 @@ pub unsafe extern "C" fn wr_thread_pool_delete(thread_pool: *mut WrThreadPool) {
     mem::drop(Box::from_raw(thread_pool));
 }
 
+pub struct WrChunkPool(Arc<ChunkPool>);
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_new() -> *mut WrChunkPool {
+    Box::into_raw(Box::new(WrChunkPool(Arc::new(ChunkPool::new()))))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_delete(pool: *mut WrChunkPool) {
+    mem::drop(Box::from_raw(pool));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_purge(pool: &WrChunkPool) {
+    pool.0.purge_all_chunks();
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn wr_program_cache_new(
     prof_path: &nsAString,
@@ -1598,6 +1616,7 @@ pub extern "C" fn wr_window_new(
     shaders: Option<&mut WrShaders>,
     thread_pool: *mut WrThreadPool,
     thread_pool_low_priority: *mut WrThreadPool,
+    chunk_pool: &WrChunkPool,
     glyph_raster_thread: Option<&WrGlyphRasterThread>,
     size_of_op: VoidPtrToSizeFn,
     enclosing_size_of_op: VoidPtrToSizeFn,
@@ -1731,6 +1750,7 @@ pub extern "C" fn wr_window_new(
         ))),
         crash_annotator: Some(Box::new(MozCrashAnnotator)),
         workers: Some(workers),
+        chunk_pool: Some(chunk_pool.0.clone()),
         dedicated_glyph_raster_thread: glyph_raster_thread.map(|grt| grt.0.clone()),
         size_of_op: Some(size_of_op),
         enclosing_size_of_op: Some(enclosing_size_of_op),
@@ -2177,6 +2197,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
 ) {
     txn.add_image(
         image_key,
@@ -2185,6 +2206,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         None,
     );
@@ -2222,6 +2244,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
 ) {
     txn.update_image(
         key,
@@ -2230,6 +2253,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         &DirtyRect::All,
     );
@@ -2243,6 +2267,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
     dirty_rect: DeviceIntRect,
 ) {
     txn.update_image(
@@ -2252,6 +2277,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         &DirtyRect::Partial(dirty_rect),
     );

@@ -34,6 +34,7 @@
 #include "api/audio_codecs/opus_audio_encoder_factory.h"
 #include "api/audio_options.h"
 #include "api/data_channel_interface.h"
+#include "api/environment/environment.h"
 #include "api/media_stream_interface.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
@@ -63,11 +64,11 @@ using ::testing::AtLeast;
 using ::testing::Invoke;
 using ::testing::StrictMock;
 using ::testing::Values;
-
-using webrtc::DataChannelInterface;
-using webrtc::MediaStreamInterface;
-using webrtc::PeerConnectionInterface;
-using webrtc::SdpSemantics;
+using ::webrtc::DataChannelInterface;
+using ::webrtc::Environment;
+using ::webrtc::MediaStreamInterface;
+using ::webrtc::PeerConnectionInterface;
+using ::webrtc::SdpSemantics;
 
 namespace {
 
@@ -298,20 +299,19 @@ CreateForwardingMockDecoderFactory(
           Invoke([real_decoder_factory](const webrtc::SdpAudioFormat& format) {
             return real_decoder_factory->IsSupportedDecoder(format);
           }));
-  EXPECT_CALL(*mock_decoder_factory, MakeAudioDecoderMock(_, _, _))
+  EXPECT_CALL(*mock_decoder_factory, Create)
       .Times(AtLeast(2))
       .WillRepeatedly(
-          Invoke([real_decoder_factory](
-                     const webrtc::SdpAudioFormat& format,
-                     absl::optional<webrtc::AudioCodecPairId> codec_pair_id,
-                     std::unique_ptr<webrtc::AudioDecoder>* return_value) {
+          [real_decoder_factory](
+              const webrtc::Environment& env,
+              const webrtc::SdpAudioFormat& format,
+              absl::optional<webrtc::AudioCodecPairId> codec_pair_id) {
             auto real_decoder =
-                real_decoder_factory->MakeAudioDecoder(format, codec_pair_id);
-            *return_value =
-                real_decoder
-                    ? CreateForwardingMockDecoder(std::move(real_decoder))
-                    : nullptr;
-          }));
+                real_decoder_factory->Create(env, format, codec_pair_id);
+            return real_decoder
+                       ? CreateForwardingMockDecoder(std::move(real_decoder))
+                       : nullptr;
+          });
   return mock_decoder_factory;
 }
 
@@ -419,13 +419,13 @@ TEST_P(PeerConnectionEndToEndTest, CallWithCustomCodec) {
         const webrtc::SdpAudioFormat& format) override {
       return fact_->QueryAudioEncoder(format);
     }
-    std::unique_ptr<webrtc::AudioEncoder> MakeAudioEncoder(
-        int payload_type,
+    std::unique_ptr<webrtc::AudioEncoder> Create(
+        const Environment& env,
         const webrtc::SdpAudioFormat& format,
-        absl::optional<webrtc::AudioCodecPairId> codec_pair_id) override {
-      EXPECT_TRUE(codec_pair_id.has_value());
-      codec_ids_->push_back(*codec_pair_id);
-      return fact_->MakeAudioEncoder(payload_type, format, codec_pair_id);
+        Options options) override {
+      EXPECT_TRUE(options.codec_pair_id.has_value());
+      codec_ids_->push_back(*options.codec_pair_id);
+      return fact_->Create(env, format, options);
     }
 
    private:
@@ -445,12 +445,13 @@ TEST_P(PeerConnectionEndToEndTest, CallWithCustomCodec) {
     bool IsSupportedDecoder(const webrtc::SdpAudioFormat& format) override {
       return fact_->IsSupportedDecoder(format);
     }
-    std::unique_ptr<webrtc::AudioDecoder> MakeAudioDecoder(
+    std::unique_ptr<webrtc::AudioDecoder> Create(
+        const Environment& env,
         const webrtc::SdpAudioFormat& format,
         absl::optional<webrtc::AudioCodecPairId> codec_pair_id) override {
       EXPECT_TRUE(codec_pair_id.has_value());
       codec_ids_->push_back(*codec_pair_id);
-      return fact_->MakeAudioDecoder(format, codec_pair_id);
+      return fact_->Create(env, format, codec_pair_id);
     }
 
    private:

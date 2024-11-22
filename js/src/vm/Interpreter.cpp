@@ -16,13 +16,10 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/WrappingOperations.h"
 
 #include <string.h>
 
 #include "jsapi.h"
-#include "jslibmath.h"
-#include "jsmath.h"
 #include "jsnum.h"
 
 #include "builtin/Array.h"
@@ -34,13 +31,13 @@
 #include "jit/BaselineJIT.h"
 #include "jit/Jit.h"
 #include "jit/JitRuntime.h"
+#include "js/EnvironmentChain.h"      // JS::SupportUnscopables
 #include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/friend/WindowProxy.h"    // js::IsWindowProxy
 #include "js/Printer.h"
 #include "proxy/DeadObjectProxy.h"
-#include "util/CheckedArithmetic.h"
 #include "util/StringBuilder.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
@@ -52,7 +49,6 @@
 #include "vm/EqualityOperations.h"  // js::StrictlyEqual
 #include "vm/GeneratorObject.h"
 #include "vm/Iteration.h"
-#include "vm/JSAtomUtils.h"  // AtomToPrintableString
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -64,8 +60,7 @@
 #include "vm/Shape.h"
 #include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StringType.h"
-#include "vm/ThrowMsgKind.h"  // ThrowMsgKind
-#include "vm/Time.h"
+#include "vm/ThrowMsgKind.h"     // ThrowMsgKind
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  include "vm/UsingHint.h"
@@ -124,6 +119,13 @@ JSObject* js::BoxNonStrictThis(JSContext* cx, HandleValue thisv) {
   return PrimitiveToObject(cx, thisv);
 }
 
+static bool IsNSVOLexicalEnvironment(JSObject* env) {
+  return env->is<LexicalEnvironmentObject>() &&
+         env->as<LexicalEnvironmentObject>()
+             .enclosingEnvironment()
+             .is<NonSyntacticVariablesObject>();
+}
+
 bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
                          MutableHandleValue res) {
   MOZ_ASSERT(frame.isFunctionFrame());
@@ -147,10 +149,12 @@ bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
   // global lexical |this| value. This is for compatibility with the Subscript
   // Loader.
   if (frame.script()->hasNonSyntacticScope() && thisv.isNullOrUndefined()) {
-    RootedObject env(cx, frame.environmentChain());
+    JSObject* env = frame.environmentChain();
     while (true) {
-      if (IsNSVOLexicalEnvironment(env) || IsGlobalLexicalEnvironment(env)) {
-        res.setObject(*GetThisObjectOfLexical(env));
+      if (IsNSVOLexicalEnvironment(env) ||
+          env->is<GlobalLexicalEnvironmentObject>()) {
+        auto* obj = env->as<ExtensibleLexicalEnvironmentObject>().thisObject();
+        res.setObject(*obj);
         return true;
       }
       if (!env->enclosingEnvironment()) {
@@ -175,10 +179,11 @@ bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
 
 void js::GetNonSyntacticGlobalThis(JSContext* cx, HandleObject envChain,
                                    MutableHandleValue res) {
-  RootedObject env(cx, envChain);
+  JSObject* env = envChain;
   while (true) {
-    if (IsExtensibleLexicalEnvironment(env)) {
-      res.setObject(*GetThisObjectOfLexical(env));
+    if (env->is<ExtensibleLexicalEnvironmentObject>()) {
+      auto* obj = env->as<ExtensibleLexicalEnvironmentObject>().thisObject();
+      res.setObject(*obj);
       return;
     }
     if (!env->enclosingEnvironment()) {
@@ -242,11 +247,38 @@ bool js::Debug_CheckSelfHosted(JSContext* cx, HandleValue funVal) {
   return true;
 }
 
+static inline bool GetLengthProperty(const Value& lval, MutableHandleValue vp) {
+  /* Optimize length accesses on strings, arrays, and arguments. */
+  if (lval.isString()) {
+    vp.setInt32(lval.toString()->length());
+    return true;
+  }
+  if (lval.isObject()) {
+    JSObject* obj = &lval.toObject();
+    if (obj->is<ArrayObject>()) {
+      vp.setNumber(obj->as<ArrayObject>().length());
+      return true;
+    }
+
+    if (obj->is<ArgumentsObject>()) {
+      ArgumentsObject* argsobj = &obj->as<ArgumentsObject>();
+      if (!argsobj->hasOverriddenLength()) {
+        uint32_t length = argsobj->initialLength();
+        MOZ_ASSERT(length < INT32_MAX);
+        vp.setInt32(int32_t(length));
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 static inline bool GetPropertyOperation(JSContext* cx,
                                         Handle<PropertyName*> name,
                                         HandleValue lval,
                                         MutableHandleValue vp) {
-  if (name == cx->names().length && GetLengthProperty(lval, vp)) {
+  if (name == cx->names().length && ::GetLengthProperty(lval, vp)) {
     return true;
   }
 
@@ -401,6 +433,13 @@ static MOZ_ALWAYS_INLINE bool MaybeEnterInterpreterTrampoline(JSContext* cx,
   return Interpret(cx, state);
 }
 
+static void AssertExceptionResult(JSContext* cx) {
+  // If this assertion fails, a JSNative or code in the VM returned false
+  // without throwing an exception or calling JS::ReportUncatchableException.
+  MOZ_ASSERT(cx->isExceptionPending() || cx->isPropagatingForcedReturn() ||
+             cx->hadUncatchableException());
+}
+
 // MSVC with PGO inlines a lot of functions in RunScript, resulting in large
 // stack frames and stack overflow issues, see bug 1167883. Turn off PGO to
 // avoid this.
@@ -457,7 +496,9 @@ bool js::RunScript(JSContext* cx, RunState& state) {
   }
 
   bool ok = MaybeEnterInterpreterTrampoline(cx, state);
-
+  if (!ok) {
+    AssertExceptionResult(cx);
+  }
   return ok;
 }
 #ifdef _MSC_VER
@@ -488,6 +529,8 @@ MOZ_ALWAYS_INLINE bool CallJSNative(JSContext* cx, Native native,
   if (ok) {
     cx->check(args.rval());
     MOZ_ASSERT_IF(!alreadyThrowing, !cx->isExceptionPending());
+  } else {
+    AssertExceptionResult(cx);
   }
   return ok;
 }
@@ -815,7 +858,7 @@ bool js::ExecuteKernel(JSContext* cx, HandleScript script,
                        HandleObject envChainArg, AbstractFramePtr evalInFrame,
                        MutableHandleValue result) {
   MOZ_ASSERT_IF(script->isGlobalCode(),
-                IsGlobalLexicalEnvironment(envChainArg) ||
+                envChainArg->is<GlobalLexicalEnvironmentObject>() ||
                     !IsSyntacticEnvironment(envChainArg));
 #ifdef DEBUG
   RootedObject terminatingEnv(cx, envChainArg);
@@ -861,7 +904,8 @@ bool js::Execute(JSContext* cx, HandleScript script, HandleObject envChain,
         "Module scripts can only be executed in the module's environment");
   } else {
     MOZ_RELEASE_ASSERT(
-        IsGlobalLexicalEnvironment(envChain) || script->hasNonSyntacticScope(),
+        envChain->is<GlobalLexicalEnvironmentObject>() ||
+            script->hasNonSyntacticScope(),
         "Only global scripts with non-syntactic envs can be executed with "
         "interesting envchains");
   }
@@ -1028,8 +1072,8 @@ bool js::EnterWithOperation(JSContext* cx, AbstractFramePtr frame,
   }
 
   RootedObject envChain(cx, frame.environmentChain());
-  WithEnvironmentObject* withobj =
-      WithEnvironmentObject::create(cx, obj, envChain, scope);
+  WithEnvironmentObject* withobj = WithEnvironmentObject::create(
+      cx, obj, envChain, scope, JS::SupportUnscopables::Yes);
   if (!withobj) {
     return false;
   }
@@ -1423,7 +1467,8 @@ static inline Value ComputeImplicitThis(JSObject* env) {
 
   // WithEnvironmentObjects have an actual implicit |this|
   if (env->is<WithEnvironmentObject>()) {
-    return ObjectValue(*GetThisObjectOfWith(env));
+    auto* thisObject = env->as<WithEnvironmentObject>().withThis();
+    return ObjectValue(*thisObject);
   }
 
   // Debugger environments need special casing, as despite being
@@ -1643,26 +1688,17 @@ void js::ReportInNotObjectError(JSContext* cx, HandleValue lref,
 }
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-
-enum SyncDisposalClosureSlots {
-  SyncDisposalClosureSlot_MethodSlot = 0,
-};
-
-// TODO: the following methods are to varying degrees
-// shared between the interpreter, DisposableStack/AsyncDisposableStack,
-// jit, etc. find a way to better organise these in one place. (bug 1913999)
-
 // Explicit Resource Management Proposal
 // 7.5.6 GetDisposeMethod ( V, hint )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-getdisposemethod
 // Steps 1.b.ii.1.a-f
-static bool SyncDisposalClosure(JSContext* cx, unsigned argc, JS::Value* vp) {
+bool js::SyncDisposalClosure(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = CallArgsFromVp(argc, vp);
 
   JS::Rooted<JSFunction*> callee(cx, &args.callee().as<JSFunction>());
 
   JS::Rooted<JS::Value> method(
-      cx, callee->getExtendedSlot(SyncDisposalClosureSlot_MethodSlot));
+      cx, callee->getExtendedSlot(uint8_t(SyncDisposalClosureSlots::Method)));
 
   // Step 1.b.ii.1.a. Let O be the this value.
   JS::Rooted<JS::Value> O(cx, args.thisv());
@@ -1693,154 +1729,6 @@ static bool SyncDisposalClosure(JSContext* cx, unsigned argc, JS::Value* vp) {
 
   // Step 1.b.ii.1.f. Return promiseCapability.[[Promise]].
   args.rval().set(JS::ObjectValue(*promiseCapability));
-  return true;
-}
-
-// Explicit Resource Management Proposal
-// GetDisposeMethod ( V, hint )
-// https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-getdisposemethod
-bool js::GetDisposeMethod(JSContext* cx, JS::Handle<JS::Value> objVal,
-                          UsingHint hint,
-                          JS::MutableHandle<JS::Value> disposeMethod) {
-  switch (hint) {
-    case UsingHint::Async: {
-      // Step 1. If hint is async-dispose, then
-      // Step 1.a. Let method be ? GetMethod(V, @@asyncDispose).
-      // GetMethod throws TypeError if method is not callable
-      // this is handled below at the end of the function.
-      JS::Rooted<JS::PropertyKey> idAsync(
-          cx, PropertyKey::Symbol(cx->wellKnownSymbols().asyncDispose));
-      JS::Rooted<JSObject*> obj(cx, &objVal.toObject());
-
-      if (!GetProperty(cx, obj, obj, idAsync, disposeMethod)) {
-        return false;
-      }
-
-      // Step 1.b. If method is undefined, then
-      // GetMethod returns undefined if the function is null but
-      // since we do not do the conversion here we check for
-      // null or undefined here.
-      if (disposeMethod.isNullOrUndefined()) {
-        // Step 1.b.i. Set method to ? GetMethod(V, @@dispose).
-        JS::Rooted<JS::PropertyKey> idSync(
-            cx, PropertyKey::Symbol(cx->wellKnownSymbols().dispose));
-        JS::Rooted<JS::Value> syncDisposeMethod(cx);
-        if (!GetProperty(cx, obj, obj, idSync, &syncDisposeMethod)) {
-          return false;
-        }
-
-        if (!syncDisposeMethod.isNullOrUndefined()) {
-          // Step 1.b.ii. If method is not undefined, then
-          if (!IsCallable(syncDisposeMethod)) {
-            JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                      JSMSG_DISPOSE_NOT_CALLABLE);
-            return false;
-          }
-
-          // Step 1.b.ii.1. Let closure be a new Abstract Closure with no
-          // parameters that captures method and performs the following steps
-          // when called:
-          // Steps 1.b.ii.1.a-f: See SyncDisposalClosure
-          // Step 1.b.ii.3. Return CreateBuiltinFunction(closure, 0, "", « »).
-          JS::Handle<PropertyName*> funName = cx->names().empty_;
-          JSFunction* asyncWrapper = NewNativeFunction(
-              cx, SyncDisposalClosure, 0, funName,
-              gc::AllocKind::FUNCTION_EXTENDED, GenericObject);
-          if (!asyncWrapper) {
-            return false;
-          }
-          asyncWrapper->initExtendedSlot(SyncDisposalClosureSlot_MethodSlot,
-                                         syncDisposeMethod);
-          disposeMethod.set(JS::ObjectValue(*asyncWrapper));
-        }
-      }
-
-      break;
-    }
-
-    case UsingHint::Sync: {
-      // Step 2. Else,
-      // Step 2.a. Let method be ? GetMethod(V, @@dispose).
-      JS::Rooted<JS::PropertyKey> id(
-          cx, PropertyKey::Symbol(cx->wellKnownSymbols().dispose));
-      JS::Rooted<JSObject*> obj(cx, &objVal.toObject());
-
-      if (!GetProperty(cx, obj, obj, id, disposeMethod)) {
-        return false;
-      }
-
-      break;
-    }
-    default:
-      MOZ_CRASH("Invalid UsingHint");
-  }
-
-  // CreateDisposableResource ( V, hint [ , method ] )
-  // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-createdisposableresource
-  //
-  // Step 1.b.iii. If method is undefined, throw a TypeError exception.
-  if (disposeMethod.isNullOrUndefined() || !IsCallable(disposeMethod)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_DISPOSE_NOT_CALLABLE);
-    return false;
-  }
-
-  return true;
-}
-
-// Explicit Resource Management Proposal
-// CreateDisposableResource ( V, hint [ , method ] )
-// https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-createdisposableresource
-bool js::CreateDisposableResource(
-    JSContext* cx, JS::Handle<JS::Value> obj, UsingHint hint,
-    JS::Handle<mozilla::Maybe<JS::Value>> methodVal,
-    JS::MutableHandle<JS::Value> result) {
-  // Step 1. If method is not present, then
-  JS::Rooted<JS::Value> method(cx);
-  JS::Rooted<JS::Value> object(cx);
-  if (!methodVal.isSome()) {
-    // Step 1.a. If V is either null or undefined, then
-    if (obj.isNullOrUndefined()) {
-      // Step 1.a.i. Set V to undefined.
-      // Step 1.a.ii. Set method to undefined.
-      object.setUndefined();
-      method.setUndefined();
-    } else {
-      // Step 1.b. Else,
-      // Step 1.b.i. If V is not an Object, throw a TypeError exception.
-      if (!obj.isObject()) {
-        return ThrowCheckIsObject(cx, CheckIsObjectKind::Disposable);
-      }
-
-      // Step 1.b.ii. Set method to ? GetDisposeMethod(V, hint).
-      // Step 1.b.iii. If method is undefined, throw a TypeError exception.
-      object.set(obj);
-      if (!GetDisposeMethod(cx, object, hint, &method)) {
-        return false;
-      }
-    }
-  } else {
-    // Step 2. Else,
-    // Step 2.a. If IsCallable(method) is false, throw a TypeError exception.
-    if (!IsCallable(*methodVal)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_DISPOSE_NOT_CALLABLE);
-      return false;
-    }
-    object.set(obj);
-    method.set(*methodVal);
-  }
-
-  // Step 3. Return the
-  //         DisposableResource Record { [[ResourceValue]]: V, [[Hint]]: hint,
-  //         [[DisposeMethod]]: method }.
-  DisposableRecordObject* disposableRecord =
-      DisposableRecordObject::create(cx, object, method, hint);
-  if (!disposableRecord) {
-    return false;
-  }
-  result.set(ObjectValue(*disposableRecord));
-
   return true;
 }
 
@@ -1887,52 +1775,22 @@ ErrorObject* js::CreateSuppressedError(JSContext* cx,
 // Explicit Resource Management Proposal
 // 7.5.4 AddDisposableResource ( disposeCapability, V, hint [ , method ] )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-adddisposableresource
-bool js::AddDisposableResource(
-    JSContext* cx, JS::Handle<ArrayObject*> disposeCapability,
-    JS::Handle<JS::Value> val, UsingHint hint,
-    JS::Handle<mozilla::Maybe<JS::Value>> methodVal) {
-  JS::Rooted<JS::Value> resource(cx);
-
-  // Step 1. If method is not present, then
-  if (!methodVal.isSome()) {
-    // Step 1.a. If V is either null or undefined and hint is sync-dispose,
-    // return unused.
-    if (val.isNullOrUndefined() && hint == UsingHint::Sync) {
-      return true;
-    }
-
-    // Step 1.c. Let resource be ? CreateDisposableResource(V, hint).
-    if (!CreateDisposableResource(cx, val, hint, methodVal, &resource)) {
-      return false;
-    }
-  } else {
-    // Step 2. Else,
-    // Step 2.a. Assert: V is undefined.
-    MOZ_ASSERT(val.isUndefined());
-
-    // Step 2.b. Let resource be ? CreateDisposableResource(undefined, hint,
-    // method).
-    if (!CreateDisposableResource(cx, val, hint, methodVal, &resource)) {
-      return false;
-    }
+// Step 3
+bool js::AddDisposableResourceToCapability(JSContext* cx,
+                                           JS::Handle<JSObject*> env,
+                                           JS::Handle<JS::Value> val,
+                                           JS::Handle<JS::Value> method,
+                                           bool needsClosure, UsingHint hint) {
+  JS::Rooted<ArrayObject*> disposeCapability(
+      cx,
+      env->as<DisposableEnvironmentObject>().getOrCreateDisposeCapability(cx));
+  if (!disposeCapability) {
+    return false;
   }
 
-  // Step 3. Append resource to disposeCapability.[[DisposableResourceStack]].
-  return NewbornArrayPush(cx, disposeCapability, resource);
-}
-
-// Explicit Resource Management Proposal
-// 7.5.4 AddDisposableResource ( disposeCapability, V, hint [ , method ] )
-// https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-adddisposableresource
-// Step 3
-bool js::AddDisposableResourceToCapability(
-    JSContext* cx, JS::Handle<ArrayObject*> disposeCapability,
-    JS::Handle<JS::Value> val, JS::Handle<JS::Value> method,
-    JS::Handle<JS::Value> needsClosure, UsingHint hint) {
   JS::Rooted<JS::Value> disposeMethod(cx);
 
-  bool needsClosureBool = needsClosure.toBoolean();
-  if (needsClosureBool) {
+  if (needsClosure) {
     JS::Handle<PropertyName*> funName = cx->names().empty_;
     JSFunction* asyncWrapper =
         NewNativeFunction(cx, SyncDisposalClosure, 0, funName,
@@ -1941,7 +1799,8 @@ bool js::AddDisposableResourceToCapability(
     if (!asyncWrapper) {
       return false;
     }
-    asyncWrapper->initExtendedSlot(SyncDisposalClosureSlot_MethodSlot, method);
+    asyncWrapper->initExtendedSlot(uint8_t(SyncDisposalClosureSlots::Method),
+                                   method);
     disposeMethod.set(JS::ObjectValue(*asyncWrapper));
   } else {
     disposeMethod.set(method);
@@ -2325,18 +2184,9 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       POP_COPY_TO(val);
 
       UsingHint hint = UsingHint(GET_UINT8(REGS.pc));
-      JS::Rooted<ArrayObject*> disposableCapability(cx);
 
-      disposableCapability =
-          env->as<DisposableEnvironmentObject>().getOrCreateDisposeCapability(
-              cx);
-
-      if (!disposableCapability) {
-        goto error;
-      }
-
-      if (!AddDisposableResourceToCapability(cx, disposableCapability, val,
-                                             method, needsClosure, hint)) {
+      if (!AddDisposableResourceToCapability(cx, env, val, method,
+                                             needsClosure.toBoolean(), hint)) {
         goto error;
       }
     }
@@ -2677,11 +2527,11 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     }
     END_CASE(Unpick)
 
-    CASE(BindGName)
-    CASE(BindName) {
+    CASE(BindUnqualifiedGName)
+    CASE(BindUnqualifiedName) {
       JSOp op = JSOp(*REGS.pc);
       ReservedRooted<JSObject*> envChain(&rootObject0);
-      if (op == JSOp::BindName) {
+      if (op == JSOp::BindUnqualifiedName) {
         envChain.set(REGS.fp()->environmentChain());
       } else {
         MOZ_ASSERT(!script->hasNonSyntacticScope());
@@ -2690,15 +2540,29 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
 
       // Assigning to an undeclared name adds a property to the global object.
-      ReservedRooted<JSObject*> env(&rootObject1);
-      if (!LookupNameUnqualified(cx, name, envChain, &env)) {
+      JSObject* env = LookupNameUnqualified(cx, name, envChain);
+      if (!env) {
         goto error;
       }
 
       PUSH_OBJECT(*env);
 
-      static_assert(JSOpLength_BindName == JSOpLength_BindGName,
-                    "We're sharing the END_CASE so the lengths better match");
+      static_assert(
+          JSOpLength_BindUnqualifiedName == JSOpLength_BindUnqualifiedGName,
+          "We're sharing the END_CASE so the lengths better match");
+    }
+    END_CASE(BindUnqualifiedName)
+
+    CASE(BindName) {
+      auto envChain = REGS.fp()->environmentChain();
+      ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
+
+      JSObject* env = LookupNameWithGlobalDefault(cx, name, envChain);
+      if (!env) {
+        goto error;
+      }
+
+      PUSH_OBJECT(*env);
     }
     END_CASE(BindName)
 
@@ -2976,12 +2840,11 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
 
     CASE(DelName) {
       ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
-      ReservedRooted<JSObject*> envObj(&rootObject0,
-                                       REGS.fp()->environmentChain());
+      HandleObject envChain = REGS.fp()->environmentChain();
 
       PUSH_BOOLEAN(true);
       MutableHandleValue res = REGS.stackHandleAt(-1);
-      if (!DeleteNameOperation(cx, name, envObj, res)) {
+      if (!DeleteNameOperation(cx, name, envChain, res)) {
         goto error;
       }
     }
@@ -3572,16 +3435,8 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(ThrowMsg)
 
     CASE(ImplicitThis) {
-      ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
-      ReservedRooted<JSObject*> envObj(&rootObject0,
-                                       REGS.fp()->environmentChain());
-      ReservedRooted<JSObject*> env(&rootObject1);
-      if (!LookupNameWithGlobalDefault(cx, name, envObj, &env)) {
-        goto error;
-      }
-
-      Value v = ComputeImplicitThis(env);
-      PUSH_COPY(v);
+      Value thisv = ComputeImplicitThis(&REGS.sp[-1].toObject());
+      REGS.sp[-1] = thisv;
     }
     END_CASE(ImplicitThis)
 
@@ -4846,7 +4701,7 @@ bool js::GetProperty(JSContext* cx, HandleValue v, Handle<PropertyName*> name,
                      MutableHandleValue vp) {
   if (name == cx->names().length) {
     // Fast path for strings, arrays and arguments.
-    if (GetLengthProperty(v, vp)) {
+    if (::GetLengthProperty(v, vp)) {
       return true;
     }
   }
@@ -5135,14 +4990,14 @@ bool js::GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
 }
 
 bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
-                             HandleObject scopeObj, MutableHandleValue res) {
-  RootedObject scope(cx), pobj(cx);
+                             HandleObject envChain, MutableHandleValue res) {
+  RootedObject env(cx), pobj(cx);
   PropertyResult prop;
-  if (!LookupName(cx, name, scopeObj, &scope, &pobj, &prop)) {
+  if (!LookupName(cx, name, envChain, &env, &pobj, &prop)) {
     return false;
   }
 
-  if (!scope) {
+  if (!env) {
     // Return true for non-existent names.
     res.setBoolean(true);
     return true;
@@ -5150,33 +5005,30 @@ bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
 
   ObjectOpResult result;
   RootedId id(cx, NameToId(name));
-  if (!DeleteProperty(cx, scope, id, result)) {
+  if (!DeleteProperty(cx, env, id, result)) {
     return false;
   }
 
   bool status = result.ok();
   res.setBoolean(status);
 
+#ifndef NIGHTLY_BUILD
   if (status) {
     // Deleting a name from the global object removes it from [[VarNames]].
-    if (pobj == scope && scope->is<GlobalObject>()) {
-      scope->as<GlobalObject>().removeFromVarNames(name);
+    if (pobj == env && env->is<GlobalObject>()) {
+      env->as<GlobalObject>().removeFromVarNames(name);
     }
   }
+#endif
 
   return true;
 }
 
-bool js::ImplicitThisOperation(JSContext* cx, HandleObject scopeObj,
-                               Handle<PropertyName*> name,
+void js::ImplicitThisOperation(JSContext* cx, HandleObject env,
                                MutableHandleValue res) {
-  RootedObject obj(cx);
-  if (!LookupNameWithGlobalDefault(cx, name, scopeObj, &obj)) {
-    return false;
-  }
-
-  res.set(ComputeImplicitThis(obj));
-  return true;
+  // Note: ImplicitThisOperation has an unused cx argument because the JIT
+  // callVM machinery requires this.
+  res.set(ComputeImplicitThis(env));
 }
 
 unsigned js::GetInitDataPropAttrs(JSOp op) {
@@ -5583,15 +5435,6 @@ void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
   }
 
   ReportRuntimeLexicalError(cx, errorNumber, name);
-}
-
-void js::ReportRuntimeRedeclaration(JSContext* cx, Handle<PropertyName*> name,
-                                    const char* redeclKind) {
-  if (UniqueChars printable = AtomToPrintableString(cx, name)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_REDECLARED_VAR, redeclKind,
-                              printable.get());
-  }
 }
 
 bool js::ThrowCheckIsObject(JSContext* cx, CheckIsObjectKind kind) {

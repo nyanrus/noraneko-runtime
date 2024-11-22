@@ -15,6 +15,7 @@ import android.util.AttributeSet
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.ActionBar
 import androidx.appcompat.widget.Toolbar
@@ -99,11 +100,9 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         // Checks if Activity is currently in PiP mode if launched from external intents, then exits it
         checkAndExitPiP()
 
-        if (!isTaskRoot) {
-            if (intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN == intent.action) {
-                finish()
-                return
-            }
+        if (!isTaskRoot && intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN == intent.action) {
+            finish()
+            return
         }
 
         @Suppress("DEPRECATION") // https://github.com/mozilla-mobile/focus-android/issues/5016
@@ -161,6 +160,15 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         }
 
         components.notificationsDelegate.bindToActivity(this)
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    this@MainActivity.handleBackPressed()
+                }
+            },
+        )
     }
 
     private fun requestNotificationPermission() {
@@ -334,8 +342,7 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         }
     }
 
-    @Suppress("MissingSuperCall", "OVERRIDE_DEPRECATION")
-    override fun onBackPressed() {
+    private fun handleBackPressed() {
         val fragmentManager = supportFragmentManager
 
         val urlInputFragment =
@@ -369,7 +376,8 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
             return
         }
 
-        onBackPressedDispatcher.onBackPressed()
+        // If no fragments are handling the back press, finish the activity.
+        finish()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

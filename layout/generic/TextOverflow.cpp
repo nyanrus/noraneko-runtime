@@ -207,7 +207,7 @@ static void PaintTextShadowCallback(gfxContext* aCtx, nsPoint aShadowOffset,
 void nsDisplayTextOverflowMarker::Paint(nsDisplayListBuilder* aBuilder,
                                         gfxContext* aCtx) {
   nscolor foregroundColor =
-      nsLayoutUtils::GetColor(mFrame, &nsStyleText::mWebkitTextFillColor);
+      nsLayoutUtils::GetTextColor(mFrame, &nsStyleText::mWebkitTextFillColor);
 
   // Paint the text-shadows for the overflow marker
   nsLayoutUtils::PaintTextShadow(mFrame, aCtx, mRect,
@@ -810,7 +810,7 @@ bool TextOverflow::HasClippedTextOverflow(nsIFrame* aBlockFrame) {
 /* static */
 bool TextOverflow::HasBlockEllipsis(nsIFrame* aBlockFrame) {
   nsBlockFrame* f = do_QueryFrame(aBlockFrame);
-  return f && f->HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS);
+  return f && f->HasLineClampEllipsis();
 }
 
 static bool BlockCanHaveLineClampEllipsis(nsBlockFrame* aBlockFrame,
@@ -818,7 +818,7 @@ static bool BlockCanHaveLineClampEllipsis(nsBlockFrame* aBlockFrame,
   if (aBeforeReflow) {
     return aBlockFrame->IsInLineClampContext();
   }
-  return aBlockFrame->HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS);
+  return aBlockFrame->HasLineClampEllipsis();
 }
 
 /* static */

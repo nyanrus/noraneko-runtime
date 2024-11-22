@@ -132,6 +132,8 @@ mod image_tiling;
 mod image_source;
 mod rectangle_occlusion;
 mod picture_textures;
+mod frame_allocator;
+mod bump_allocator;
 
 ///
 pub mod intern;
@@ -191,6 +193,7 @@ pub use crate::intern::ItemUid;
 pub use crate::render_api::*;
 pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo};
 pub use glyph_rasterizer;
+pub use bump_allocator::ChunkPool;
 
 #[cfg(feature = "sw_compositor")]
 pub use crate::compositor::sw_compositor;

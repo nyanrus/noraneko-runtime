@@ -7,6 +7,8 @@
 #ifndef mozilla_css_SheetLoadData_h
 #define mozilla_css_SheetLoadData_h
 
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/Encoding.h"
@@ -59,24 +61,29 @@ class SheetLoadData final
   void StartPendingLoad();
 
   // Data for loading a sheet linked from a document
-  SheetLoadData(css::Loader*, const nsAString& aTitle, nsIURI*, StyleSheet*,
-                SyncLoad, nsINode* aOwningNode, IsAlternate, MediaMatched,
-                StylePreloadKind, nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo*,
-                const nsAString& aNonce, dom::FetchPriority aFetchPriority);
+  SheetLoadData(
+      css::Loader*, const nsAString& aTitle, nsIURI*, StyleSheet*, SyncLoad,
+      nsINode* aOwningNode, IsAlternate, MediaMatched, StylePreloadKind,
+      nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
+      nsIReferrerInfo*, const nsAString& aNonce,
+      dom::FetchPriority aFetchPriority,
+      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
 
   // Data for loading a sheet linked from an @import rule
-  SheetLoadData(css::Loader*, nsIURI*, StyleSheet*, SheetLoadData* aParentData,
-                nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo*);
+  SheetLoadData(
+      css::Loader*, nsIURI*, StyleSheet*, SheetLoadData* aParentData,
+      nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
+      nsIReferrerInfo*,
+      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
 
   // Data for loading a non-document sheet
-  SheetLoadData(css::Loader*, nsIURI*, StyleSheet*, SyncLoad,
-                UseSystemPrincipal, StylePreloadKind,
-                const Encoding* aPreloadEncoding,
-                nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo*,
-                const nsAString& aNonce, dom::FetchPriority aFetchPriority);
+  SheetLoadData(
+      css::Loader*, nsIURI*, StyleSheet*, SyncLoad, UseSystemPrincipal,
+      StylePreloadKind, const Encoding* aPreloadEncoding,
+      nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
+      nsIReferrerInfo*, const nsAString& aNonce,
+      dom::FetchPriority aFetchPriority,
+      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
 
   nsIReferrerInfo* ReferrerInfo() const { return mReferrerInfo; }
 
@@ -98,6 +105,7 @@ class SheetLoadData final
   NS_DECL_ISUPPORTS
 
   css::Loader& Loader() { return *mLoader; }
+  const css::Loader& Loader() const { return *mLoader; }
 
   void DidCancelLoad() { mIsCancelled = true; }
 
@@ -204,6 +212,17 @@ class SheetLoadData final
   // to true if this load, or the load of any descendant import, fails.
   bool mLoadFailed : 1;
 
+  // If this flag is true, this load uses a cached load, where the corresponding
+  // notifications from the necko channel doesn't happen for the current
+  // document.  The loader should emulate the equivalent once the load finishes.
+  // See Loader::NotifyObservers.
+  //
+  // This becomes true in the following cases:
+  //   * This load is coalesced to a pending or loading cache, where the load
+  //     is performed by a different loader for the different document
+  //   * This load uses a complete cache and no necko activity happens
+  bool mShouldEmulateNotificationsForCachedLoad : 1;
+
   // Whether this is a preload, and which kind of preload it is.
   //
   // TODO(emilio): This can become a bitfield once we build with a GCC version
@@ -240,10 +259,13 @@ class SheetLoadData final
   // listening for the load.
   bool mIntentionallyDropped = false;
 
-  // The start timestamp for the load.
+  // The start timestamp for the load, or the timestamp where this load is
+  // coalesced into an existing load.
   TimeStamp mLoadStart;
 
   const bool mRecordErrors;
+
+  RefPtr<SubResourceNetworkMetadataHolder> mNetworkMetadata;
 
   bool ShouldDefer() const { return mWasAlternate || !mMediaMatched; }
 
@@ -262,25 +284,34 @@ class SheetLoadData final
   }
 
   bool IsPreload() const { return mPreloadKind != StylePreloadKind::None; }
-  bool IsLinkRelPreload() const { return css::IsLinkRelPreload(mPreloadKind); }
+  bool IsLinkRelPreloadOrEarlyHint() const {
+    return css::IsLinkRelPreloadOrEarlyHint(mPreloadKind);
+  }
 
   bool BlocksLoadEvent() const {
     const auto& root = RootLoadData();
-    return !root.IsLinkRelPreload() && !root.IsSyncLoad();
+    return !root.IsLinkRelPreloadOrEarlyHint() && !root.IsSyncLoad();
   }
 
   bool IsSyncLoad() const override { return mSyncLoad; }
   bool IsLoading() const override { return mIsLoading; }
   bool IsCancelled() const override { return mIsCancelled; }
 
+  SubResourceNetworkMetadataHolder* GetNetworkMetadata() const override {
+    return mNetworkMetadata.get();
+  }
+
   void StartLoading() override;
   void SetLoadCompleted() override;
+  void OnCoalescedTo(const SheetLoadData& aExistingLoad) override;
 
   void Cancel() override { mIsCancelled = true; }
 
   void SetMinimumExpirationTime(const CacheExpirationTime& aExpirationTime) {
     mExpirationTime.SetMinimum(aExpirationTime);
   }
+
+  nsLiteralString InitiatorTypeString();
 
  private:
   const SheetLoadData& RootLoadData() const {

@@ -257,6 +257,12 @@ class RaptorGatherer(FrameworkGatherer):
                 for metric in description.get("alert_on", "").split(",")
                 if metric.strip() != ""
             ]
+            if (
+                description.get("gather_cpuTime", None)
+                or "cpuTime" in description.get("measure", [])
+                or suite_name in ["desktop", "interactive", "mobile"]
+            ):
+                description["metrics"].append("cpuTime")
 
             subtests[subtest["name"]] = description
             self._descriptions.setdefault(suite_name, []).append(description)
@@ -427,20 +433,21 @@ class RaptorGatherer(FrameworkGatherer):
             metric_content += (
                 f"  * **Aliases**: {', '.join(sorted(metric_info['aliases']))}\n"
             )
-            metric_content += "  * **Tests using it**:\n"
+            if metric_info.get("location", None):
+                metric_content += "  * **Tests using it**:\n"
 
-            for suite, tests in sorted(
-                metric_info["location"].items(), key=lambda item: item[0]
-            ):
-                metric_content += f"     * **{suite.capitalize()}**: "
+                for suite, tests in sorted(
+                    metric_info["location"].items(), key=lambda item: item[0]
+                ):
+                    metric_content += f"     * **{suite.capitalize()}**: "
 
-                test_links = []
-                for test in sorted(tests):
-                    test_links.append(
-                        f"`{test} <raptor.html#{test}-{suite.lower()[0]}>`__"
-                    )
+                    test_links = []
+                    for test in sorted(tests):
+                        test_links.append(
+                            f"`{test} <raptor.html#{test}-{suite.lower()[0]}>`__"
+                        )
 
-                metric_content += ", ".join(test_links) + "\n"
+                    metric_content += ", ".join(test_links) + "\n"
 
             metrics_documentation.extend(
                 self._build_section_with_header(
@@ -483,7 +490,7 @@ class MozperftestGatherer(FrameworkGatherer):
 
             # Get the tests from perftest.toml
             test_manifest = TestManifest([str(path)], strict=False)
-            test_list = test_manifest.active_tests(exists=False, disabled=False)
+            test_list = test_manifest.active_tests(exists=False, disabled=True)
             for test in test_list:
                 si = ScriptInfo(test["path"])
                 self.script_infos[si["name"]] = si
@@ -677,7 +684,7 @@ class AwsyGatherer(FrameworkGatherer):
         result = f".. dropdown:: {title} ({test_description})\n"
         result += f"   :class-container: anchor-id-{title}-{dropdown_suite_name}\n\n"
         result += self.build_command_to_run_locally(
-            "awsy-test", "" if title == "tp5" else f"--{title}"
+            "awsy-test", "" if title == "tp6" else f"--{title}"
         )
 
         awsy_data = read_yaml(self._yaml_path)["suites"]["Awsy tests"]

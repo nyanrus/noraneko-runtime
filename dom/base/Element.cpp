@@ -13,8 +13,10 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
 
+#include <cstddef>
 #include <inttypes.h>
 #include <initializer_list>
+#include <utility>
 #include "DOMMatrix.h"
 #include "ExpandedPrincipal.h"
 #include "PresShellInlines.h"
@@ -45,21 +47,25 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/PointerLockManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/ReflowOutput.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/SizeOfState.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_full_screen_api.h"
+#include "mozilla/StaticString.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
@@ -71,7 +77,9 @@
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CloseWatcher.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/CSPViolationData.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Document.h"
@@ -97,6 +105,7 @@
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/NodeInfo.h"
+#include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Sanitizer.h"
@@ -104,6 +113,9 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/TrustedHTML.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/UnbindContext.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/XULCommandEvent.h"
@@ -141,6 +153,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsGridContainerFrame.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIAutoCompletePopup.h"
 #include "nsIBrowser.h"
 #include "nsIContentInlines.h"
@@ -168,6 +181,7 @@
 #include "nsIURI.h"
 #include "nsLayoutUtils.h"
 #include "nsLineBox.h"
+#include "nsLiteralString.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsPIDOMWindow.h"
@@ -287,7 +301,7 @@ nsDOMAttributeMap* Element::Attributes() {
 }
 
 void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerId) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -316,7 +330,7 @@ void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
 }
 
 void Element::ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerId) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -3974,9 +3988,32 @@ void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   GetMarkup(false, aInnerHTML);
 }
 
-void Element::SetInnerHTML(const nsAString& aInnerHTML,
+void Element::GetInnerHTML(OwningTrustedHTMLOrNullIsEmptyString& aInnerHTML,
+                           OOMReporter& aError) {
+  GetInnerHTML(aInnerHTML.SetAsNullIsEmptyString(), aError);
+}
+
+void Element::SetInnerHTML(const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
                            nsIPrincipal* aSubjectPrincipal,
                            ErrorResult& aError) {
+  constexpr nsLiteralString sink = u"Element innerHTML"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aInnerHTML, sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+
+  if (aError.Failed()) {
+    return;
+  }
+
+  SetInnerHTMLTrusted(*compliantString, aSubjectPrincipal, aError);
+}
+
+void Element::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
+                                  nsIPrincipal* aSubjectPrincipal,
+                                  ErrorResult& aError) {
   SetInnerHTMLInternal(aInnerHTML, aError);
 }
 
@@ -4040,8 +4077,21 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
 
 enum nsAdjacentPosition { eBeforeBegin, eAfterBegin, eBeforeEnd, eAfterEnd };
 
-void Element::InsertAdjacentHTML(const nsAString& aPosition,
-                                 const nsAString& aText, ErrorResult& aError) {
+void Element::InsertAdjacentHTML(
+    const nsAString& aPosition, const TrustedHTMLOrString& aTrustedHTMLOrString,
+    ErrorResult& aError) {
+  constexpr nsLiteralString kSink = u"Element insertAdjacentHTML"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aTrustedHTMLOrString, kSink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+
+  if (aError.Failed()) {
+    return;
+  }
+
   nsAdjacentPosition position;
   if (aPosition.LowerCaseEqualsLiteral("beforebegin")) {
     position = eBeforeBegin;
@@ -4092,7 +4142,7 @@ void Element::InsertAdjacentHTML(const nsAString& aPosition,
       contextLocal = nsGkAtoms::body;
     }
     aError = nsContentUtils::ParseFragmentHTML(
-        aText, destination, contextLocal, contextNs,
+        *compliantString, destination, contextLocal, contextNs,
         doc->GetCompatibilityMode() == eCompatibility_NavQuirks, true);
     // HTML5 parser has notified, but not fired mutation events.
     nsContentUtils::FireMutationEventsForDirectParsing(doc, destination,
@@ -4102,7 +4152,7 @@ void Element::InsertAdjacentHTML(const nsAString& aPosition,
 
   // couldn't parse directly
   RefPtr<DocumentFragment> fragment = nsContentUtils::CreateContextualFragment(
-      destination, aText, true, aError);
+      destination, *compliantString, true, aError);
   if (aError.Failed()) {
     return;
   }
@@ -4261,6 +4311,29 @@ void Element::GetImplementedPseudoElement(nsAString& aPseudo) const {
   aPseudo.SetCapacity(pseudo.Length() + 1);
   aPseudo.Append(':');
   aPseudo.Append(pseudo);
+}
+
+const Element* Element::GetPseudoElement(
+    const PseudoStyleRequest& aRequest) const {
+  switch (aRequest.mType) {
+    case PseudoStyleType::NotPseudo:
+      return this;
+    case PseudoStyleType::before:
+      return nsLayoutUtils::GetBeforePseudo(this);
+    case PseudoStyleType::after:
+      return nsLayoutUtils::GetAfterPseudo(this);
+    case PseudoStyleType::marker:
+      return nsLayoutUtils::GetMarkerPseudo(this);
+    case PseudoStyleType::viewTransition:
+    case PseudoStyleType::viewTransitionGroup:
+    case PseudoStyleType::viewTransitionImagePair:
+    case PseudoStyleType::viewTransitionOld:
+    case PseudoStyleType::viewTransitionNew:
+      // FIXME: Bug 1919347: Support these when working on getComputedStyle(),
+      // or Web Animation APIs.
+    default:
+      return nullptr;
+  }
 }
 
 ReferrerPolicy Element::GetReferrerPolicyAsEnum() const {

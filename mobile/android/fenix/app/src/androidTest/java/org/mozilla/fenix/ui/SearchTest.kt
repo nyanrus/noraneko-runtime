@@ -33,10 +33,10 @@ import org.mozilla.fenix.helpers.MockBrowserDataHelper.createTabItem
 import org.mozilla.fenix.helpers.MockBrowserDataHelper.setCustomSearchEngine
 import org.mozilla.fenix.helpers.SearchDispatcher
 import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickContextMenuItem
 import org.mozilla.fenix.ui.robots.clickPageObject
@@ -68,11 +68,12 @@ class SearchTest : TestSetup() {
         HomeActivityTestRule(
             skipOnboarding = true,
             isPocketEnabled = false,
-            isJumpBackInCFREnabled = false,
             isRecentTabsFeatureEnabled = false,
-            isTCPCFREnabled = false,
             isWallpaperOnboardingEnabled = false,
             isLocationPermissionEnabled = SitePermissionsRules.Action.BLOCKED,
+            // workaround for toolbar at top position by default
+            // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+            shouldUseBottomToolbar = true,
         ),
     ) { it.activity }
 
@@ -103,6 +104,7 @@ class SearchTest : TestSetup() {
             verifyVoiceSearchButtonVisibility(enabled = true)
             verifySearchBarPlaceholder("Search or enter address")
             typeSearch("mozilla ")
+            waitForAppWindowToBeUpdated()
             verifyScanButtonVisibility(visible = false)
             verifyVoiceSearchButtonVisibility(enabled = true)
         }
@@ -353,7 +355,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1591782
-    @Ignore("Failing due to known bug, see https://github.com/mozilla-mobile/fenix/issues/23818")
+    @Ignore("Failing due to known bug, see https://bugzilla.mozilla.org/show_bug.cgi?id=1807294")
     @Test
     fun searchGroupIsGeneratedWhenNavigatingInTheSameTabTest() {
         // setting our custom mockWebServer search URL
@@ -451,7 +453,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592242
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1922538")
     @Test
     fun deleteSearchGroupFromHomeScreenTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
@@ -492,7 +494,6 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592235
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @Test
     fun openAPageFromHomeScreenSearchGroupTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
@@ -520,7 +521,7 @@ class SearchTest : TestSetup() {
         }.closeAllTabs {
             verifyRecentlyVisitedSearchGroupDisplayed(shouldBeDisplayed = true, searchTerm = queryString, groupSize = 3)
         }.openRecentlyVisitedSearchGroupHistoryList(queryString) {
-        }.openWebsite(firstPageUrl) {
+        }.openWebsiteFromSearchGroup(firstPageUrl) {
             verifyUrl(firstPageUrl.toString())
         }.goToHomescreen {
         }.openRecentlyVisitedSearchGroupHistoryList(queryString) {
@@ -585,7 +586,7 @@ class SearchTest : TestSetup() {
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("google")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -611,11 +612,10 @@ class SearchTest : TestSetup() {
             changeDefaultSearchEngine("Bing")
             exitMenu()
         }
-
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("mozilla")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -644,7 +644,7 @@ class SearchTest : TestSetup() {
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("duckduckgo")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -912,7 +912,7 @@ class SearchTest : TestSetup() {
     fun verifySearchEnginesFunctionalityUsingRTLLocaleTest() {
         val arabicLocale = Locale("ar", "AR")
 
-        AppAndSystemHelper.runWithSystemLocaleChanged(arabicLocale, activityTestRule.activityRule) {
+        AppAndSystemHelper.runWithAppLocaleChanged(arabicLocale, activityTestRule.activityRule) {
             homeScreen {
             }.openSearch {
                 verifyTranslatedFocusedNavigationToolbar("ابحث أو أدخِل عنوانا")

@@ -26,7 +26,9 @@ export class SelectableProfile {
   #themeFg;
   #themeBg;
 
-  constructor(row) {
+  #selectableProfileService = null;
+
+  constructor(row, selectableProfileService) {
     this.#id = row.getResultByName("id");
     this.#path = row.getResultByName("path");
     this.#name = row.getResultByName("name");
@@ -34,6 +36,8 @@ export class SelectableProfile {
     this.#themeL10nId = row.getResultByName("themeL10nId");
     this.#themeFg = row.getResultByName("themeFg");
     this.#themeBg = row.getResultByName("themeBg");
+
+    this.#selectableProfileService = selectableProfileService;
   }
 
   /**
@@ -66,16 +70,18 @@ export class SelectableProfile {
     this.#name = aName;
 
     this.saveUpdatesToDB();
+
+    Services.prefs.setBoolPref("browser.profiles.profile-name.updated", true);
   }
 
   /**
-   * Get the path to the profile as a string.
+   * Get the full path to the profile as a string.
    *
    * @returns {string} Path of profile
    */
   get path() {
     return PathUtils.joinRelative(
-      Services.dirsvc.get("UAppData", Ci.nsIFile).path,
+      this.#selectableProfileService.constructor.getDirectory("UAppData").path,
       this.#path
     );
   }
@@ -106,7 +112,7 @@ export class SelectableProfile {
    * @param {string} aAvatar Name of the avatar
    */
   set avatar(aAvatar) {
-    this.avatar = aAvatar;
+    this.#avatar = aAvatar;
 
     this.saveUpdatesToDB();
   }
@@ -145,5 +151,19 @@ export class SelectableProfile {
     this.saveUpdatesToDB();
   }
 
-  saveUpdatesToDB() {}
+  saveUpdatesToDB() {
+    this.#selectableProfileService.updateProfile(this);
+  }
+
+  toObject() {
+    let profileObj = {
+      id: this.id,
+      path: this.#path,
+      name: this.name,
+      avatar: this.avatar,
+      ...this.theme,
+    };
+
+    return profileObj;
+  }
 }

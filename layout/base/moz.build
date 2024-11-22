@@ -23,6 +23,7 @@ XPIDL_SOURCES += [
     "nsILayoutHistoryState.idl",
     "nsIPreloadedStyleSheet.idl",
     "nsIStyleSheetService.idl",
+    "nsISVGPaintContext.idl",
 ]
 
 if CONFIG["MOZ_DEBUG"]:
@@ -77,6 +78,7 @@ EXPORTS.mozilla += [
     "DisplayPortUtils.h",
     "GeckoMVMContext.h",
     "GeometryUtils.h",
+    "LayoutStructs.h",
     "MediaEmulationData.h",
     "MotionPathUtils.h",
     "MVMContext.h",

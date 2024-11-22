@@ -71,7 +71,7 @@ use crate::gpu_cache::{GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
 use crate::gpu_types::{ScalingInstance, SvgFilterInstance, SVGFEFilterInstance, CopyInstance, PrimitiveInstanceData};
 use crate::gpu_types::{BlurInstance, ClearInstance, CompositeInstance};
-use crate::internal_types::{TextureSource, TextureCacheCategory, FrameId};
+use crate::internal_types::{TextureSource, TextureSourceExternal, TextureCacheCategory, FrameId, FrameVec};
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::internal_types::DebugOutput;
 use crate::internal_types::{CacheTextureId, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
@@ -86,8 +86,7 @@ use crate::render_target::{ResolveOp};
 use crate::render_task_graph::{RenderTaskGraph};
 use crate::render_task::{RenderTask, RenderTaskKind, ReadbackTask};
 use crate::screen_capture::AsyncScreenshotGrabber;
-use crate::render_target::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget, PictureCacheTargetKind};
-use crate::render_target::{RenderTarget, TextureCacheRenderTarget};
+use crate::render_target::{RenderTarget, PictureCacheTarget, PictureCacheTargetKind};
 use crate::render_target::{RenderTargetKind, BlitJob};
 use crate::telemetry::Telemetry;
 use crate::tile_cache::PictureCacheDebugInfo;
@@ -264,10 +263,6 @@ const GPU_TAG_SVG_FILTER_NODES: GpuProfileTag = GpuProfileTag {
 const GPU_TAG_COMPOSITE: GpuProfileTag = GpuProfileTag {
     label: "Composite",
     color: debug_colors::TOMATO,
-};
-const GPU_TAG_CLEAR: GpuProfileTag = GpuProfileTag {
-    label: "Clear",
-    color: debug_colors::CHOCOLATE,
 };
 
 /// The clear color used for the texture cache when the debug display is enabled.
@@ -533,7 +528,7 @@ impl TextureResolver {
                 device.bind_texture(sampler, &self.dummy_cache_texture, swizzle);
                 swizzle
             }
-            TextureSource::External(ref index, _) => {
+            TextureSource::External(TextureSourceExternal { ref index, .. }) => {
                 let texture = self.external_images
                     .get(index)
                     .expect("BUG: External image should be resolved by now");
@@ -574,7 +569,7 @@ impl TextureResolver {
         default_value: TexelRect,
     ) -> TexelRect {
         match source {
-            TextureSource::External(ref index, _) => {
+            TextureSource::External(TextureSourceExternal { ref index, .. }) => {
                 let texture = self.external_images
                     .get(index)
                     .expect("BUG: External image should be resolved by now");
@@ -593,7 +588,11 @@ impl TextureResolver {
             TextureSource::TextureCache(id, _) => {
                 self.texture_cache_map[&id].texture.get_dimensions()
             },
-            TextureSource::External(index, _) => {
+            TextureSource::External(TextureSourceExternal { index, .. }) => {
+                // If UV coords are normalized then this value will be incorrect. However, the
+                // texture size is currently only used to set the uTextureSize uniform, so that
+                // shaders without access to textureSize() can normalize unnormalized UVs. Which
+                // means this is not a problem.
                 let uv_rect = self.external_images[&index].get_uv_rect();
                 (uv_rect.uv1 - uv_rect.uv0).abs().to_size().to_i32()
             },
@@ -623,6 +622,8 @@ impl TextureResolver {
         let mut external_image_bytes = 0;
         for img in self.external_images.values() {
             let uv_rect = img.get_uv_rect();
+            // If UV coords are normalized then this value will be incorrect. This is unfortunate
+            // but doesn't impact end users at all.
             let size = (uv_rect.uv1 - uv_rect.uv0).abs().to_size().to_i32();
 
             // Assume 4 bytes per pixels which is true most of the time but
@@ -1013,7 +1014,7 @@ impl Renderer {
                     // because a) we don't need to render to the main framebuffer
                     // so it is cheaper not to, and b) doing so without a
                     // subsequent present would break partial present.
-                    if let Some(mut prev_doc) = self.active_documents.remove(&document_id) {
+                    let prev_frame_memory = if let Some(mut prev_doc) = self.active_documents.remove(&document_id) {
                         doc.profile.merge(&mut prev_doc.profile);
 
                         if prev_doc.frame.must_be_drawn() {
@@ -1025,6 +1026,16 @@ impl Renderer {
                                 0,
                             ).ok();
                         }
+
+                        Some(prev_doc.frame.allocator_memory)
+                    } else {
+                        None
+                    };
+
+                    if let Some(memory) = prev_frame_memory {
+                        // We just dropped the frame a few lives above. There should be no
+                        // live allocations left in the frame's memory.
+                        memory.assert_memory_reusable();
                     }
 
                     self.active_documents.insert(document_id, doc);
@@ -2182,8 +2193,8 @@ impl Renderer {
     fn handle_prims(
         &mut self,
         draw_target: &DrawTarget,
-        prim_instances: &[FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>],
-        prim_instances_with_scissor: &FastHashMap<(DeviceIntRect, PatternKind), FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>>,
+        prim_instances: &[FastHashMap<TextureSource, FrameVec<PrimitiveInstanceData>>],
+        prim_instances_with_scissor: &FastHashMap<(DeviceIntRect, PatternKind), FastHashMap<TextureSource, FrameVec<PrimitiveInstanceData>>>,
         projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
@@ -2454,7 +2465,7 @@ impl Renderer {
 
     fn handle_scaling(
         &mut self,
-        scalings: &FastHashMap<TextureSource, Vec<ScalingInstance>>,
+        scalings: &FastHashMap<TextureSource, FrameVec<ScalingInstance>>,
         projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
@@ -2463,7 +2474,6 @@ impl Renderer {
         }
 
         let _timer = self.gpu_profiler.start_timer(GPU_TAG_SCALE);
-
         for (source, instances) in scalings {
             let buffer_kind = source.image_buffer_kind();
 
@@ -2475,18 +2485,17 @@ impl Renderer {
             let instances = match source {
                 TextureSource::External(..) => {
                     uv_override_instances = instances.iter().map(|instance| {
+                        let mut new_instance = instance.clone();
                         let texel_rect: TexelRect = self.texture_resolver.get_uv_rect(
                             &source,
                             instance.source_rect.cast().into()
                         ).into();
-                        ScalingInstance {
-                            target_rect: instance.target_rect,
-                            source_rect: DeviceRect::new(texel_rect.uv0, texel_rect.uv1),
-                        }
+                        new_instance.source_rect = DeviceRect::new(texel_rect.uv0, texel_rect.uv1);
+                        new_instance
                     }).collect::<Vec<_>>();
-                    &uv_override_instances
+                    uv_override_instances.as_slice()
                 }
-                _ => &instances
+                _ => instances.as_slice()
             };
 
             self.shaders
@@ -3083,6 +3092,7 @@ impl Renderer {
                         surface_rect.to_f32(),
                         PremultipliedColorF::WHITE,
                         uv_rect,
+                        plane.texture.uses_normalized_uvs(),
                         (false, false),
                     );
 
@@ -3142,8 +3152,8 @@ impl Renderer {
             let tile = &composite_state.tiles[item.key];
 
             let clip_rect = item.rectangle;
+            let tile_rect = composite_state.get_device_rect(&tile.local_rect, tile.transform_index);
             let transform = composite_state.get_device_transform(tile.transform_index);
-            let tile_rect = transform.map_rect(&tile.local_rect);
             let flip = (transform.scale.x < 0.0, transform.scale.y < 0.0);
 
             // Work out the draw params based on the tile surface
@@ -3231,6 +3241,7 @@ impl Renderer {
                                 clip_rect,
                                 PremultipliedColorF::WHITE,
                                 uv_rect,
+                                plane.texture.uses_normalized_uvs(),
                                 flip,
                             );
                             let features = instance.get_rgb_features();
@@ -3466,19 +3477,56 @@ impl Renderer {
         }
     }
 
-    fn draw_color_target(
+    fn draw_render_target(
         &mut self,
-        draw_target: DrawTarget,
-        target: &ColorRenderTarget,
-        clear_depth: Option<f32>,
+        texture_id: CacheTextureId,
+        target: &RenderTarget,
         render_tasks: &RenderTaskGraph,
-        projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
-        profile_scope!("draw_color_target");
+        let needs_depth = target.needs_depth();
 
-        self.profile.inc(profiler::COLOR_PASSES);
-        let _gm = self.gpu_profiler.start_marker("color target");
+        let texture = self.texture_resolver.get_cache_texture_mut(&texture_id);
+        if needs_depth {
+            self.device.reuse_render_target::<u8>(
+                texture,
+                RenderTargetInfo { has_depth: needs_depth },
+            );
+        }
+
+        let draw_target = DrawTarget::from_texture(
+            texture,
+            needs_depth,
+        );
+
+        let clear_depth = if needs_depth {
+            Some(1.0)
+        } else {
+            None
+        };
+
+        let projection = Transform3D::ortho(
+            0.0,
+            draw_target.dimensions().width as f32,
+            0.0,
+            draw_target.dimensions().height as f32,
+            self.device.ortho_near_plane(),
+            self.device.ortho_far_plane(),
+        );
+
+        profile_scope!("draw_render_target");
+        let _gm = self.gpu_profiler.start_marker("render target");
+
+        let counter = match target.target_kind {
+            RenderTargetKind::Color => profiler::COLOR_PASSES,
+            RenderTargetKind::Alpha => profiler::ALPHA_PASSES,
+        };
+        self.profile.inc(counter);
+
+        let sampler_query = match target.target_kind {
+            RenderTargetKind::Color => None,
+            RenderTargetKind::Alpha => Some(self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_ALPHA)),
+        };
 
         // sanity check for the depth buffer
         if let DrawTarget::Texture { with_depth, .. } = draw_target {
@@ -3500,64 +3548,188 @@ impl Renderer {
                     Some(_) => 0,
                     None => gl::COLOR_BUFFER_BIT0_QCOM,
                 };
-                self.device.gl().start_tiling_qcom(
-                    target.used_rect.min.x.max(0) as _,
-                    target.used_rect.min.y.max(0) as _,
-                    target.used_rect.width() as _,
-                    target.used_rect.height() as _,
-                    preserve_mask,
-                );
+                if let Some(used_rect) = target.used_rect {
+                    self.device.gl().start_tiling_qcom(
+                        used_rect.min.x.max(0) as _,
+                        used_rect.min.y.max(0) as _,
+                        used_rect.width() as _,
+                        used_rect.height() as _,
+                        preserve_mask,
+                    );
+                }
             }
 
             self.device.disable_depth();
             self.set_blend(false, framebuffer_kind);
 
-            if clear_depth.is_some() {
+            if needs_depth {
                 self.device.enable_depth_write();
+            } else {
+                self.device.disable_depth_write();
             }
 
-            let clear_color = target
-                .clear_color
-                .map(|color| color.to_array());
+            let zero_color = [0.0, 0.0, 0.0, 0.0];
+            let one_color = [1.0, 1.0, 1.0, 1.0];
 
-            let clear_rect = match draw_target {
-                DrawTarget::NativeSurface { .. } => {
-                    unreachable!("bug: native compositor surface in child target");
-                }
-                DrawTarget::Default { rect, total_size, .. } if rect.min == FramebufferIntPoint::zero() && rect.size() == total_size => {
-                    // whole screen is covered, no need for scissor
-                    None
-                }
-                DrawTarget::Default { rect, .. } => {
-                    Some(rect)
-                }
-                DrawTarget::Texture { .. } if self.enable_clear_scissor => {
+            // On some Adreno 4xx devices we have seen render tasks to alpha targets have no
+            // effect unless the target is fully cleared prior to rendering. See bug 1714227.
+            if target.target_kind == RenderTargetKind::Alpha
+                && !target.cached
+                && self.device.get_capabilities().requires_alpha_target_full_clear {
+
+                self.device.clear_target(
+                    Some(zero_color),
+                    clear_depth,
+                    None,
+                );
+            } else if target.cached && needs_depth {
+                // Make sure to clear the depth buffer if it used in a cached target.
+                self.device.clear_target(None, clear_depth, None);
+            }
+
+            // On some Mali-T devices we have observed crashes in subsequent draw calls
+            // immediately after clearing the alpha render target regions with glClear().
+            // Using the shader to clear the regions avoids the crash. See bug 1638593.
+            let clear_with_quads = (target.cached && self.clear_caches_with_quads)
+                || (target.target_kind == RenderTargetKind::Alpha && self.clear_alpha_targets_with_quads);
+
+            let has_clear_instances = !(target.zero_clears.is_empty() && target.one_clears.is_empty() && target.clears.is_empty());
+
+            if has_clear_instances {
+                if clear_with_quads {
+                    let zeroes = target.zero_clears
+                        .iter()
+                        .map(|task_id| {
+                            let rect = render_tasks[*task_id].get_target_rect().to_f32();
+                            ClearInstance {
+                                rect: [
+                                    rect.min.x, rect.min.y,
+                                    rect.max.x, rect.max.y,
+                                ],
+                                color: zero_color,
+                            }
+                        });
+
+                    let ones = target.one_clears
+                        .iter()
+                        .map(|task_id| {
+                            let rect = render_tasks[*task_id].get_target_rect().to_f32();
+                            ClearInstance {
+                                rect: [
+                                    rect.min.x, rect.min.y,
+                                    rect.max.x, rect.max.y,
+                                ],
+                                color: one_color,
+                            }
+                        });
+
+                    let other_zeroes = target.clears
+                        .iter()
+                        .map(|r| ClearInstance {
+                            rect: [
+                                r.min.x as f32, r.min.y as f32,
+                                r.max.x as f32, r.max.y as f32,
+                            ],
+                            color: zero_color,
+                        })
+                        .collect::<Vec<_>>();
+
+                    let instances = zeroes.chain(ones).chain(other_zeroes).collect::<Vec<_>>();
+                    self.shaders.borrow_mut().ps_clear.bind(
+                        &mut self.device,
+                        &projection,
+                        None,
+                        &mut self.renderer_errors,
+                        &mut self.profile,
+                    );
+                    self.draw_instanced_batch(
+                        &instances,
+                        VertexArrayKind::Clear,
+                        &BatchTextures::empty(),
+                        stats,
+                    );
+                } else {
                     // TODO(gw): Applying a scissor rect and minimal clear here
                     // is a very large performance win on the Intel and nVidia
                     // GPUs that I have tested with. It's possible it may be a
                     // performance penalty on other GPU types - we should test this
                     // and consider different code paths.
-                    //
-                    // Note: The above measurements were taken when render
-                    // target slices were minimum 2048x2048. Now that we size
-                    // them adaptively, this may be less of a win (except perhaps
-                    // on a mostly-unused last slice of a large texture array).
-                    Some(draw_target.to_framebuffer_rect(target.used_rect))
-                }
-                DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
-                    None
-                }
-            };
+                    for &task_id in &target.zero_clears {
+                        let rect = render_tasks[task_id].get_target_rect();
+                        self.device.clear_target(
+                            Some(zero_color),
+                            clear_depth,
+                            Some(draw_target.to_framebuffer_rect(rect)),
+                        );
+                    }
 
-            self.device.clear_target(
-                clear_color,
-                clear_depth,
-                clear_rect,
-            );
+                    for &task_id in &target.one_clears {
+                        let rect = render_tasks[task_id].get_target_rect();
+                        self.device.clear_target(
+                            Some(one_color),
+                            clear_depth,
+                            Some(draw_target.to_framebuffer_rect(rect)),
+                        );
+                    }
 
-            if clear_depth.is_some() {
-                self.device.disable_depth_write();
+                    for rect in &target.clears {
+                        self.device.clear_target(
+                            Some(zero_color),
+                            clear_depth,
+                            Some(draw_target.to_framebuffer_rect(*rect)),
+                        );
+                    }
+                }
+            } else if !target.cached && target.target_kind == RenderTargetKind::Color {
+                // TODO: There is an implicit assumption that non-cached color targets
+                // need to be cleared, unless they have clear instances.
+                // This is error-prone, and will probably mesh poorly with pictures
+                // soon being optionally cached. We should instead have the code that
+                // builds the target specify whether this single-clear code path is needed.
+
+                let clear_color = target
+                    .clear_color
+                    .map(|color| color.to_array());
+
+                let clear_rect = match draw_target {
+                    DrawTarget::NativeSurface { .. } => {
+                        unreachable!("bug: native compositor surface in child target");
+                    }
+                    DrawTarget::Default { rect, total_size, .. } if rect.min == FramebufferIntPoint::zero() && rect.size() == total_size => {
+                        // whole screen is covered, no need for scissor
+                        None
+                    }
+                    DrawTarget::Default { rect, .. } => {
+                        Some(rect)
+                    }
+                    DrawTarget::Texture { .. } if self.enable_clear_scissor => {
+                        // TODO(gw): Applying a scissor rect and minimal clear here
+                        // is a very large performance win on the Intel and nVidia
+                        // GPUs that I have tested with. It's possible it may be a
+                        // performance penalty on other GPU types - we should test this
+                        // and consider different code paths.
+                        //
+                        // Note: The above measurements were taken when render
+                        // target slices were minimum 2048x2048. Now that we size
+                        // them adaptively, this may be less of a win (except perhaps
+                        // on a mostly-unused last slice of a large texture array).
+                        target.used_rect.map(|rect| draw_target.to_framebuffer_rect(rect))
+                    }
+                    DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
+                        None
+                    }
+                };
+
+                self.device.clear_target(
+                    clear_color,
+                    clear_depth,
+                    clear_rect,
+                );
             }
+        }
+
+        if needs_depth {
+            self.device.disable_depth_write();
         }
 
         // Handle any resolves from parent pictures to this target
@@ -3573,425 +3745,6 @@ impl Renderer {
             render_tasks,
             draw_target,
         );
-
-        // Draw any blurs for this target.
-        // Blurs are rendered as a standard 2-pass
-        // separable implementation.
-        // TODO(gw): In the future, consider having
-        //           fast path blur shaders for common
-        //           blur radii with fixed weights.
-        if !target.vertical_blurs.is_empty() || !target.horizontal_blurs.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_BLUR);
-
-            self.set_blend(false, framebuffer_kind);
-            self.shaders.borrow_mut().cs_blur_rgba8
-                .bind(&mut self.device, projection, None, &mut self.renderer_errors, &mut self.profile);
-
-            if !target.vertical_blurs.is_empty() {
-                self.draw_blurs(
-                    &target.vertical_blurs,
-                    stats,
-                );
-            }
-
-            if !target.horizontal_blurs.is_empty() {
-                self.draw_blurs(
-                    &target.horizontal_blurs,
-                    stats,
-                );
-            }
-        }
-
-        self.handle_scaling(
-            &target.scalings,
-            projection,
-            stats,
-        );
-
-        for (ref textures, ref filters) in &target.svg_filters {
-            self.handle_svg_filters(
-                textures,
-                filters,
-                projection,
-                stats,
-            );
-        }
-
-        for (ref textures, ref filters) in &target.svg_nodes {
-            self.handle_svg_nodes(textures, filters, projection, stats);
-        }
-
-        for alpha_batch_container in &target.alpha_batch_containers {
-            self.draw_alpha_batch_container(
-                alpha_batch_container,
-                draw_target,
-                framebuffer_kind,
-                projection,
-                render_tasks,
-                stats,
-            );
-        }
-
-        self.handle_prims(
-            &draw_target,
-            &target.prim_instances,
-            &target.prim_instances_with_scissor,
-            projection,
-            stats,
-        );
-
-        self.handle_clips(
-            &draw_target,
-            &target.clip_masks,
-            projection,
-            stats,
-        );
-
-        if clear_depth.is_some() {
-            self.device.invalidate_depth_target();
-        }
-        if self.device.get_capabilities().supports_qcom_tiled_rendering {
-            self.device.gl().end_tiling_qcom(gl::COLOR_BUFFER_BIT0_QCOM);
-        }
-    }
-
-    fn draw_blurs(
-        &mut self,
-        blurs: &FastHashMap<TextureSource, Vec<BlurInstance>>,
-        stats: &mut RendererStats,
-    ) {
-        for (texture, blurs) in blurs {
-            let textures = BatchTextures::composite_rgb(
-                *texture,
-            );
-
-            self.draw_instanced_batch(
-                blurs,
-                VertexArrayKind::Blur,
-                &textures,
-                stats,
-            );
-        }
-    }
-
-    /// Draw all the instances in a clip batcher list to the current target.
-    fn draw_clip_batch_list(
-        &mut self,
-        list: &ClipBatchList,
-        projection: &default::Transform3D<f32>,
-        stats: &mut RendererStats,
-    ) {
-        if self.debug_flags.contains(DebugFlags::DISABLE_CLIP_MASKS) {
-            return;
-        }
-
-        // draw rounded cornered rectangles
-        if !list.slow_rectangles.is_empty() {
-            let _gm2 = self.gpu_profiler.start_marker("slow clip rectangles");
-            self.shaders.borrow_mut().cs_clip_rectangle_slow.bind(
-                &mut self.device,
-                projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-            );
-            self.draw_instanced_batch(
-                &list.slow_rectangles,
-                VertexArrayKind::ClipRect,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
-        if !list.fast_rectangles.is_empty() {
-            let _gm2 = self.gpu_profiler.start_marker("fast clip rectangles");
-            self.shaders.borrow_mut().cs_clip_rectangle_fast.bind(
-                &mut self.device,
-                projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-            );
-            self.draw_instanced_batch(
-                &list.fast_rectangles,
-                VertexArrayKind::ClipRect,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
-
-        // draw box-shadow clips
-        for (mask_texture_id, items) in list.box_shadows.iter() {
-            let _gm2 = self.gpu_profiler.start_marker("box-shadows");
-            let textures = BatchTextures::composite_rgb(*mask_texture_id);
-            self.shaders.borrow_mut().cs_clip_box_shadow
-                .bind(&mut self.device, projection, None, &mut self.renderer_errors, &mut self.profile);
-            self.draw_instanced_batch(
-                items,
-                VertexArrayKind::ClipBoxShadow,
-                &textures,
-                stats,
-            );
-        }
-    }
-
-    fn draw_alpha_target(
-        &mut self,
-        draw_target: DrawTarget,
-        target: &AlphaRenderTarget,
-        projection: &default::Transform3D<f32>,
-        render_tasks: &RenderTaskGraph,
-        stats: &mut RendererStats,
-    ) {
-        profile_scope!("draw_alpha_target");
-
-        self.profile.inc(profiler::ALPHA_PASSES);
-        let _gm = self.gpu_profiler.start_marker("alpha target");
-        let alpha_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_ALPHA);
-
-        {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_SETUP_TARGET);
-            self.device.bind_draw_target(draw_target);
-            self.device.disable_depth();
-            self.device.disable_depth_write();
-            self.set_blend(false, FramebufferKind::Other);
-
-            let zero_color = [0.0, 0.0, 0.0, 0.0];
-            let one_color = [1.0, 1.0, 1.0, 1.0];
-
-            // On some Adreno 4xx devices we have seen render tasks to alpha targets have no
-            // effect unless the target is fully cleared prior to rendering. See bug 1714227.
-            if self.device.get_capabilities().requires_alpha_target_full_clear {
-                self.device.clear_target(
-                    Some(zero_color),
-                    None,
-                    None,
-                );
-            }
-
-            // On some Mali-T devices we have observed crashes in subsequent draw calls
-            // immediately after clearing the alpha render target regions with glClear().
-            // Using the shader to clear the regions avoids the crash. See bug 1638593.
-            if self.clear_alpha_targets_with_quads
-                && !(target.zero_clears.is_empty() && target.one_clears.is_empty())
-            {
-                let zeroes = target.zero_clears
-                    .iter()
-                    .map(|task_id| {
-                        let rect = render_tasks[*task_id].get_target_rect().to_f32();
-                        ClearInstance {
-                            rect: [
-                                rect.min.x, rect.min.y,
-                                rect.max.x, rect.max.y,
-                            ],
-                            color: zero_color,
-                        }
-                    });
-
-                let ones = target.one_clears
-                    .iter()
-                    .map(|task_id| {
-                        let rect = render_tasks[*task_id].get_target_rect().to_f32();
-                        ClearInstance {
-                            rect: [
-                                rect.min.x, rect.min.y,
-                                rect.max.x, rect.max.y,
-                            ],
-                            color: one_color,
-                        }
-                    });
-
-                let instances = zeroes.chain(ones).collect::<Vec<_>>();
-                self.shaders.borrow_mut().ps_clear.bind(
-                    &mut self.device,
-                    &projection,
-                    None,
-                    &mut self.renderer_errors,
-                    &mut self.profile,
-                );
-                self.draw_instanced_batch(
-                    &instances,
-                    VertexArrayKind::Clear,
-                    &BatchTextures::empty(),
-                    stats,
-                );
-            } else {
-                // TODO(gw): Applying a scissor rect and minimal clear here
-                // is a very large performance win on the Intel and nVidia
-                // GPUs that I have tested with. It's possible it may be a
-                // performance penalty on other GPU types - we should test this
-                // and consider different code paths.
-                for &task_id in &target.zero_clears {
-                    let rect = render_tasks[task_id].get_target_rect();
-                    self.device.clear_target(
-                        Some(zero_color),
-                        None,
-                        Some(draw_target.to_framebuffer_rect(rect)),
-                    );
-                }
-
-                for &task_id in &target.one_clears {
-                    let rect = render_tasks[task_id].get_target_rect();
-                    self.device.clear_target(
-                        Some(one_color),
-                        None,
-                        Some(draw_target.to_framebuffer_rect(rect)),
-                    );
-                }
-            }
-        }
-
-        // Draw any blurs for this target.
-        // Blurs are rendered as a standard 2-pass
-        // separable implementation.
-        // TODO(gw): In the future, consider having
-        //           fast path blur shaders for common
-        //           blur radii with fixed weights.
-        if !target.vertical_blurs.is_empty() || !target.horizontal_blurs.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_BLUR);
-
-            self.shaders.borrow_mut().cs_blur_a8
-                .bind(&mut self.device, projection, None, &mut self.renderer_errors, &mut self.profile);
-
-            if !target.vertical_blurs.is_empty() {
-                self.draw_blurs(
-                    &target.vertical_blurs,
-                    stats,
-                );
-            }
-
-            if !target.horizontal_blurs.is_empty() {
-                self.draw_blurs(
-                    &target.horizontal_blurs,
-                    stats,
-                );
-            }
-        }
-
-        self.handle_scaling(
-            &target.scalings,
-            projection,
-            stats,
-        );
-
-        // Draw the clip items into the tiled alpha mask.
-        {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_CLIP);
-
-            // TODO(gw): Consider grouping multiple clip masks per shader
-            //           invocation here to reduce memory bandwith further?
-
-            // Draw the primary clip mask - since this is the first mask
-            // for the task, we can disable blending, knowing that it will
-            // overwrite every pixel in the mask area.
-            self.set_blend(false, FramebufferKind::Other);
-            self.draw_clip_batch_list(
-                &target.clip_batcher.primary_clips,
-                projection,
-                stats,
-            );
-
-            // switch to multiplicative blending for secondary masks, using
-            // multiplicative blending to accumulate clips into the mask.
-            self.set_blend(true, FramebufferKind::Other);
-            self.set_blend_mode_multiply(FramebufferKind::Other);
-            self.draw_clip_batch_list(
-                &target.clip_batcher.secondary_clips,
-                projection,
-                stats,
-            );
-
-            self.handle_clips(
-                &draw_target,
-                &target.clip_masks,
-                projection,
-                stats,
-            );
-        }
-
-        self.gpu_profiler.finish_sampler(alpha_sampler);
-    }
-
-    fn draw_texture_cache_target(
-        &mut self,
-        texture: &CacheTextureId,
-        target: &TextureCacheRenderTarget,
-        render_tasks: &RenderTaskGraph,
-        stats: &mut RendererStats,
-    ) {
-        profile_scope!("draw_texture_cache_target");
-
-        self.device.disable_depth();
-        self.device.disable_depth_write();
-
-        self.set_blend(false, FramebufferKind::Other);
-
-        let texture = &self.texture_resolver.texture_cache_map[texture].texture;
-        let target_size = texture.get_dimensions();
-
-        let projection = Transform3D::ortho(
-            0.0,
-            target_size.width as f32,
-            0.0,
-            target_size.height as f32,
-            self.device.ortho_near_plane(),
-            self.device.ortho_far_plane(),
-        );
-
-        let draw_target = DrawTarget::from_texture(
-            texture,
-            false,
-        );
-        self.device.bind_draw_target(draw_target);
-
-        {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CLEAR);
-
-            self.device.disable_depth();
-            self.device.disable_depth_write();
-            self.set_blend(false, FramebufferKind::Other);
-
-            let color = [0.0, 0.0, 0.0, 0.0];
-            if self.clear_caches_with_quads && !target.clears.is_empty() {
-                let instances = target.clears
-                    .iter()
-                    .map(|r| ClearInstance {
-                        rect: [
-                            r.min.x as f32, r.min.y as f32,
-                            r.max.x as f32, r.max.y as f32,
-                        ],
-                        color,
-                    })
-                    .collect::<Vec<_>>();
-                self.shaders.borrow_mut().ps_clear.bind(
-                    &mut self.device,
-                    &projection,
-                    None,
-                    &mut self.renderer_errors,
-                    &mut self.profile,
-                );
-                self.draw_instanced_batch(
-                    &instances,
-                    VertexArrayKind::Clear,
-                    &BatchTextures::empty(),
-                    stats,
-                );
-            } else {
-                for rect in &target.clears {
-                    self.device.clear_target(
-                        Some(color),
-                        None,
-                        Some(draw_target.to_framebuffer_rect(*rect)),
-                    );
-                }
-            }
-
-            // Handle any blits to this texture from child tasks.
-            self.handle_blits(
-                &target.blits,
-                render_tasks,
-                draw_target,
-            );
-        }
 
         // Draw any borders for this target.
         if !target.border_segments_solid.is_empty() ||
@@ -4165,19 +3918,196 @@ impl Renderer {
         }
 
         // Draw any blurs for this target.
-        if !target.horizontal_blurs.is_empty() {
+        // Blurs are rendered as a standard 2-pass
+        // separable implementation.
+        // TODO(gw): In the future, consider having
+        //           fast path blur shaders for common
+        //           blur radii with fixed weights.
+        if !target.vertical_blurs.is_empty() || !target.horizontal_blurs.is_empty() {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_BLUR);
 
-            {
-                let mut shaders = self.shaders.borrow_mut();
-                match target.target_kind {
-                    RenderTargetKind::Alpha => &mut shaders.cs_blur_a8,
-                    RenderTargetKind::Color => &mut shaders.cs_blur_rgba8,
-                }.bind(&mut self.device, &projection, None, &mut self.renderer_errors, &mut self.profile);
+            self.set_blend(false, framebuffer_kind);
+            self.shaders.borrow_mut().cs_blur_rgba8
+                .bind(&mut self.device, &projection, None, &mut self.renderer_errors, &mut self.profile);
+
+            if !target.vertical_blurs.is_empty() {
+                self.draw_blurs(
+                    &target.vertical_blurs,
+                    stats,
+                );
             }
 
-            self.draw_blurs(
-                &target.horizontal_blurs,
+            if !target.horizontal_blurs.is_empty() {
+                self.draw_blurs(
+                    &target.horizontal_blurs,
+                    stats,
+                );
+            }
+        }
+
+        self.handle_scaling(
+            &target.scalings,
+            &projection,
+            stats,
+        );
+
+        for (ref textures, ref filters) in &target.svg_filters {
+            self.handle_svg_filters(
+                textures,
+                filters,
+                &projection,
+                stats,
+            );
+        }
+
+        for (ref textures, ref filters) in &target.svg_nodes {
+            self.handle_svg_nodes(textures, filters, &projection, stats);
+        }
+
+        for alpha_batch_container in &target.alpha_batch_containers {
+            self.draw_alpha_batch_container(
+                alpha_batch_container,
+                draw_target,
+                framebuffer_kind,
+                &projection,
+                render_tasks,
+                stats,
+            );
+        }
+
+        self.handle_prims(
+            &draw_target,
+            &target.prim_instances,
+            &target.prim_instances_with_scissor,
+            &projection,
+            stats,
+        );
+
+        // Draw the clip items into the tiled alpha mask.
+        {
+            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_CLIP);
+
+            // TODO(gw): Consider grouping multiple clip masks per shader
+            //           invocation here to reduce memory bandwith further?
+
+            if !target.clip_batcher.primary_clips.is_empty() {
+                // Draw the primary clip mask - since this is the first mask
+                // for the task, we can disable blending, knowing that it will
+                // overwrite every pixel in the mask area.
+                self.set_blend(false, FramebufferKind::Other);
+                self.draw_clip_batch_list(
+                    &target.clip_batcher.primary_clips,
+                    &projection,
+                    stats,
+                );
+            }
+
+            if !target.clip_batcher.secondary_clips.is_empty() {
+                // switch to multiplicative blending for secondary masks, using
+                // multiplicative blending to accumulate clips into the mask.
+                self.set_blend(true, FramebufferKind::Other);
+                self.set_blend_mode_multiply(FramebufferKind::Other);
+                self.draw_clip_batch_list(
+                    &target.clip_batcher.secondary_clips,
+                    &projection,
+                    stats,
+                );
+            }
+
+            self.handle_clips(
+                &draw_target,
+                &target.clip_masks,
+                &projection,
+                stats,
+            );
+        }
+
+        if needs_depth {
+            self.device.invalidate_depth_target();
+        }
+        if self.device.get_capabilities().supports_qcom_tiled_rendering {
+            self.device.gl().end_tiling_qcom(gl::COLOR_BUFFER_BIT0_QCOM);
+        }
+
+        if let Some(sampler) = sampler_query {
+            self.gpu_profiler.finish_sampler(sampler);
+        }
+    }
+
+    fn draw_blurs(
+        &mut self,
+        blurs: &FastHashMap<TextureSource, FrameVec<BlurInstance>>,
+        stats: &mut RendererStats,
+    ) {
+        for (texture, blurs) in blurs {
+            let textures = BatchTextures::composite_rgb(
+                *texture,
+            );
+
+            self.draw_instanced_batch(
+                blurs,
+                VertexArrayKind::Blur,
+                &textures,
+                stats,
+            );
+        }
+    }
+
+    /// Draw all the instances in a clip batcher list to the current target.
+    fn draw_clip_batch_list(
+        &mut self,
+        list: &ClipBatchList,
+        projection: &default::Transform3D<f32>,
+        stats: &mut RendererStats,
+    ) {
+        if self.debug_flags.contains(DebugFlags::DISABLE_CLIP_MASKS) {
+            return;
+        }
+
+        // draw rounded cornered rectangles
+        if !list.slow_rectangles.is_empty() {
+            let _gm2 = self.gpu_profiler.start_marker("slow clip rectangles");
+            self.shaders.borrow_mut().cs_clip_rectangle_slow.bind(
+                &mut self.device,
+                projection,
+                None,
+                &mut self.renderer_errors,
+                &mut self.profile,
+            );
+            self.draw_instanced_batch(
+                &list.slow_rectangles,
+                VertexArrayKind::ClipRect,
+                &BatchTextures::empty(),
+                stats,
+            );
+        }
+        if !list.fast_rectangles.is_empty() {
+            let _gm2 = self.gpu_profiler.start_marker("fast clip rectangles");
+            self.shaders.borrow_mut().cs_clip_rectangle_fast.bind(
+                &mut self.device,
+                projection,
+                None,
+                &mut self.renderer_errors,
+                &mut self.profile,
+            );
+            self.draw_instanced_batch(
+                &list.fast_rectangles,
+                VertexArrayKind::ClipRect,
+                &BatchTextures::empty(),
+                stats,
+            );
+        }
+
+        // draw box-shadow clips
+        for (mask_texture_id, items) in list.box_shadows.iter() {
+            let _gm2 = self.gpu_profiler.start_marker("box-shadows");
+            let textures = BatchTextures::composite_rgb(*mask_texture_id);
+            self.shaders.borrow_mut().cs_clip_box_shadow
+                .bind(&mut self.device, projection, None, &mut self.renderer_errors, &mut self.profile);
+            self.draw_instanced_batch(
+                items,
+                VertexArrayKind::ClipBoxShadow,
+                &textures,
                 stats,
             );
         }
@@ -4634,8 +4564,8 @@ impl Renderer {
             // skipped this time.
             if !frame.has_been_rendered {
                 for (&texture_id, target) in &pass.texture_cache {
-                    self.draw_texture_cache_target(
-                        &texture_id,
+                    self.draw_render_target(
+                        texture_id,
                         target,
                         &frame.render_tasks,
                         &mut results.stats,
@@ -4719,74 +4649,20 @@ impl Renderer {
 
             for target in &pass.alpha.targets {
                 results.stats.alpha_target_count += 1;
-
-                let texture_id = target.texture_id();
-
-                let alpha_tex = self.texture_resolver.get_cache_texture_mut(&texture_id);
-
-                let draw_target = DrawTarget::from_texture(
-                    alpha_tex,
-                    false,
-                );
-
-                let projection = Transform3D::ortho(
-                    0.0,
-                    draw_target.dimensions().width as f32,
-                    0.0,
-                    draw_target.dimensions().height as f32,
-                    self.device.ortho_near_plane(),
-                    self.device.ortho_far_plane(),
-                );
-
-                self.draw_alpha_target(
-                    draw_target,
+                self.draw_render_target(
+                    target.texture_id(),
                     target,
-                    &projection,
                     &frame.render_tasks,
                     &mut results.stats,
                 );
             }
 
-            let color_rt_info = RenderTargetInfo { has_depth: pass.color.needs_depth() };
-
             for target in &pass.color.targets {
                 results.stats.color_target_count += 1;
-
-                let texture_id = target.texture_id();
-
-                let color_tex = self.texture_resolver.get_cache_texture_mut(&texture_id);
-
-                self.device.reuse_render_target::<u8>(
-                    color_tex,
-                    color_rt_info,
-                );
-
-                let draw_target = DrawTarget::from_texture(
-                    color_tex,
-                    target.needs_depth(),
-                );
-
-                let projection = Transform3D::ortho(
-                    0.0,
-                    draw_target.dimensions().width as f32,
-                    0.0,
-                    draw_target.dimensions().height as f32,
-                    self.device.ortho_near_plane(),
-                    self.device.ortho_far_plane(),
-                );
-
-                let clear_depth = if target.needs_depth() {
-                    Some(1.0)
-                } else {
-                    None
-                };
-
-                self.draw_color_target(
-                    draw_target,
+                self.draw_render_target(
+                    target.texture_id(),
                     target,
-                    clear_depth,
                     &frame.render_tasks,
-                    &projection,
                     &mut results.stats,
                 );
             }
@@ -4943,20 +4819,26 @@ impl Renderer {
 
         for item in items {
             match item {
-                DebugItem::Rect { rect, outer_color, inner_color } => {
-                    debug_renderer.add_quad(
-                        rect.min.x,
-                        rect.min.y,
-                        rect.max.x,
-                        rect.max.y,
-                        (*inner_color).into(),
-                        (*inner_color).into(),
-                    );
+                DebugItem::Rect { rect, outer_color, inner_color, thickness } => {
+                    if inner_color.a > 0.001 {
+                        let rect = rect.inflate(-thickness as f32, -thickness as f32);
+                        debug_renderer.add_quad(
+                            rect.min.x,
+                            rect.min.y,
+                            rect.max.x,
+                            rect.max.y,
+                            (*inner_color).into(),
+                            (*inner_color).into(),
+                        );
+                    }
 
-                    debug_renderer.add_rect(
-                        &rect.to_i32(),
-                        (*outer_color).into(),
-                    );
+                    if outer_color.a > 0.001 {
+                        debug_renderer.add_rect(
+                            &rect.to_i32(),
+                            *thickness,
+                            (*outer_color).into(),
+                        );
+                    }
                 }
                 DebugItem::Text { ref msg, position, color } => {
                     debug_renderer.add_text(
@@ -5042,6 +4924,7 @@ impl Renderer {
 
         debug_renderer.add_rect(
             &target_rect.inflate(1, 1),
+            1,
             debug_colors::RED.into(),
         );
 
@@ -5384,11 +5267,6 @@ impl Renderer {
         self.device.end_frame();
     }
 
-    fn size_of<T>(&self, ptr: *const T) -> usize {
-        let ops = self.size_of_ops.as_ref().unwrap();
-        unsafe { ops.malloc_size_of(ptr) }
-    }
-
     /// Collects a memory report.
     pub fn report_memory(&self, swgl: *mut c_void) -> MemoryReport {
         let mut report = MemoryReport::default();
@@ -5400,8 +5278,9 @@ impl Renderer {
 
         // Render task CPU memory.
         for (_id, doc) in &self.active_documents {
-            report.render_tasks += self.size_of(doc.frame.render_tasks.tasks.as_ptr());
-            report.render_tasks += self.size_of(doc.frame.render_tasks.task_data.as_ptr());
+            let frame_alloc_stats = doc.frame.allocator_memory.get_stats();
+            report.frame_allocator += frame_alloc_stats.reserved_bytes;
+            report.render_tasks += doc.frame.render_tasks.report_memory();
         }
 
         // Vertex data GPU memory.
@@ -5729,7 +5608,7 @@ impl Renderer {
                 .expect("Unable to lock the external image handler!");
             for def in &deferred_images {
                 info!("\t{}", def.short_path);
-                let ExternalImageData { id, channel_index, image_type } = def.external;
+                let ExternalImageData { id, channel_index, image_type, .. } = def.external;
                 // The image rendering parameter is irrelevant because no filtering happens during capturing.
                 let ext_image = handler.lock(id, channel_index);
                 let (data, short_path) = match ext_image.source {

@@ -114,7 +114,7 @@ add_task(async function test_translated_div_element_and_visible_change() {
   cleanup();
 });
 
-add_task(async function test_translated_textnode() {
+add_task(async function test_translated_txtnode() {
   const { translate, htmlMatches, cleanup } = await createDoc(
     "This is a simple text translation."
   );
@@ -1109,6 +1109,37 @@ add_task(async function test_tables() {
           </tr>
         </tbody>
       </table>
+    `
+  );
+
+  cleanup();
+});
+
+add_task(async function test_option_values() {
+  const { translate, htmlMatches, cleanup } = await createDoc(/* html */ `
+      <select>
+          <option>Red</option>
+          <option>Orange</option>
+          <option>Yellow</option>
+          <option value="Green">Green</option>
+          <option value="Blue">Blue</option>
+          <option value="Purple">Purple</option>
+      </select>
+  `);
+
+  translate();
+
+  await htmlMatches(
+    "Option values are not changed",
+    /* html */ `
+      <select>
+          <option value="Red">RED</option>
+          <option value="Orange">ORANGE</option>
+          <option value="Yellow">YELLOW</option>
+          <option value="Green">GREEN</option>
+          <option value="Blue">BLUE</option>
+          <option value="Purple">PURPLE</option>
+      </select>
     `
   );
 

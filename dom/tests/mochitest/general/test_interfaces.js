@@ -49,7 +49,7 @@ const isInsecureContext = !window.isSecureContext;
 const isFennec =
   isAndroid &&
   SpecialPowers.Cc["@mozilla.org/android/bridge;1"].getService(
-    SpecialPowers.Ci.nsIAndroidBridge
+    SpecialPowers.Ci.nsIGeckoViewBridge
   ).isFennec;
 const isCrossOriginIsolated = window.crossOriginIsolated;
 
@@ -277,6 +277,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CountQueuingStrategy", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CookieChangeEvent", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CookieStore", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Credential" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CredentialsContainer" },
@@ -320,6 +324,8 @@ let interfaceNamesInGlobalScope = [
   { name: "CSSMozDocumentRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSNamespaceRule", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSNestedDeclarations", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPageDescriptors", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -773,11 +779,11 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ImageData", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ImageDecoder", nightly: true },
+  { name: "ImageDecoder" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ImageTrack", nightly: true },
+  { name: "ImageTrack" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ImageTrackList", nightly: true },
+  { name: "ImageTrackList" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "InputEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1460,13 +1466,13 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ValidityState", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "VideoColorSpace", insecureContext: true, nightlyAndroid: true },
+  { name: "VideoColorSpace", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VideoDecoder", nightlyAndroid: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VideoEncoder", nightlyAndroid: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "VideoFrame", insecureContext: true, nightlyAndroid: true },
+  { name: "VideoFrame", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VideoPlaybackQuality", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1538,6 +1544,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Window", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WGSLLanguageFeatures", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Worker", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Worklet", insecureContext: false },
@@ -1595,6 +1603,8 @@ let interfaceNamesInGlobalScope = [
   { name: "confirm", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "console", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "cookieStore", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "createImageBitmap", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

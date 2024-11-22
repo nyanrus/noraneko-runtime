@@ -2839,35 +2839,6 @@ bool nsGlobalWindowOuter::AreDialogsEnabled() {
   return group->GetAreDialogsEnabled();
 }
 
-bool nsGlobalWindowOuter::ConfirmDialogIfNeeded() {
-  NS_ENSURE_TRUE(mDocShell, false);
-  nsCOMPtr<nsIPromptService> promptSvc =
-      do_GetService("@mozilla.org/prompter;1");
-
-  if (!promptSvc) {
-    return true;
-  }
-
-  // Reset popup state while opening a modal dialog, and firing events
-  // about the dialog, to prevent the current state from being active
-  // the whole time a modal dialog is open.
-  AutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused, true);
-
-  bool disableDialog = false;
-  nsAutoString label, title;
-  nsContentUtils::GetLocalizedString(nsContentUtils::eCOMMON_DIALOG_PROPERTIES,
-                                     "ScriptDialogLabel", label);
-  nsContentUtils::GetLocalizedString(nsContentUtils::eCOMMON_DIALOG_PROPERTIES,
-                                     "ScriptDialogPreventTitle", title);
-  promptSvc->Confirm(this, title.get(), label.get(), &disableDialog);
-  if (disableDialog) {
-    DisableDialogs();
-    return false;
-  }
-
-  return true;
-}
-
 void nsGlobalWindowOuter::DisableDialogs() {
   BrowsingContextGroup* group = mBrowsingContext->Group();
   if (!group) {
@@ -5007,7 +4978,9 @@ void nsGlobalWindowOuter::PrintOuter(ErrorResult& aError) {
     }
   });
 
-  const bool forPreview = !StaticPrefs::print_always_print_silent();
+  const bool forPreview =
+      !StaticPrefs::print_always_print_silent() &&
+      !Preferences::GetBool("print.prefer_system_dialog", false);
   Print(nullptr, nullptr, nullptr, nullptr, IsPreview(forPreview),
         IsForWindowDotPrint::Yes, nullptr, nullptr, aError);
 #endif
@@ -5414,18 +5387,12 @@ void nsGlobalWindowOuter::ResizeByOuter(int32_t aWidthDif, int32_t aHeightDif,
 }
 
 void nsGlobalWindowOuter::SizeToContentOuter(
-    CallerType aCallerType, const SizeToContentConstraints& aConstraints,
-    ErrorResult& aError) {
+    const SizeToContentConstraints& aConstraints, ErrorResult& aError) {
   if (!mDocShell) {
     return;
   }
 
-  /*
-   * If caller is not chrome and the user has not explicitly exempted the site,
-   * prevent window.sizeToContent() by exiting early
-   */
-
-  if (!CanMoveResizeWindows(aCallerType) || mBrowsingContext->IsSubframe()) {
+  if (mBrowsingContext->IsSubframe()) {
     return;
   }
 
@@ -5443,8 +5410,6 @@ void nsGlobalWindowOuter::SizeToContentOuter(
     return aError.Throw(NS_ERROR_FAILURE);
   }
 
-  // Make sure the new size is following the CheckSecurityWidthAndHeight
-  // rules.
   nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
   if (!treeOwner) {
     return aError.Throw(NS_ERROR_FAILURE);
@@ -5459,7 +5424,6 @@ void nsGlobalWindowOuter::SizeToContentOuter(
       presContext,
       "Should be non-nullptr if nsIDocumentViewer::GetContentSize() succeeded");
   CSSIntSize cssSize = *contentSize;
-  CheckSecurityWidthAndHeight(&cssSize.width, &cssSize.height, aCallerType);
 
   LayoutDeviceIntSize newDevSize(
       presContext->CSSPixelsToDevPixels(cssSize.width),
@@ -6788,16 +6752,8 @@ nsresult nsGlobalWindowOuter::OpenInternal(
   // If noopener is force-enabled for the current document, then set noopener to
   // true, and clear the name to "_blank".
   nsAutoString windowName(aName);
-  if (nsDocShell::Cast(GetDocShell())->NoopenerForceEnabled()) {
-    // FIXME: Eventually bypass force-enabling noopener if `aPrintKind !=
-    // PrintKind::None`, so that we can print pages with noopener force-enabled.
-    // This will require relaxing assertions elsewhere.
-    if (aPrintKind != PrintKind::None) {
-      NS_WARNING(
-          "printing frames with noopener force-enabled isn't supported yet");
-      return NS_ERROR_FAILURE;
-    }
-
+  if (nsDocShell::Cast(GetDocShell())->NoopenerForceEnabled() &&
+      aPrintKind == PrintKind::None) {
     MOZ_DIAGNOSTIC_ASSERT(aNavigate,
                           "cannot OpenNoNavigate if noopener is force-enabled");
 

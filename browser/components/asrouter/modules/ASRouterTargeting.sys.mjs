@@ -5,6 +5,9 @@
 const FXA_ENABLED_PREF = "identity.fxaccounts.enabled";
 const DISTRIBUTION_ID_PREF = "distribution.id";
 const DISTRIBUTION_ID_CHINA_REPACK = "MozillaOnline";
+const TOPIC_SELECTION_MODAL_LAST_DISPLAYED_PREF =
+  "browser.newtabpage.activity-stream.discoverystream.topicSelection.onboarding.lastDisplayed";
+const NOTIFICATION_INTERVAL_AFTER_TOPIC_MODAL_MS = 60000; // Assuming avoid notification up to 1 minute after newtab Topic Notification Modal
 
 // We use importESModule here instead of static import so that
 // the Karma test environment won't choke on this module. This
@@ -47,6 +50,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   HomePage: "resource:///modules/HomePage.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
@@ -152,6 +158,23 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "totalSearches",
   "browser.search.totalSearches",
   0
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "newTabTopicModalLastSeen",
+  TOPIC_SELECTION_MODAL_LAST_DISPLAYED_PREF,
+  null,
+  lastSeenString => {
+    return Number.isInteger(parseInt(lastSeenString, 10))
+      ? parseInt(lastSeenString, 10)
+      : 0;
+  }
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "profileStoreID",
+  "toolkit.profiles.storeID",
+  null
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -536,6 +559,10 @@ function decodeAttributionValue(value) {
   return decodedValue;
 }
 
+async function getPinStatus() {
+  return await ShellService.doesAppNeedPin();
+}
+
 const TargetingGetters = {
   get locale() {
     return Services.locale.appLocaleAsBCP47;
@@ -558,6 +585,15 @@ const TargetingGetters = {
   },
   get currentDate() {
     return new Date();
+  },
+  get canCreateSelectableProfiles() {
+    if (!AppConstants.MOZ_SELECTABLE_PROFILES) {
+      return null;
+    }
+    return !!lazy.SelectableProfileService?.groupToolkitProfile;
+  },
+  get hasSelectableProfiles() {
+    return !!lazy.profileStoreID;
   },
   get profileAgeCreated() {
     return lazy.ProfileAge().then(times => times.created);
@@ -613,6 +649,8 @@ const TargetingGetters = {
             type: addon.type,
             isSystem: addon.isSystem,
             isWebExtension: addon.isWebExtension,
+            hidden: addon.hidden,
+            isBuiltin: addon.isBuiltin,
           };
           if (fullData) {
             Object.assign(info[addon.id], {
@@ -649,6 +687,9 @@ const TargetingGetters = {
   },
   get isDefaultBrowser() {
     return QueryCache.getters.isDefaultBrowser.get().catch(() => null);
+  },
+  get isDefaultBrowserUncached() {
+    return ShellService.isDefaultBrowser();
   },
   get devToolsOpenedCount() {
     return lazy.devtoolsSelfXSSCount;
@@ -821,10 +862,14 @@ const TargetingGetters = {
       return true;
     }
 
+    let duration = Date.now() - lazy.newTabTopicModalLastSeen;
     if (
       window.gURLBar?.view.isOpen ||
       window.gNotificationBox?.currentNotification ||
-      window.gBrowser.getNotificationBox()?.currentNotification
+      window.gBrowser.getNotificationBox()?.currentNotification ||
+      // Avoid showing messages if the newtab Topic selection modal was shown in
+      // the past 1 minute
+      duration <= NOTIFICATION_INTERVAL_AFTER_TOPIC_MODAL_MS
     ) {
       return true;
     }
@@ -851,6 +896,10 @@ const TargetingGetters = {
         (await QueryCache.getters.doesAppNeedStartMenuPin.get())
       );
     })();
+  },
+
+  get doesAppNeedPinUncached() {
+    return getPinStatus();
   },
 
   get doesAppNeedPrivatePin() {
@@ -1055,6 +1104,14 @@ const TargetingGetters = {
       bits = Number(bits);
     }
     return bits;
+  },
+
+  get systemArch() {
+    try {
+      return Services.sysinfo.get("arch");
+    } catch (_e) {
+      return null;
+    }
   },
 
   get memoryMB() {

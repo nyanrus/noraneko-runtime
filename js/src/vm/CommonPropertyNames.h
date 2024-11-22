@@ -91,6 +91,7 @@
   MACRO_(close, "close")                                                       \
   MACRO_(collation, "collation")                                               \
   MACRO_(collections, "collections")                                           \
+  MACRO_(column, "column")                                                     \
   MACRO_(columnNumber, "columnNumber")                                         \
   MACRO1(comma_, ",")                                                          \
   MACRO_(compact, "compact")                                                   \
@@ -137,8 +138,13 @@
   MACRO_(deleteProperty, "deleteProperty")                                     \
   MACRO_(detached, "detached")                                                 \
   MACRO_(difference, "difference")                                             \
+  MACRO_(direction, "direction")                                               \
   MACRO_(disambiguation, "disambiguation")                                     \
   MACRO_(displayURL, "displayURL")                                             \
+  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                             \
+      MACRO_(DisposeResourcesAsync, "DisposeResourcesAsync"))                  \
+  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                             \
+      MACRO_(DisposeResourcesSync, "DisposeResourcesSync"))                    \
   MACRO2(do_, "do")                                                            \
   MACRO_(dollar_ArrayBufferSpecies_, "$ArrayBufferSpecies")                    \
   MACRO_(dollar_ArraySpecies_, "$ArraySpecies")                                \
@@ -167,6 +173,7 @@
   MACRO_(emptyRegExp_, "(?:)")                                                 \
   MACRO_(encodeURI, "encodeURI")                                               \
   MACRO_(encodeURIComponent, "encodeURIComponent")                             \
+  MACRO_(end, "end")                                                           \
   MACRO_(endRange, "endRange")                                                 \
   MACRO_(endTimestamp, "endTimestamp")                                         \
   MACRO_(entries, "entries")                                                   \
@@ -316,6 +323,7 @@
   MACRO_(isDisjointFrom, "isDisjointFrom")                                     \
   MACRO_(isEntryPoint, "isEntryPoint")                                         \
   MACRO_(isExtensible, "isExtensible")                                         \
+  MACRO_(isError, "isError")                                                   \
   MACRO_(isFinite, "isFinite")                                                 \
   MACRO_(isNaN, "isNaN")                                                       \
   MACRO_(IsNullOrUndefined, "IsNullOrUndefined")                               \
@@ -479,6 +487,7 @@
   MACRO_(public_, "public")                                                    \
   MACRO_(pull, "pull")                                                         \
   MACRO_(quarter, "quarter")                                                   \
+  MACRO_(range, "range")                                                       \
   MACRO_(raw, "raw")                                                           \
   MACRO_(rawJSON, "rawJSON")                                                   \
   MACRO_(read, "read")                                                         \
@@ -545,6 +554,7 @@
   MACRO_(String_split, "String_split")                                         \
   MACRO_(StructType, "StructType")                                             \
   MACRO_(style, "style")                                                       \
+  MACRO_(sumPrecise, "sumPrecise")                                             \
   MACRO_(super, "super")                                                       \
   IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO_(suppressed, "suppressed"))            \
   MACRO_(switch_, "switch")                                                    \
@@ -647,6 +657,8 @@
   MACRO_(years, "years")                                                       \
   MACRO_(yield, "yield")                                                       \
   MACRO_(zero, "zero")                                                         \
+  MACRO_(zip, "zip")                                                           \
+  MACRO_(zipKeyed, "zipKeyed")                                                 \
   /* Type names must be contiguous and ordered; see js::TypeName. */           \
   MACRO_(undefined, "undefined")                                               \
   MACRO_(object, "object")                                                     \

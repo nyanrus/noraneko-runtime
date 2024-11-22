@@ -572,7 +572,9 @@ async function doTest({
     let stub = sandbox
       .stub(feature, "makeResult")
       .callsFake((queryContext, suggestion, searchString) => {
-        actualScore = suggestion.score;
+        if (suggestion.url == expectedResult.payload.originalUrl) {
+          actualScore = suggestion.score;
+        }
         return stub.wrappedMethod.call(
           feature,
           queryContext,
@@ -659,7 +661,7 @@ function makeExpectedDefaultMerinoResult({ suggestion }) {
       source: "merino",
       provider: suggestion.provider,
       telemetryType: suggestion.provider,
-      isSponsored: suggestion.is_sponsored,
+      isSponsored: !!suggestion.is_sponsored,
       title: suggestion.title,
       url: suggestion.url,
       displayUrl: suggestion.url.replace(/^https:\/\//, ""),

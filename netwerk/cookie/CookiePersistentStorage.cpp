@@ -31,7 +31,7 @@
 // This is a hack to hide HttpOnly cookies from older browsers
 #define HTTP_ONLY_PREFIX "#HttpOnly_"
 
-constexpr auto COOKIES_SCHEMA_VERSION = 13;
+constexpr auto COOKIES_SCHEMA_VERSION = 14;
 
 // parameter indexes; see |Read|
 constexpr auto IDX_NAME = 0;
@@ -1388,10 +1388,6 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
 
         COOKIE_LOGSTRING(LogLevel::Debug,
                          ("Upgraded database to schema version 12"));
-
-        // No more upgrades. Update the schema version.
-        rv = mSyncConn->SetSchemaVersion(COOKIES_SCHEMA_VERSION);
-        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
       }
         [[fallthrough]];
 
@@ -1404,6 +1400,15 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
 
         COOKIE_LOGSTRING(LogLevel::Debug,
                          ("Upgraded database to schema version 13"));
+
+        [[fallthrough]];
+      }
+
+      case 13: {
+        rv = mSyncConn->ExecuteSimpleSQL(
+            nsLiteralCString("UPDATE moz_cookies SET expiry = unixepoch() + "
+                             "34560000 WHERE expiry > unixepoch() + 34560000"));
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
 
         // No more upgrades. Update the schema version.
         rv = mSyncConn->SetSchemaVersion(COOKIES_SCHEMA_VERSION);
@@ -1726,24 +1731,30 @@ void CookiePersistentStorage::EnsureInitialized() {
   bool isAccumulated = false;
 
   if (!mInitialized) {
+#ifndef ANDROID
     TimeStamp startBlockTime = TimeStamp::Now();
+#endif
     MonitorAutoLock lock(mMonitor);
 
     while (!mInitialized) {
       mMonitor.Wait();
     }
-
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::MOZ_SQLITE_COOKIES_BLOCK_MAIN_THREAD_MS_V2, startBlockTime);
-    Telemetry::Accumulate(
-        Telemetry::MOZ_SQLITE_COOKIES_TIME_TO_BLOCK_MAIN_THREAD_MS, 0);
+#ifndef ANDROID
+    TimeStamp endBlockTime = TimeStamp::Now();
+    mozilla::glean::networking::sqlite_cookies_block_main_thread
+        .AccumulateRawDuration(endBlockTime - startBlockTime);
+    mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
+        .AccumulateRawDuration(TimeDuration::Zero());
+#endif
     isAccumulated = true;
   } else if (!mEndInitDBConn.IsNull()) {
     // We didn't block main thread, and here comes the first cookie request.
     // Collect how close we're going to block main thread.
-    Telemetry::Accumulate(
-        Telemetry::MOZ_SQLITE_COOKIES_TIME_TO_BLOCK_MAIN_THREAD_MS,
-        (TimeStamp::Now() - mEndInitDBConn).ToMilliseconds());
+#ifndef ANDROID
+    TimeStamp now = TimeStamp::Now();
+    mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
+        .AccumulateRawDuration(now - mEndInitDBConn);
+#endif
     // Nullify the timestamp so wo don't accumulate this telemetry probe again.
     mEndInitDBConn = TimeStamp();
     isAccumulated = true;
@@ -1751,8 +1762,10 @@ void CookiePersistentStorage::EnsureInitialized() {
     // A request comes while we finished cookie thread task and InitDBConn is
     // on the way from cookie thread to main thread. We're very close to block
     // main thread.
-    Telemetry::Accumulate(
-        Telemetry::MOZ_SQLITE_COOKIES_TIME_TO_BLOCK_MAIN_THREAD_MS, 0);
+#ifndef ANDROID
+    mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
+        .AccumulateRawDuration(TimeDuration::Zero());
+#endif
     isAccumulated = true;
   }
 

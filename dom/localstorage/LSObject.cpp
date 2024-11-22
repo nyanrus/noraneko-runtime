@@ -31,7 +31,8 @@
 #include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/dom/PBackgroundLSRequest.h"
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
-#include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/PrincipalUtils.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -183,7 +184,7 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
   NS_DECL_NSIRUNNABLE
 
   // LSRequestChildCallback
-  void OnResponse(const LSRequestResponse& aResponse) override;
+  void OnResponse(LSRequestResponse&& aResponse) override;
 };
 
 void AssertExplicitSnapshotInvariants(const LSObject& aObject) {
@@ -277,23 +278,20 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(storagePrincipalInfo->type() ==
              PrincipalInfo::TContentPrincipalInfo);
 
-  if (NS_WARN_IF(
-          !quota::QuotaManager::IsPrincipalInfoValid(*storagePrincipalInfo))) {
+  if (NS_WARN_IF(!quota::IsPrincipalInfoValid(*storagePrincipalInfo))) {
     return NS_ERROR_FAILURE;
   }
 
 #ifdef DEBUG
-  QM_TRY_INSPECT(
-      const auto& principalMetadata,
-      quota::QuotaManager::GetInfoFromPrincipal(storagePrincipal.get()));
+  QM_TRY_INSPECT(const auto& principalMetadata,
+                 quota::GetInfoFromPrincipal(storagePrincipal.get()));
 
   MOZ_ASSERT(originAttrSuffix == principalMetadata.mSuffix);
 
   const auto& origin = principalMetadata.mOrigin;
 #else
-  QM_TRY_INSPECT(
-      const auto& origin,
-      quota::QuotaManager::GetOriginFromPrincipal(storagePrincipal.get()));
+  QM_TRY_INSPECT(const auto& origin,
+                 quota::GetOriginFromPrincipal(storagePrincipal.get()));
 #endif
 
   uint32_t privateBrowsingId;
@@ -372,8 +370,7 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
       storagePrincipalInfo->type() == PrincipalInfo::TContentPrincipalInfo ||
       storagePrincipalInfo->type() == PrincipalInfo::TSystemPrincipalInfo);
 
-  if (NS_WARN_IF(
-          !quota::QuotaManager::IsPrincipalInfoValid(*storagePrincipalInfo))) {
+  if (NS_WARN_IF(!quota::IsPrincipalInfoValid(*storagePrincipalInfo))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -384,26 +381,26 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
         &aPrincipal]() -> Result<quota::PrincipalMetadata, nsresult> {
         if (storagePrincipalInfo->type() ==
             PrincipalInfo::TSystemPrincipalInfo) {
-          return quota::QuotaManager::GetInfoForChrome();
+          return quota::GetInfoForChrome();
         }
 
-        QM_TRY_RETURN(quota::QuotaManager::GetInfoFromPrincipal(aPrincipal));
+        QM_TRY_RETURN(quota::GetInfoFromPrincipal(aPrincipal));
       }()));
 
   MOZ_ASSERT(originAttrSuffix == principalMetadata.mSuffix);
 
   const auto& origin = principalMetadata.mOrigin;
 #else
-  QM_TRY_INSPECT(
-      const auto& origin, ([&storagePrincipalInfo,
-                            &aPrincipal]() -> Result<nsAutoCString, nsresult> {
-        if (storagePrincipalInfo->type() ==
-            PrincipalInfo::TSystemPrincipalInfo) {
-          return nsAutoCString{quota::QuotaManager::GetOriginForChrome()};
-        }
+  QM_TRY_INSPECT(const auto& origin,
+                 ([&storagePrincipalInfo,
+                   &aPrincipal]() -> Result<nsAutoCString, nsresult> {
+                   if (storagePrincipalInfo->type() ==
+                       PrincipalInfo::TSystemPrincipalInfo) {
+                     return nsAutoCString{quota::GetOriginForChrome()};
+                   }
 
-        QM_TRY_RETURN(quota::QuotaManager::GetOriginFromPrincipal(aPrincipal));
-      }()));
+                   QM_TRY_RETURN(quota::GetOriginFromPrincipal(aPrincipal));
+                 }()));
 #endif
 
   Maybe<nsID> clientId;
@@ -890,6 +887,8 @@ nsresult LSObject::EnsureDatabase() {
     return NS_OK;
   }
 
+  auto latencyTimerId = glean::ls_preparelsdatabase::processing_time.Start();
+
   // We don't need this yet, but once the request successfully finishes, it's
   // too late to initialize PBackground child on the owning thread, because
   // it can fail and parent would keep an extra strong ref to the datastore.
@@ -919,10 +918,11 @@ nsresult LSObject::EnsureDatabase() {
   MOZ_ASSERT(response.type() ==
              LSRequestResponse::TLSRequestPrepareDatastoreResponse);
 
-  const LSRequestPrepareDatastoreResponse& prepareDatastoreResponse =
-      response.get_LSRequestPrepareDatastoreResponse();
+  LSRequestPrepareDatastoreResponse prepareDatastoreResponse =
+      std::move(response.get_LSRequestPrepareDatastoreResponse());
 
-  uint64_t datastoreId = prepareDatastoreResponse.datastoreId();
+  auto childEndpoint =
+      std::move(prepareDatastoreResponse.databaseChildEndpoint());
 
   // The datastore is now ready on the parent side (prepared by the asynchronous
   // request on the RemoteLazyInputStream thread).
@@ -935,10 +935,17 @@ nsresult LSObject::EnsureDatabase() {
 
   RefPtr<LSDatabaseChild> actor = new LSDatabaseChild(database);
 
-  MOZ_ALWAYS_TRUE(backgroundActor->SendPBackgroundLSDatabaseConstructor(
-      actor, *mStoragePrincipalInfo, mPrivateBrowsingId, datastoreId));
+  MOZ_ALWAYS_TRUE(childEndpoint.Bind(actor));
 
   database->SetActor(actor);
+
+  glean::ls_preparelsdatabase::processing_time.StopAndAccumulate(
+      std::move(latencyTimerId));
+
+  if (prepareDatastoreResponse.invalidated()) {
+    database->RequestAllowToClose();
+    return NS_ERROR_ABORT;
+  }
 
   mDatabase = std::move(database);
 
@@ -1133,8 +1140,11 @@ RequestHelper::Run() {
       // message and it wouldn't make any sense because the request is about to
       // be destroyed anyway.
       if (mActor && !mActor->Finishing()) {
-        mActor->SendCancel();
+        if (mActor->SendCancel()) {
+          glean::ls_request::send_cancellation.Add();
+        }
       }
+
       return NS_OK;
     }
 
@@ -1148,7 +1158,7 @@ RequestHelper::Run() {
   }
 }
 
-void RequestHelper::OnResponse(const LSRequestResponse& aResponse) {
+void RequestHelper::OnResponse(LSRequestResponse&& aResponse) {
   AssertIsOnDOMFileThread();
 
   MonitorAutoLock lock(mMonitor);
@@ -1157,7 +1167,7 @@ void RequestHelper::OnResponse(const LSRequestResponse& aResponse) {
 
   mActor = nullptr;
 
-  mResponse = aResponse;
+  mResponse = std::move(aResponse);
 
   mState = State::Complete;
 

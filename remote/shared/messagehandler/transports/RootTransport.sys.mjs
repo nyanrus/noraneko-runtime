@@ -9,13 +9,21 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   isBrowsingContextCompatible:
     "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+  isInitialDocument:
+    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   MessageHandlerFrameActor:
     "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+  waitForCurrentWindowGlobal:
+    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
+
+ChromeUtils.defineLazyGetter(lazy, "prefRetryOnAbort", () => {
+  return Services.prefs.getBoolPref("remote.retry-on-abort", false);
+});
 
 const MAX_RETRY_ATTEMPTS = 10;
 
@@ -106,11 +114,21 @@ export class RootTransport {
     // currently valid browsing context.
     const webProgress = browsingContext.webProgress;
 
-    const { retryOnAbort = false } = command;
+    let retryOnAbort = true;
+    if (command.retryOnAbort !== undefined) {
+      // The caller should always be able to force a value.
+      retryOnAbort = command.retryOnAbort;
+    } else if (!lazy.prefRetryOnAbort) {
+      // If we don't retry by default do it at least for the initial document.
+      retryOnAbort = lazy.isInitialDocument(browsingContext);
+    }
 
     let attempts = 0;
     while (true) {
       try {
+        if (!webProgress.browsingContext.currentWindowGlobal) {
+          await lazy.waitForCurrentWindowGlobal(webProgress.browsingContext);
+        }
         return await webProgress.browsingContext.currentWindowGlobal
           .getActor("MessageHandlerFrame")
           .sendCommand(command, this._messageHandler.sessionId);

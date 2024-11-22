@@ -60,12 +60,6 @@ loader.lazyGetter(this, "PSEUDO_ELEMENTS", () => {
 loader.lazyGetter(this, "FONT_VARIATIONS_ENABLED", () => {
   return Services.prefs.getBoolPref("layout.css.font-variations.enabled");
 });
-loader.lazyGetter(this, "DISPLAY_STARTING_STYLE_RULES", () => {
-  return Services.prefs.getBoolPref(
-    "devtools.inspector.rule-view.starting-style",
-    false
-  );
-});
 
 const NORMAL_FONT_WEIGHT = 400;
 const BOLD_FONT_WEIGHT = 700;
@@ -177,14 +171,23 @@ class PageStyleActor extends Actor {
 
   /**
    * Return or create a StyleRuleActor for the given item.
-   * @param item Either a CSSStyleRule or a DOM element.
-   * @param userAdded Optional boolean to distinguish rules added by the user.
+   *
+   * @param {CSSStyleRule|Element} item
+   * @param {String} pseudoElement An optional pseudo-element type in cases when the CSS
+   *        rule applies to a pseudo-element.
+   * @param {Boolean} userAdded: Optional boolean to distinguish rules added by the user.
+   * @return {StyleRuleActor} The newly created, or cached, StyleRuleActor for this item.
    */
-  _styleRef(item, userAdded = false) {
+  _styleRef(item, pseudoElement, userAdded = false) {
     if (this.refMap.has(item)) {
       return this.refMap.get(item);
     }
-    const actor = new StyleRuleActor(this, item, userAdded);
+    const actor = new StyleRuleActor({
+      pageStyle: this,
+      item,
+      userAdded,
+      pseudoElement,
+    });
     this.manage(actor);
     this.refMap.set(item, actor);
 
@@ -378,7 +381,10 @@ class PageStyleActor extends Actor {
 
       // If this font comes from a @font-face rule
       if (font.rule) {
-        const styleActor = new StyleRuleActor(this, font.rule);
+        const styleActor = new StyleRuleActor({
+          pageStyle: this,
+          item: font.rule,
+        });
         this.manage(styleActor);
         fontFace.rule = styleActor;
         fontFace.ruleText = font.rule.cssText;
@@ -646,7 +652,11 @@ class PageStyleActor extends Actor {
       return rules;
     }
 
-    const elementStyle = this._styleRef(bindingElement);
+    const elementStyle = this._styleRef(
+      bindingElement,
+      // for inline style, we can't have a related pseudo element
+      null
+    );
     const showElementStyles = !inherited && !pseudo;
     const showInheritedStyles =
       inherited && this._hasInheritedProps(bindingElement.style);
@@ -690,6 +700,7 @@ class PageStyleActor extends Actor {
           continue;
         }
 
+        // FIXME: Bug 1909173. Need to handle view transitions peudo-elements.
         if (readPseudo === "::highlight") {
           InspectorUtils.getRegisteredCssHighlights(
             this.inspector.targetActor.window.document,
@@ -801,6 +812,14 @@ class PageStyleActor extends Actor {
       case "::slider-thumb":
       case "::slider-track":
         return node.nodeName == "INPUT" && node.type == "range";
+      case "::view-transition":
+      case "::view-transition-group":
+      case "::view-transition-image-pair":
+      case "::view-transition-old":
+      case "::view-transition-new":
+        // FIXME: Bug 1909173. Need to handle view transitions peudo-elements
+        // for DevTools. For now we skip them.
+        return false;
       default:
         console.error("Unhandled pseudo-element " + pseudo);
         return false;
@@ -819,9 +838,8 @@ class PageStyleActor extends Actor {
    */
   _getElementRules(node, pseudo, inherited, options) {
     // we don't need to retrieve inherited starting style rules
-    const includeStartingStyleRules =
-      !inherited && DISPLAY_STARTING_STYLE_RULES;
-    const domRules = InspectorUtils.getCSSStyleRules(
+    const includeStartingStyleRules = !inherited;
+    const domRules = InspectorUtils.getMatchingCSSRules(
       node,
       pseudo,
       CssLogic.hasVisitedState(node),
@@ -836,7 +854,7 @@ class PageStyleActor extends Actor {
 
     const doc = this.inspector.targetActor.window.document;
 
-    // getCSSStyleRules returns ordered from least-specific to
+    // getMatchingCSSRules returns ordered from least-specific to
     // most-specific.
     for (let i = domRules.length - 1; i >= 0; i--) {
       const domRule = domRules[i];
@@ -860,7 +878,7 @@ class PageStyleActor extends Actor {
         }
       }
 
-      const ruleActor = this._styleRef(domRule);
+      const ruleActor = this._styleRef(domRule, pseudo);
 
       rules.push(
         this._getRuleItem(ruleActor, node, {
@@ -1160,7 +1178,7 @@ class PageStyleActor extends Actor {
     await this.styleSheetsManager.setStyleSheetText(resourceId, authoredText);
 
     const cssRule = sheet.cssRules.item(index);
-    const ruleActor = this._styleRef(cssRule, true);
+    const ruleActor = this._styleRef(cssRule, null, true);
 
     TrackChangeEmitter.trackChange({
       ...ruleActor.metadata,

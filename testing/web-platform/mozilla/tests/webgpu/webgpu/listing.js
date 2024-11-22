@@ -644,6 +644,15 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
+      "clip_distances"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
       "query_types"
     ]
   },
@@ -789,15 +798,6 @@ export const listing = [
       "capability_checks",
       "limits",
       "maxDynamicUniformBuffersPerPipelineLayout"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "capability_checks",
-      "limits",
-      "maxInterStageShaderComponents"
     ]
   },
   {
@@ -3145,6 +3145,26 @@ export const listing = [
       "expression",
       "call",
       "builtin",
+      "subgroupAll"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "subgroupAny"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
       "subgroupBallot"
     ]
   },
@@ -3844,6 +3864,14 @@ export const listing = [
       "shader",
       "execution",
       "shader_io",
+      "vertex_builtins"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "shader_io",
       "workgroup_size"
     ]
   },
@@ -4065,6 +4093,15 @@ export const listing = [
       "expression",
       "binary",
       "parse"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "binary",
+      "short_circuiting_and_or"
     ]
   },
   {
@@ -5319,6 +5356,14 @@ export const listing = [
       "expression",
       "unary",
       "logical_negation"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "extension",
+      "clip_distances"
     ]
   },
   {

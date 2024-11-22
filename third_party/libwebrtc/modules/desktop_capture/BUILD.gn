@@ -6,8 +6,8 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("//build/config/linux/gtk/gtk.gni")
-import("//build/config/ui.gni")
+import("//chromium/build/config/linux/gtk/gtk.gni")
+import("//chromium/build/config/ui.gni")
 import("../../webrtc.gni")
 
 use_desktop_capture_differ_sse2 = target_cpu == "x86" || target_cpu == "x64"
@@ -67,7 +67,6 @@ if (rtc_include_tests) {
         "../../rtc_base/third_party/base64",
         "../../system_wrappers",
         "../../test:test_support",
-        "../../test:video_test_support",
       ]
       sources += [
         "screen_capturer_integration_test.cc",
@@ -602,6 +601,8 @@ if (is_mac) {
       "mac/desktop_frame_iosurface.mm",
       "mac/desktop_frame_provider.h",
       "mac/desktop_frame_provider.mm",
+      "mac/sck_picker_handle.h",
+      "mac/sck_picker_handle.mm",
       "mac/screen_capturer_mac.h",
       "mac/screen_capturer_mac.mm",
       "mac/screen_capturer_sck.h",

@@ -8,8 +8,8 @@
 
 import("../../../webrtc.gni")
 if (is_android) {
-  import("//build/config/android/config.gni")
-  import("//build/config/android/rules.gni")
+  import("//chromium/build/config/android/config.gni")
+  import("//chromium/build/config/android/rules.gni")
 }
 
 rtc_library("audio_encoder_L16") {
@@ -23,6 +23,7 @@ rtc_library("audio_encoder_L16") {
     "..:audio_codecs_api",
     "../../../api:field_trials_view",
     "../../../modules/audio_coding:pcm16b",
+    "../../../rtc_base:checks",
     "../../../rtc_base:safe_conversions",
     "../../../rtc_base:safe_minmax",
     "../../../rtc_base:stringutils",

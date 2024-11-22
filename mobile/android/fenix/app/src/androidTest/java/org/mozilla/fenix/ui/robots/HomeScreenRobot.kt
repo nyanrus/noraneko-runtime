@@ -55,9 +55,11 @@ import org.mozilla.fenix.helpers.Constants.LISTS_MAXSWIPES
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
+import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsChecked
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithClassNameAndIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
@@ -516,6 +518,9 @@ class HomeScreenRobot {
 //    }
 
     fun verifyDiscoverMoreStoriesButton() {
+        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the \"Powered By Pocket\" home screen section")
+        homeScreenList().scrollIntoView(mDevice.findObject(UiSelector().resourceId("pocket.header")))
+        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the \"Powered By Pocket\" home screen section")
         Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the Pocket \"Discover more\" button")
         pocketStoriesList().scrollIntoView(UiSelector().text("Discover more"))
         Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the Pocket \"Discover more\" button")
@@ -590,24 +595,6 @@ class HomeScreenRobot {
         }
     }
 
-    fun verifyJumpBackInMessage(composeTestRule: ComposeTestRule, exists: Boolean) {
-        if (exists) {
-            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message exists")
-            composeTestRule
-                .onNodeWithText(
-                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
-                ).assertExists()
-            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message exists")
-        } else {
-            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message does not exist")
-            composeTestRule
-                .onNodeWithText(
-                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
-                ).assertDoesNotExist()
-            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message does not exist")
-        }
-    }
-
     fun getProvokingStoryPublisher(position: Int): String {
         val publisher = mDevice.findObject(
             UiSelector()
@@ -654,6 +641,19 @@ class HomeScreenRobot {
         Log.i(TAG, "verifyIfInPrivateOrNormalMode: Trying to verify private browsing mode is enabled")
         assert(isPrivateModeEnabled() == privateBrowsingEnabled)
         Log.i(TAG, "verifyIfInPrivateOrNormalMode: Verified private browsing mode is enabled: $privateBrowsingEnabled")
+    }
+
+    fun verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowser() {
+        assertUIObjectExists(
+            itemContainingText("Set Firefox Fenix as your default browser app?"),
+            itemContainingText(appName),
+            itemContainingText("Cancel"),
+            itemContainingText("Set as default"),
+        )
+        assertItemIsChecked(
+            firefoxOptionSetAsDefaultBrowserDialogRadioButton(),
+            isChecked = false,
+        )
     }
 
     class Transition {
@@ -1015,20 +1015,14 @@ class HomeScreenRobot {
             return BrowserRobot.Transition()
         }
 
-        fun clickPocketDiscoverMoreButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickPocketDiscoverMoreButton(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to scroll into view the \"Discover more\" button")
-            pocketStoriesList()
-                .scrollIntoView(UiSelector().text("Discover more"))
+            pocketStoriesList().scrollToEnd(3)
             Log.i(TAG, "clickPocketDiscoverMoreButton: Scrolled into view the \"Discover more\" button")
 
-            mDevice.findObject(UiSelector().text("Discover more")).also {
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Waiting for $waitingTime ms for \"Discover more\" button to exist")
-                it.waitForExists(waitingTimeShort)
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Waited for $waitingTime ms for \"Discover more\" button to exist")
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to click \"Discover more\" button")
-                it.click()
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Clicked \"Discover more\" button")
-            }
+            Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to click the \"Discover more\" button")
+            composeTestRule.onNodeWithTag("pocket.discover.more.story").performClick()
+            Log.i(TAG, "clickPocketDiscoverMoreButton: Clicked the \"Discover more\" button")
 
             BrowserRobot().interact()
             return BrowserRobot.Transition()
@@ -1154,3 +1148,11 @@ private fun sponsorsAndPrivacyButton() =
 
 private fun pocketStoriesList() =
     UiScrollable(UiSelector().resourceId("pocket.stories")).setAsHorizontalList()
+
+private fun firefoxOptionSetAsDefaultBrowserDialogRadioButton() =
+    itemWithClassNameAndIndex(
+        className = "android.widget.RadioButton",
+        index = 2,
+    ).getFromParent(
+        UiSelector().className("android.widget.LinearLayout").index(1),
+    )

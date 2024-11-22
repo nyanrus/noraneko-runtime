@@ -10,6 +10,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   KeywordUtils: "resource://gre/modules/KeywordUtils.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
@@ -186,6 +188,7 @@ export var UrlbarUtils = {
     "oneoff",
     "historymenu",
     "other",
+    "searchbutton",
     "shortcut",
     "tabmenu",
     "tabtosearch",
@@ -783,6 +786,25 @@ export var UrlbarUtils = {
   },
 
   /**
+   * Splits a url into base and ref strings, according to nsIURI.idl.
+   * Base refers to the part of the url before the ref, excluding the #.
+   *
+   * @param {string} url
+   *   The url to split.
+   * @returns {object} { base, ref }
+   *   Base and ref parts of the given url. Ref is an empty string
+   *   if there is no ref and undefined if url is not well-formed.
+   */
+  extractRefFromUrl(url) {
+    try {
+      let nsUri = Services.io.newURI(url);
+      return { base: nsUri.specIgnoringRef, ref: nsUri.ref };
+    } catch {
+      return { base: url };
+    }
+  },
+
+  /**
    * Strips parts of a URL defined in `options`.
    *
    * @param {string} spec
@@ -1298,10 +1320,21 @@ export var UrlbarUtils = {
         if (result.providerName == "TabToSearch") {
           // This is the onboarding result.
           return "tabtosearch";
-        } else if (result.providerName == "Weather") {
-          return "weather";
         }
         return "dynamic";
+      case UrlbarUtils.RESULT_TYPE.RESTRICT:
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.BOOKMARK) {
+          return "restrict_keyword_bookmarks";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.OPENPAGE) {
+          return "restrict_keyword_tabs";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.HISTORY) {
+          return "restrict_keyword_history";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.ACTION) {
+          return "restrict_keyword_actions";
+        }
     }
     return "unknown";
   },
@@ -1429,6 +1462,9 @@ export var UrlbarUtils = {
       case UrlbarUtils.RESULT_GROUP.SUGGESTED_INDEX: {
         return "suggested_index";
       }
+      case UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD: {
+        return "restrict_keyword";
+      }
     }
 
     return result.heuristic ? "heuristic" : "unknown";
@@ -1468,8 +1504,8 @@ export var UrlbarUtils = {
             return this._getQuickSuggestTelemetryType(result);
           case "UrlbarProviderQuickSuggestContextualOptIn":
             return "fxsuggest_data_sharing_opt_in";
-          case "Weather":
-            return "weather";
+          case "UrlbarProviderGlobalActions":
+            return "action";
         }
         break;
       case UrlbarUtils.RESULT_TYPE.KEYWORD:
@@ -1549,24 +1585,35 @@ export var UrlbarUtils = {
         return result.source === UrlbarUtils.RESULT_SOURCE.BOOKMARKS
           ? "bookmark"
           : "history";
+      case UrlbarUtils.RESULT_TYPE.RESTRICT:
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.BOOKMARK) {
+          return "restrict_keyword_bookmarks";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.OPENPAGE) {
+          return "restrict_keyword_tabs";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.HISTORY) {
+          return "restrict_keyword_history";
+        }
+        if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.ACTION) {
+          return "restrict_keyword_actions";
+        }
     }
 
     return "unknown";
   },
 
-  searchEngagementTelemetryAction(result, index) {
-    let action =
-      index == 0
-        ? lazy.UrlbarProvidersManager.getGlobalAction()
-        : result.payload.action;
-
-    return action?.key ?? "none";
+  searchEngagementTelemetryAction(result) {
+    if (result.providerName != "UrlbarProviderGlobalActions") {
+      return result.payload.action?.key ?? "none";
+    }
+    return result.payload.results.map(({ key }) => key).join(",");
   },
 
   _getQuickSuggestTelemetryType(result) {
     if (result.payload.telemetryType == "weather") {
       // Return "weather" without the usual source prefix for consistency with
-      // the weather result returned by UrlbarProviderWeather.
+      // past reporting of weather suggestions.
       return "weather";
     }
     let source = result.payload.source;
@@ -1626,6 +1673,38 @@ export var UrlbarUtils = {
     }
     return obj;
   },
+
+  /**
+   * Create secondary action button data for tab switch.
+   *
+   * @param {number} userContextId
+   *   The container id for the tab.
+   * @returns {object} data to create secondary action button.
+   */
+  createTabSwitchSecondaryAction(userContextId) {
+    let action = { key: "tabswitch" };
+    let identity =
+      lazy.ContextualIdentityService.getPublicIdentityFromId(userContextId);
+
+    if (identity) {
+      let label =
+        lazy.ContextualIdentityService.getUserContextLabel(
+          userContextId
+        ).toLowerCase();
+      action.l10nId = "urlbar-result-action-switch-tab-with-container";
+      action.l10nArgs = {
+        container: label,
+      };
+      action.classList = [
+        "urlbarView-userContext",
+        `identity-color-${identity.color}`,
+      ];
+    } else {
+      action.l10nId = "urlbar-result-action-switch-tab";
+    }
+
+    return action;
+  },
 };
 
 ChromeUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
@@ -1650,6 +1729,16 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       action: {
         type: "object",
         properties: {
+          classList: {
+            type: "array",
+            items: {
+              type: "string",
+            },
+          },
+          l10nArgs: {
+            type: "object",
+            additionalProperties: true,
+          },
           l10nId: {
             type: "string",
           },
@@ -1669,6 +1758,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       isSponsored: {
         type: "boolean",
+      },
+      lastVisit: {
+        type: "number",
       },
       title: {
         type: "string",
@@ -1727,6 +1819,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "boolean",
       },
       keyword: {
+        type: "string",
+      },
+      keywords: {
         type: "string",
       },
       lowerCaseSuggestion: {
@@ -1859,6 +1954,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       isSponsored: {
         type: "boolean",
+      },
+      lastVisit: {
+        type: "number",
       },
       originalUrl: {
         type: "string",

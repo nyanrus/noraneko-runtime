@@ -1,7 +1,7 @@
 use super::Error;
 use crate::{
     back::{self, Baked},
-    proc::{self, NameKey},
+    proc::{self, ExpressionKindTracker, NameKey},
     valid, Handle, Module, ShaderStage, TypeInner,
 };
 use std::fmt::Write;
@@ -166,6 +166,7 @@ impl<W: Write> Writer<W> {
                 info: fun_info,
                 expressions: &function.expressions,
                 named_expressions: &function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&function.expressions),
             };
 
             // Write the function
@@ -193,6 +194,7 @@ impl<W: Write> Writer<W> {
                 info: info.get_entry_point(index),
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
             self.write_function(module, &ep.function, &func_ctx)?;
 
@@ -1115,8 +1117,14 @@ impl<W: Write> Writer<W> {
         func_ctx: &back::FunctionCtx,
         name: &str,
     ) -> BackendResult {
+        // Some functions are marked as const, but are not yet implemented as constant expression
+        let quantifier = if func_ctx.expr_kind_tracker.is_impl_const(handle) {
+            "const"
+        } else {
+            "let"
+        };
         // Write variable name
-        write!(self.out, "let {name}")?;
+        write!(self.out, "{quantifier} {name}")?;
         if self.flags.contains(WriterFlags::EXPLICIT_TYPES) {
             write!(self.out, ": ")?;
             let ty = &func_ctx.info[handle].ty;
@@ -1213,31 +1221,31 @@ impl<W: Write> Writer<W> {
 
         match expressions[expr] {
             Expression::Literal(literal) => match literal {
-                crate::Literal::F32(value) => write!(self.out, "{}f", value)?,
-                crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
+                crate::Literal::F32(value) => write!(self.out, "{value}f")?,
+                crate::Literal::U32(value) => write!(self.out, "{value}u")?,
                 crate::Literal::I32(value) => {
                     // `-2147483648i` is not valid WGSL. The most negative `i32`
                     // value can only be expressed in WGSL using AbstractInt and
                     // a unary negation operator.
                     if value == i32::MIN {
-                        write!(self.out, "i32({})", value)?;
+                        write!(self.out, "i32({value})")?;
                     } else {
-                        write!(self.out, "{}i", value)?;
+                        write!(self.out, "{value}i")?;
                     }
                 }
-                crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
-                crate::Literal::F64(value) => write!(self.out, "{:?}lf", value)?,
+                crate::Literal::Bool(value) => write!(self.out, "{value}")?,
+                crate::Literal::F64(value) => write!(self.out, "{value:?}lf")?,
                 crate::Literal::I64(value) => {
                     // `-9223372036854775808li` is not valid WGSL. The most negative `i64`
                     // value can only be expressed in WGSL using AbstractInt and
                     // a unary negation operator.
                     if value == i64::MIN {
-                        write!(self.out, "i64({})", value)?;
+                        write!(self.out, "i64({value})")?;
                     } else {
-                        write!(self.out, "{}li", value)?;
+                        write!(self.out, "{value}li")?;
                     }
                 }
-                crate::Literal::U64(value) => write!(self.out, "{:?}lu", value)?,
+                crate::Literal::U64(value) => write!(self.out, "{value:?}lu")?,
                 crate::Literal::AbstractInt(_) | crate::Literal::AbstractFloat(_) => {
                     return Err(Error::Custom(
                         "Abstract types should not appear in IR presented to backends".into(),
@@ -1933,9 +1941,8 @@ fn builtin_str(built_in: crate::BuiltIn) -> Result<&'static str, Error> {
         | Bi::CullDistance
         | Bi::PointSize
         | Bi::PointCoord
-        | Bi::WorkGroupSize => {
-            return Err(Error::Custom(format!("Unsupported builtin {built_in:?}")))
-        }
+        | Bi::WorkGroupSize
+        | Bi::DrawID => return Err(Error::Custom(format!("Unsupported builtin {built_in:?}"))),
     })
 }
 
@@ -2015,7 +2022,7 @@ const fn storage_format_str(format: crate::StorageFormat) -> &'static str {
         Sf::Bgra8Unorm => "bgra8unorm",
         Sf::Rgb10a2Uint => "rgb10a2uint",
         Sf::Rgb10a2Unorm => "rgb10a2unorm",
-        Sf::Rg11b10UFloat => "rg11b10float",
+        Sf::Rg11b10Ufloat => "rg11b10float",
         Sf::Rg32Uint => "rg32uint",
         Sf::Rg32Sint => "rg32sint",
         Sf::Rg32Float => "rg32float",
@@ -2053,6 +2060,8 @@ const fn sampling_str(sampling: crate::Sampling) -> &'static str {
         S::Center => "",
         S::Centroid => "centroid",
         S::Sample => "sample",
+        S::First => "first",
+        S::Either => "either",
     }
 }
 

@@ -9,6 +9,14 @@
 
 #include <stdint.h>  // For uint16_t
 
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
+    _(IntrinsicGuardToAsyncDisposableStack)                \
+    _(IntrinsicGuardToDisposableStack)
+#else
+#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_)
+#endif
+
 #ifdef FUZZING_JS_FUZZILLI
 #  define INLINABLE_NATIVE_FUZZILLI_LIST(_) _(FuzzilliHash)
 #else
@@ -63,6 +71,15 @@
   _(DataViewSetFloat64)                            \
   _(DataViewSetBigInt64)                           \
   _(DataViewSetBigUint64)                          \
+                                                   \
+  _(DateGetTime)                                   \
+  _(DateGetFullYear)                               \
+  _(DateGetMonth)                                  \
+  _(DateGetDate)                                   \
+  _(DateGetDay)                                    \
+  _(DateGetHours)                                  \
+  _(DateGetMinutes)                                \
+  _(DateGetSeconds)                                \
                                                    \
   _(FunctionBind)                                  \
                                                    \
@@ -230,6 +247,9 @@
   _(IntrinsicTypedArrayByteOffset)                 \
   _(IntrinsicTypedArrayElementSize)                \
                                                    \
+  _(IntrinsicThisTimeValue)                        \
+                                                   \
+  INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
   INLINABLE_NATIVE_FUZZILLI_LIST(_)
 
 struct JSClass;

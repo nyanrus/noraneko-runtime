@@ -73,12 +73,14 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     EXPORTS.mozilla += [
         "MacRunFromDmgUtils.h",
+        "MacUtils.h",
     ]
     UNIFIED_SOURCES += [
         "MacApplicationDelegate.mm",
         "MacAutoreleasePool.mm",
         "MacLaunchHelper.mm",
         "MacRunFromDmgUtils.mm",
+        "MacUtils.mm",
         "nsCommandLineServiceMac.mm",
         "nsNativeAppSupportCocoa.mm",
         "updaterfileutils_osx.mm",
@@ -138,6 +140,7 @@ UNIFIED_SOURCES += [
     "Bootstrap.cpp",
     "CmdLineAndEnvUtils.cpp",
     "CreateAppData.cpp",
+    "GeckoArgs.cpp",
     "nsConsoleWriter.cpp",
     "nsNativeAppSupportBase.cpp",
     "nsSigHandlers.cpp",

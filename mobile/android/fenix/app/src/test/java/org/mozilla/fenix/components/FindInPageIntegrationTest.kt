@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.components
 
-import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.FrameLayout.LayoutParams.MATCH_PARENT
 import androidx.core.view.isVisible
@@ -37,8 +36,8 @@ class FindInPageIntegrationTest {
     private val appStore: AppStore = mockk(relaxed = true)
     private val findInPageBar: FindInPageBar = mockk(relaxed = true)
     private val engine: EngineView = mockk(relaxed = true)
-    private val toolbar1: ViewGroup = mockk(relaxed = true)
-    private val toolbar2: ViewGroup = mockk(relaxed = true)
+    private val toolbarsHideCallback: () -> Unit = mockk(relaxed = true)
+    private val toolbarsResetCallback: () -> Unit = mockk(relaxed = true)
     private val engineView: FrameLayout = mockk(relaxed = true)
     private val engineViewLayoutParams
         get() = engineView.layoutParams as FrameLayout.LayoutParams
@@ -54,15 +53,11 @@ class FindInPageIntegrationTest {
 
         integration.launch()
 
-        verify { engine.setDynamicToolbarMaxHeight(findInPageHeight) }
-        verify { engineView.translationY = 0f }
-        assertEquals(engineViewLayoutParams.topMargin, 0)
-        assertEquals(engineViewLayoutParams.bottomMargin, findInPageHeight)
-        listOf(toolbar1, toolbar2).forEach {
-            verify { it.isVisible = false }
-        }
+        assertEquals(true, integration.isFeatureActive)
+        verify { toolbarsHideCallback.invoke() }
         verify { findInPageBar.isVisible = true }
         verify { findInPageBar.layoutParams.height = findInPageHeight }
+        assertEquals(findInPageHeight, engineViewLayoutParams.bottomMargin)
     }
 
     @Test
@@ -77,15 +72,11 @@ class FindInPageIntegrationTest {
 
         integration.launch()
 
-        verify { engine.setDynamicToolbarMaxHeight(findInPageHeight) }
-        verify { engineView.translationY = 0f }
-        assertEquals(engineViewLayoutParams.topMargin, 0)
-        assertEquals(engineViewLayoutParams.bottomMargin, findInPageHeight)
-        listOf(toolbar1, toolbar2).forEach {
-            verify { it.isVisible = false }
-        }
+        assertEquals(true, integration.isFeatureActive)
+        verify { toolbarsHideCallback.invoke() }
         verify { findInPageBar.isVisible = true }
         verify { findInPageBar.layoutParams.height = findInPageHeight }
+        assertEquals(findInPageHeight, engineViewLayoutParams.bottomMargin)
     }
 
     @Test
@@ -95,16 +86,11 @@ class FindInPageIntegrationTest {
 
         integration.feature.unbind()
 
+        assertEquals(false, integration.isFeatureActive)
         verify { appStore.dispatch(FindInPageAction.FindInPageDismissed) }
         verify { findInPageBar.isVisible = false }
-        val updatedContentHeight = toolbar1.height + toolbar2.height
-        verify { engine.setDynamicToolbarMaxHeight(updatedContentHeight) }
-        verify { engineView.translationY = engineViewTranslationY }
-        assertEquals(engineViewLayoutParams.topMargin, engineViewTopMargin)
-        assertEquals(engineViewLayoutParams.bottomMargin, engineViewBottomMargin)
-        listOf(toolbar1, toolbar2).forEach {
-            verify { it.isVisible = true }
-        }
+        verify { toolbarsResetCallback.invoke() }
+        assertEquals(0, engineViewLayoutParams.bottomMargin)
     }
 
     @Test
@@ -127,13 +113,10 @@ class FindInPageIntegrationTest {
             bottomMargin = engineViewBottomMargin
         }
         every { engineView.translationY } returns engineViewTranslationY
-        every { toolbar1.height } returns 33
-        every { toolbar2.height } returns 44
     }
 
     private fun buildFeature(
         store: BrowserStore = this.store,
-        toolbars: List<ViewGroup?> = listOf(toolbar1, null, toolbar2),
         customSessionId: String? = null,
     ): FindInPageIntegration {
         return FindInPageIntegration(
@@ -142,7 +125,8 @@ class FindInPageIntegrationTest {
             sessionId = customSessionId,
             view = findInPageBar,
             engineView = engine,
-            toolbars = toolbars,
+            toolbarsHideCallback = toolbarsHideCallback,
+            toolbarsResetCallback = toolbarsResetCallback,
             findInPageHeight = findInPageHeight,
         )
     }

@@ -15,7 +15,7 @@ task-defaults:
     limit-platforms:
         by-app:
             chrome:
-                - .*64.*shippable.*
+                - (?!macosx1015).*shippable.*
             safari:
                 - .*macos.*shippable.*
             safari-tp:
@@ -85,7 +85,7 @@ browsertime-tp6:
         limit-platforms:
             by-app:
                 chrome:
-                    - .*shippable.*
+                    - (?!macosx1015).*shippable.*
                 safari:
                     - .*macos.*shippable.*
                 custom-car:
@@ -127,7 +127,7 @@ browsertime-tp6:
                         default: []
         treeherder-symbol: Btime(tp6)
     raptor:
-        apps: [firefox, chrome]
+        apps: [firefox, chrome, custom-car]
         test: tp6
         run-visual-metrics: true
         subtests:
@@ -301,7 +301,7 @@ browsertime-tp7:
         limit-platforms:
             by-app:
                 chrome:
-                    - .*shippable.*
+                    - (?!macosx1015).*shippable.*
                 safari:
                     - .*macos.*shippable.*
                 custom-car:
@@ -362,6 +362,12 @@ browsertime-benchmark:
                         safari-tp: []
                         default:
                             - [speedometer3, sp3]
+                windows11-64-.*-hw-ref.*:
+                    by-app:
+                        safari: []
+                        safari-tp: []
+                        default:
+                            - [speedometer3, sp3]
                 default:
                     by-app:
                         firefox:
@@ -369,10 +375,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             - [matrix-react-bench, mrb]
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
-                            - [motionmark-htmlsuite, mm-h]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -387,10 +389,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             # - [matrix-react-bench, mrb] Perma fails on osx 10.15.x machines (Bug 1807754)
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-htmlsuite, mm-h]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -402,36 +400,16 @@ browsertime-benchmark:
                         custom-car:
                             - [speedometer, sp]
                             - [speedometer3, sp3]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                         chrome:
                             by-test-platform:
-                                macosx1015.*shippable.*:
-                                    - ares6
-                                    - [assorted-dom, dom]
-                                    - [jetstream2, js2]
-                                    - [matrix-react-bench, mrb]
-                                    - [motionmark-animometer, mm-a]
-                                    - [motionmark-htmlsuite, mm-h]
-                                    - [motionmark-1-3, mm-1.3]
-                                    - [motionmark-htmlsuite-1-3, mm-h-1.3]
-                                    - [speedometer, sp]
-                                    - [speedometer3, sp3]
-                                    - [stylebench, sb]
-                                    - [sunspider, ss]
-                                    - [unity-webgl, ugl]
-                                    - [webaudio, wa]
+                                macosx1015.*shippable.*: []
                                 default:
                                     - ares6
                                     - [assorted-dom, dom]
                                     - [jetstream2, js2]
                                     - [matrix-react-bench, mrb]
-                                    - [motionmark-animometer, mm-a]
-                                    - [motionmark-animometer-ramp, mm-ar]
-                                    - [motionmark-htmlsuite, mm-h]
-                                    - [motionmark-htmlsuite-ramp, mm-hr]
                                     - [motionmark-1-3, mm-1.3]
                                     - [motionmark-htmlsuite-1-3, mm-h-1.3]
                                     - [speedometer, sp]
@@ -445,10 +423,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             - [matrix-react-bench, mrb]
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite, mm-h]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -461,16 +435,10 @@ browsertime-benchmark:
     tier:
         by-app:
             firefox:
-                by-subtest:
-                    motionmark-animometer:
-                        by-test-platform:
-                            linux1804-64-clang-trunk-qr/opt: 2
-                            default: 1
-                    default:
-                        by-test-platform:
-                            windows.*-64-ccov.*/.*: 3
-                            linux64-ccov.*/.*: 3
-                            default: 2
+                by-test-platform:
+                    windows.*-64-ccov.*/.*: 3
+                    linux64-ccov.*/.*: 3
+                    default: 2
             default:
                 by-subtest:
                     unity-webgl: 3
@@ -485,11 +453,13 @@ browsertime-benchmark:
                             # Bug 1909894, windows 10 + sp3 temporarily
                             windows10-64.*shippable.*-qr.*: [mozilla-central]
                             (linux|windows11-64|macosx1015|macosx1400).*shippable-qr.*: [trunk]
+                            windows11-64-.*-hw-ref-shippable.*: [mozilla-central]
                             .*nightlyasrelease.*: [autoland, mozilla-central]
                             default: []
                     custom-car:
                         by-test-platform:
                             (linux|windows).*shippable-qr.*: [mozilla-central]
+                            windows11-64-.*-hw-ref-shippable.*: [mozilla-central]
                             default: []
                     safari-tp:
                         by-test-platform:
@@ -535,9 +505,6 @@ browsertime-benchmark:
                     default: 1500
             jetstream2: 8000
             matrix-react-bench: 1500
-            motionmark-htmlsuite: 1500
-            motionmark-htmlsuite-ramp: 3000
-            motionmark-animometer-ramp: 2100
             motionmark-1-3: 3000
             motionmark-htmlsuite-1-3: 3000
             unity-webgl: 2400
@@ -878,11 +845,34 @@ browsertime-upload:
 
 browsertime-network-bench:
     raptor:
-        apps: [firefox]
+        apps: [firefox, chrome, custom-car]
         subtests:
-            - h3-upload
+            - [h3-upload, h3-up]
+            - [h3-download, h3-down]
+        network-conditions:
+            by-subtest:
+                h3-upload:
+                    - [slow3G, "0"]
+                    - [slow3G, "0.01"]
+                    - [slow3G, "0.1"]
+                    - [slow3G, "0.5"]
+                    - [fast5G, "0"]
+                    - [fast5G, "0.01"]
+                    - [fast5G, "0.1"]
+                    - [fast5G, "0.5"]
+                    - [fast5G, "1"]
+                    - [busy5G, "0"]
+                    - [busy5G, "0.01"]
+                    - [busy5G, "0.1"]
+                    - [busy5G, "0.5"]
+                    - [busy5G, "1"]
+                h3-download:
+                    - [slow3G, "0"]
+                    - [fast5G, "0"]
+                    - [busy5G, "0"]
+                default: []
     description: Raptor (browsertime) networking download/upload performance test
-    max-run-time: 2700
+    max-run-time: 4500
     run-on-projects: []
     tier: 3
     treeherder-symbol: Btime(network-bench)
@@ -899,8 +889,12 @@ browsertime-pageload-benchmark:
     mozharness:
         extra-options:
             - --browser-cycles=5
-    run-on-projects: []
-    tier: 2
+    run-on-projects:
+        by-test-platform:
+            windows.*-32.*: []
+            (linux|windows.*-64).*shippable.*: [autoland]
+            default: []
+    tier: 3
     treeherder-symbol: Btime(tp6-bench)
 
 browsertime-video-playback-latency:
@@ -920,9 +914,14 @@ browsertime-video-playback-latency:
     description: Raptor (browsertime) Video playback latency test
     mozharness:
         extra-options:
-            - --chimera
-            - --browsertime-no-ffwindowrecorder
-            - --extra-profiler-run
+            by-test-platform:
+                windows.*-64.*shippable.*-qr.*:
+                    - --chimera
+                    - --browsertime-no-ffwindowrecorder
+                    - --extra-profiler-run
+                default:
+                    - --chimera
+                    - --extra-profiler-run
     run-on-projects:
         by-app:
             firefox:
@@ -1004,7 +1003,7 @@ browsertime-indexeddb:
     limit-platforms:
         by-app:
             chrome:
-                - .*shippable.*
+                - (.*?!macosx1015.*)shippable.*
             custom-car:
                 - (macosx1400|linux|windows.*-64).*shippable.*
             default: []

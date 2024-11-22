@@ -32,6 +32,7 @@
 #include "util/Unicode.h"
 #include "vm/ArrayObject.h"
 #include "vm/Compartment.h"
+#include "vm/DateObject.h"
 #include "vm/Float16.h"
 #include "vm/Interpreter.h"
 #include "vm/JSAtomUtils.h"  // AtomizeString
@@ -1330,33 +1331,6 @@ bool PushVarEnv(JSContext* cx, BaselineFrame* frame, Handle<Scope*> scope) {
   return frame->pushVarEnvironment(cx, scope);
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-bool AddDisposableResource(JSContext* cx, BaselineFrame* frame,
-                           JS::Handle<JS::Value> val,
-                           JS::Handle<JS::Value> method,
-                           JS::Handle<JS::Value> needsClosure, UsingHint hint) {
-  JS::Rooted<ArrayObject*> disposeCapability(
-      cx, frame->getOrCreateDisposeCapability(cx));
-  if (!disposeCapability) {
-    return false;
-  }
-  return js::AddDisposableResourceToCapability(cx, disposeCapability, val,
-                                               method, needsClosure, hint);
-}
-
-bool CreateSuppressedError(JSContext* cx, BaselineFrame* frame,
-                           JS::Handle<JS::Value> error,
-                           JS::Handle<JS::Value> suppressed,
-                           JS::MutableHandle<JS::Value> rval) {
-  ErrorObject* errorObj = js::CreateSuppressedError(cx, error, suppressed);
-  if (!errorObj) {
-    return false;
-  }
-  rval.setObject(*errorObj);
-  return true;
-}
-#endif
-
 bool EnterWith(JSContext* cx, BaselineFrame* frame, HandleValue val,
                Handle<WithScope*> templ) {
   return EnterWithOperation(cx, frame, val, templ);
@@ -1881,12 +1855,12 @@ static MOZ_ALWAYS_INLINE bool ValueToAtomOrSymbolPure(JSContext* cx,
   }
 
   if (idVal.isNull()) {
-    *id = PropertyKey::NonIntAtom(cx->names().null);
+    *id = NameToId(cx->names().null);
     return true;
   }
 
   if (idVal.isUndefined()) {
-    *id = PropertyKey::NonIntAtom(cx->names().undefined);
+    *id = NameToId(cx->names().undefined);
     return true;
   }
 
@@ -3117,6 +3091,11 @@ float Float16ToFloat32(int32_t value) {
 int32_t Float32ToFloat16(float value) {
   AutoUnsafeCallWithABI unsafe;
   return static_cast<int32_t>(js::float16{value}.toRawBits());
+}
+
+void DateFillLocalTimeSlots(DateObject* dateObj) {
+  AutoUnsafeCallWithABI unsafe;
+  dateObj->fillLocalTimeSlots();
 }
 
 JSAtom* AtomizeStringNoGC(JSContext* cx, JSString* str) {

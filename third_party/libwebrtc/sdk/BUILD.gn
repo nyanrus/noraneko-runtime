@@ -9,11 +9,11 @@
 import("//third_party/libaom/options.gni")
 import("../webrtc.gni")
 if (is_ios) {
-  import("//build/config/ios/ios_sdk.gni")
-  import("//build/config/ios/rules.gni")
+  import("//chromium/build/config/ios/ios_sdk.gni")
+  import("//chromium/build/config/ios/rules.gni")
 }
 if (is_mac) {
-  import("//build/config/mac/rules.gni")
+  import("//chromium/build/config/mac/rules.gni")
 }
 
 group("sdk") {
@@ -65,7 +65,7 @@ if (is_ios || is_mac) {
     ]
 
     if (use_clang_coverage) {
-      configs = [ "//build/config/coverage:default_coverage" ]
+      configs = [ "//chromium/build/config/coverage:default_coverage" ]
     }
   }
 
@@ -589,6 +589,20 @@ if (is_ios || is_mac) {
         "CoreGraphics.framework",
         "CoreVideo.framework",
       ]
+      if (build_with_mozilla) {
+        deps -= [
+          "//api/video:video_frame",
+          "//api/video:video_rtp_headers",
+          "//common_video",
+          "//rtc_base:checks",
+        ]
+        deps += [
+          "../api/video:video_frame",
+          "../api/video:video_rtp_headers",
+          "../common_video",
+          "../rtc_base:checks",
+        ]
+      }
     }
 
     if (!build_with_mozilla) {
@@ -1079,6 +1093,7 @@ if (is_ios || is_mac) {
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
         "../api/transport:field_trial_based_config",
+        "../api/transport:network_control",
         "../api/transport/rtp:rtp_source",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
@@ -1107,7 +1122,10 @@ if (is_ios || is_mac) {
       ]
 
       if (is_ios) {
-        deps += [ ":native_api_audio_device_module" ]
+        deps += [
+          ":native_api_audio_device_module",
+          "../api/transport:network_control",
+        ]
       }
     }
 
@@ -1201,7 +1219,7 @@ if (is_ios || is_mac) {
           }
 
           public_deps = [
-            "//build/config/ios:xctest",
+            "//chromium/build/config/ios:xctest",
             "//third_party/ocmock",
           ]
         }
@@ -1510,6 +1528,7 @@ if (is_ios || is_mac) {
         deps = [
           ":base_objc",
           ":default_codec_factory_objc",
+          ":metal_objc",
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",

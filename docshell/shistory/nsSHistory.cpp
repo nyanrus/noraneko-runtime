@@ -978,6 +978,10 @@ static void LogEntry(nsISHEntry* aEntry, int32_t aIndex, int32_t aTotal,
       gSHLog, LogLevel::Debug,
       (" %s%s  Is in BFCache = %s\n", prefix.get(), childCount > 0 ? "|" : " ",
        aEntry->GetIsInBFCache() ? "true" : "false"));
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          (" %s%s  Has User Interaction = %s\n", prefix.get(),
+           childCount > 0 ? "|" : " ",
+           aEntry->GetHasUserInteraction() ? "true" : "false"));
 
   nsCOMPtr<nsISHEntry> prevChild;
   for (int32_t i = 0; i < childCount; ++i) {
@@ -1346,7 +1350,7 @@ void nsSHistory::LoadURIOrBFCache(LoadEntryResult& aLoadEntry) {
         canonicalBC->GetActiveSessionHistoryEntry();
     MOZ_ASSERT(she);
     RefPtr<nsFrameLoader> frameLoader = she->GetFrameLoader();
-    if (frameLoader &&
+    if (frameLoader && canonicalBC->Group()->Toplevels().Length() == 1 &&
         (!currentShe || (she->SharedInfo() != currentShe->SharedInfo() &&
                          !currentShe->GetFrameLoader()))) {
       bool canSave = (!currentShe || currentShe->GetSaveLayoutStateFlag()) &&

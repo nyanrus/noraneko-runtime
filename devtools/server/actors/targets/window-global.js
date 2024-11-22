@@ -474,6 +474,10 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       : null;
   }
 
+  get targetGlobal() {
+    return this.window;
+  }
+
   get outerWindowID() {
     if (this.docShell) {
       return this.docShell.outerWindowID;
@@ -583,8 +587,13 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
   /**
    * Getter for the window global's title.
+   * For Web Extension it will ignore the document title and refer to the addon one.
    */
   get title() {
+    if (this.sessionContext.type == "webextension") {
+      const policy = WebExtensionPolicy.getByID(this.sessionContext.addonId);
+      return policy.name;
+    }
     return this.contentDocument.title;
   }
 
@@ -695,8 +704,6 @@ class WindowGlobalTargetActor extends BaseTargetActor {
         watchpoints: true,
         // Supports back and forward navigation
         navigation: true,
-        // @backward-compat { version 130 } Support for VIEWPORT_SIZE_ON_RESIZE highlighter
-        viewportSizeOnResizeHighlighter: true,
       },
     };
 

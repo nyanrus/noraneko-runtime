@@ -86,6 +86,12 @@ class CustomTabsToolbarFeature(
     private val session: CustomTabSessionState?
         get() = sessionId?.let { store.state.findCustomTab(it) }
 
+    @ColorInt
+    private val fallbackIconColor: Int = toolbar.display.colors.menu
+
+    @ColorInt
+    var iconColor: Int = fallbackIconColor
+
     /**
      * Initializes the feature and registers the [CustomTabSessionTitleObserver].
      */
@@ -125,9 +131,11 @@ class CustomTabsToolbarFeature(
 
         val readableColor = colorSchemeParams.getToolbarContrastColor(
             context = context,
-            shouldUpdateTheme = customTabsColorsConfig.isAnyColorUpdateAllowed(),
-            fallbackColor = toolbar.display.colors.menu,
-        )
+            shouldUpdateTheme = customTabsColorsConfig.isAnyToolbarOrStatusBarColorUpdateAllowed(),
+            fallbackColor = fallbackIconColor,
+        ).also {
+            iconColor = it
+        }
 
         if (customTabsColorsConfig.isAnyColorUpdateAllowed()) {
             colorSchemeParams.let {
@@ -205,8 +213,11 @@ class CustomTabsToolbarFeature(
 
         when (customTabsColorsConfig.updateSystemNavigationBarColor) {
             true -> {
+                if (!customTabsColorsConfig.updateStatusBarColor) {
+                    window?.setNavigationBarTheme(getDefaultSystemBarsColor())
+                }
                 // Update navigation bar colors with custom tabs specified ones or keep the current colors.
-                if (navigationBarColor != null || navigationBarDividerColor != null) {
+                else if (navigationBarColor != null || navigationBarDividerColor != null) {
                     window?.setNavigationBarTheme(navigationBarColor, navigationBarDividerColor)
                 }
             }
@@ -403,6 +414,12 @@ data class CustomTabsColorsConfig(
      */
     fun isAnyColorUpdateAllowed() =
         updateStatusBarColor || updateSystemNavigationBarColor || updateToolbarsColor
+
+    /**
+     * Get if toolbar or status bar color customisation is allowed for application's UI elements.
+     */
+    fun isAnyToolbarOrStatusBarColorUpdateAllowed() =
+        updateStatusBarColor || updateToolbarsColor
 }
 
 /**

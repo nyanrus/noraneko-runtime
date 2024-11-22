@@ -16,12 +16,14 @@
 // at the same time.
 
 #define FOR_EACH_MUTEX(_)             \
+  _(ExecutionTracerGlobalLock, 100)   \
   _(TestMutex, 100)                   \
   _(ShellContextWatchdog, 100)        \
   _(ShellWorkerThreads, 100)          \
   _(ShellObjectMailbox, 100)          \
   _(WellKnownParserAtomsInit, 100)    \
                                       \
+  _(ExecutionTracerInstanceLock, 250) \
   _(WasmInitBuiltinThunks, 250)       \
   _(WasmCodeProtected, 250)           \
   _(WasmLazyStubsTier2, 251)          \
@@ -67,7 +69,8 @@
   _(WasmCodeBlockMap, 600)            \
   _(VTuneLock, 600)                   \
   _(ShellTelemetry, 600)              \
-  _(ShellUseCounters, 600)
+  _(ShellUseCounters, 600)            \
+  _(WasmCodeMetaStats, 600)
 
 namespace js {
 namespace mutexid {

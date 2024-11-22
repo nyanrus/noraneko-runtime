@@ -251,6 +251,12 @@ TRRLoadInfo::SetIsFormSubmission(bool aValue) {
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetIsGETRequest(bool* aResult) { return NS_ERROR_NOT_IMPLEMENTED; }
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsGETRequest(bool aValue) { return NS_ERROR_NOT_IMPLEMENTED; }
+
+NS_IMETHODIMP
 TRRLoadInfo::GetSendCSPViolationEvents(bool* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -910,6 +916,16 @@ TRRLoadInfo::GetIsNewWindowTarget(bool* aIsNewWindowTarget) {
 
 NS_IMETHODIMP
 TRRLoadInfo::SetIsNewWindowTarget(bool aIsNewWindowTarget) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetSkipHTTPSUpgrade(bool* aSkipHTTPSUpgrade) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetSkipHTTPSUpgrade(bool aSkipHTTPSUpgrade) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

@@ -4,9 +4,12 @@
 
 package org.mozilla.fenix.ui
 
+import android.os.Build
+import android.os.Build.VERSION.SDK_INT
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.espresso.intent.rule.IntentsRule
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -66,6 +69,7 @@ class DownloadTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2299405
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyTheDownloadFailedNotificationsTest() {
         downloadRobot {
@@ -101,6 +105,7 @@ class DownloadTest : TestSetup() {
                 direction = "Left",
                 shouldDismissNotification = true,
                 canExpandNotification = false,
+                notificationItem = "web_icon.png",
             )
             verifySystemNotificationDoesNotExist("Firefox Fenix")
         }.closeNotificationTray {}
@@ -115,8 +120,7 @@ class DownloadTest : TestSetup() {
         }
         mDevice.openNotification()
         notificationShade {
-            verifySystemNotificationExists("Firefox Fenix")
-            expandNotificationMessage()
+            expandNotificationMessage("3GB.zip")
             clickDownloadNotificationControlButton("PAUSE")
             verifySystemNotificationExists("Download paused")
             clickDownloadNotificationControlButton("RESUME")
@@ -231,7 +235,8 @@ class DownloadTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/457112
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2466505
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun systemNotificationCantBeDismissedWhileInProgressTest() {
         downloadRobot {
@@ -239,16 +244,22 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openNotificationShade {
-            verifySystemNotificationExists("Firefox Fenix")
-            expandNotificationMessage()
-            swipeDownloadNotification(direction = "Left", shouldDismissNotification = false)
+            swipeDownloadNotification(direction = "Left", shouldDismissNotification = false, notificationItem = "3GB.zip")
+            expandNotificationMessage("3GB.zip")
             clickDownloadNotificationControlButton("PAUSE")
-            swipeDownloadNotification(direction = "Right", shouldDismissNotification = false)
-            clickDownloadNotificationControlButton("CANCEL")
+            notificationShade {
+            }.closeNotificationTray {
+            }
+            browserScreen {
+            }.openNotificationShade {
+                swipeDownloadNotification(direction = "Right", shouldDismissNotification = true, notificationItem = "3GB.zip")
+                verifySystemNotificationDoesNotExist("3GB.zip")
+            }
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2299297
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun notificationCanBeDismissedIfDownloadIsInterruptedTest() {
         downloadRobot {
@@ -264,6 +275,7 @@ class DownloadTest : TestSetup() {
                 direction = "Left",
                 shouldDismissNotification = true,
                 canExpandNotification = true,
+                notificationItem = "1GB.zip",
             )
             verifySystemNotificationDoesNotExist("Firefox Fenix")
         }.closeNotificationTray {}
@@ -290,7 +302,13 @@ class DownloadTest : TestSetup() {
             verifyCancelPrivateDownloadsPrompt("1")
             clickStayInPrivateBrowsingPromptButton()
         }.openNotificationShade {
-            verifySystemNotificationExists("Firefox Fenix")
+            if (SDK_INT == Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // On API 34 we first need to expand the system notification before verifying that the app name is displayed
+                expandNotificationMessage("3GB.zip")
+                verifySystemNotificationExists("Firefox Fenix")
+            } else {
+                verifySystemNotificationExists("Firefox Fenix")
+            }
         }
     }
 
@@ -339,6 +357,7 @@ class DownloadTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/244125
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun restartDownloadFromAppNotificationAfterConnectionIsInterruptedTest() {
         downloadFile = "3GB.zip"
@@ -356,8 +375,7 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openNotificationShade {
-            verifySystemNotificationExists("Firefox Fenix")
-            expandNotificationMessage()
+            expandNotificationMessage("3GB.zip")
             clickDownloadNotificationControlButton("CANCEL")
         }
     }

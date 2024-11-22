@@ -23,13 +23,13 @@ ChromeUtils.defineLazyGetter(lazy, "console", () => {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  getRuntimeWasmFilename: "chrome://global/content/ml/Utils.sys.mjs",
   EngineProcess: "chrome://global/content/ml/EngineProcess.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
+  getInferenceProcessInfo: "chrome://global/content/ml/Utils.sys.mjs",
 });
 
 const RS_RUNTIME_COLLECTION = "ml-onnx-runtime";
@@ -59,15 +59,32 @@ export class MLEngineParent extends JSWindowActorParent {
   static engineLocks = new Map();
 
   /**
-   * The following constant controls the major version for wasm downloaded from
-   * Remote Settings. When a breaking change is introduced, Nightly will have these
+   * The following constant controls the major and minor version for onnx wasm downloaded from
+   * Remote Settings.
+   *
+   * In our case, we want to use two distinct ort versions:
+   * - Transformers 2.x needs onnxruntime-web <= 1.19
+   * - Transformers 3.x needs onnxruntime-web > 1.19
+   *
+   * We are using "1.x" for the first one, and "2.x" for the second one.
+   * So when updating the versions in remote setting, make sure you use 2.0+ for 1.20+
+   *
+   * When a breaking change is introduced, Nightly will have these
    * numbers incremented by one, but Beta and Release will still be on the previous
    * version. Remote Settings will ship both versions of the records, and the latest
    * asset released in that version will be used. For instance, with a major version
    * of "1", assets can be downloaded for "1.0", "1.2", "1.3beta", but assets marked
    * as "2.0", "2.1", etc will not be downloaded.
    */
-  static WASM_MAJOR_VERSION = 1;
+  static WASM_MAJOR_VERSION = 2;
+
+  /**
+   * This wasm file supports CPU, WebGPU and WebNN.
+   *
+   * Since SIMD is supported by all major JavaScript engines, non-SIMD build is no longer provided.
+   * We also serve the threaded build since we can simply set numThreads to 1 to disable multi-threading.
+   */
+  static WASM_FILENAME = "ort-wasm-simd-threaded.jsep.wasm";
 
   /**
    * The modelhub used to retrieve files.
@@ -203,6 +220,9 @@ export class MLEngineParent extends JSWindowActorParent {
       case "MLEngine:GetModelFile":
         return this.getModelFile(message.data);
 
+      case "MLEngine:GetInferenceProcessInfo":
+        return lazy.getInferenceProcessInfo();
+
       case "MLEngine:DestroyEngineProcess":
         lazy.EngineProcess.destroyMLEngine().catch(error =>
           console.error(error)
@@ -210,7 +230,10 @@ export class MLEngineParent extends JSWindowActorParent {
         break;
       case "MLEngine:GetInferenceOptions":
         this.checkTaskName(message.json.taskName);
-        return MLEngineParent.getInferenceOptions(message.json.taskName);
+        return MLEngineParent.getInferenceOptions(
+          message.json.featureId,
+          message.json.taskName
+        );
       case "MLEngine:Removed":
         if (!message.json.replacement) {
           // when receiving this message from the child, we know it's not a replacement.
@@ -297,7 +320,7 @@ export class MLEngineParent extends JSWindowActorParent {
 
     // Parsing url to get model name, and file path.
     // if this errors out, it will be caught in the worker
-    const parsedUrl = this.modelHub.parseUrl(url);
+    const parsedUrl = this.modelHub.parseUrl(url, { rootUrl, urlTemplate });
 
     const [data, headers] = await this.modelHub.getModelFileAsArrayBuffer({
       taskName,
@@ -313,6 +336,12 @@ export class MLEngineParent extends JSWindowActorParent {
       ...parsedUrl,
     });
 
+    lazy.console.debug(
+      `Model ${parsedUrl.model} was fetched from ${url}, size ${Math.round(
+        data.byteLength / (1024 * 1024)
+      )}MiB`
+    );
+
     return [data, headers];
   }
 
@@ -321,13 +350,11 @@ export class MLEngineParent extends JSWindowActorParent {
    * @param {RemoteSettingsClient} client
    */
   static async #getWasmArrayRecord(client) {
-    const wasmFilename = lazy.getRuntimeWasmFilename(this.browsingContext);
-
     /** @type {WasmRecord[]} */
     const wasmRecords = await lazy.TranslationsParent.getMaxVersionRecords(
       client,
       {
-        filters: { name: wasmFilename },
+        filters: { name: MLEngineParent.WASM_FILENAME },
         majorVersion: MLEngineParent.WASM_MAJOR_VERSION,
       }
     );
@@ -352,25 +379,44 @@ export class MLEngineParent extends JSWindowActorParent {
     return record;
   }
 
-  /** Gets the inference options from remote settings given a task name.
+  /**
+   * Gets the inference options from remote settings given a feature id or task name.
    *
-   * @param {string} taskName - name of the inference :wtask
+   * Each feature can store default options in Remote Settings.
+   *
+   * We fallback to taskName if there is no featureId provided.
+   *
+   * @param {string} featureId - id of the feature
+   * @param {string} taskName - name of the inference task
    * @returns {Promise<ModelRevisionRecord>}
    */
-  static async getInferenceOptions(taskName) {
+  static async getInferenceOptions(featureId, taskName) {
     const client = MLEngineParent.#getRemoteClient(
       RS_INFERENCE_OPTIONS_COLLECTION
     );
-    const records = await client.get({
-      filters: {
-        taskName,
-      },
-    });
+
+    let records = featureId ? await client.get({ filters: { featureId } }) : [];
+
+    // if the featureId is not in our settings, we fallback to the task name
+    if (records.length === 0) {
+      records = await client.get({
+        filters: {
+          taskName,
+        },
+      });
+    }
+
+    // if we get more than one entry we error out
+    if (records.length > 1) {
+      throw new Error(
+        `Found more than one inference options record for ${featureId} and ${taskName}`
+      );
+    }
 
     // if the task name is not in our settings, we just set the onnx runtime filename.
     if (records.length === 0) {
       return {
-        runtimeFilename: lazy.getRuntimeWasmFilename(this.browsingContext),
+        runtimeFilename: MLEngineParent.WASM_FILENAME,
       };
     }
     const options = records[0];
@@ -381,7 +427,9 @@ export class MLEngineParent extends JSWindowActorParent {
       tokenizerId: options.tokenizerId,
       processorRevision: options.processorRevision,
       processorId: options.processorId,
-      runtimeFilename: lazy.getRuntimeWasmFilename(this.browsingContext),
+      dtype: options.dtype,
+      numThreads: options.numThreads,
+      runtimeFilename: MLEngineParent.WASM_FILENAME,
     };
   }
 
@@ -456,6 +504,13 @@ export class MLEngineParent extends JSWindowActorParent {
     });
 
     return client;
+  }
+
+  /**
+   * Gets a status
+   */
+  getStatus() {
+    return this.sendQuery("MLEngine:GetStatus");
   }
 
   /**
@@ -558,9 +613,7 @@ class MLEngine {
     const engineId = pipelineOptions.engineId;
     this.events = {};
     this.engineId = engineId;
-    lazy.console.log("MLEngine constructor, adding engine", engineId);
     MLEngine.#instances.set(engineId, this);
-    lazy.console.log("Instances", MLEngine.#instances);
     this.mlEngineParent = mlEngineParent;
     this.pipelineOptions = pipelineOptions;
     this.notificationsCallback = notificationsCallback;
@@ -793,7 +846,7 @@ class MLEngine {
     return new Promise((resolve, reject) => {
       // Initial check in case the status is already the desired one
       if (this.engineStatus === desiredStatus) {
-        resolve(`Engine status is now ${desiredStatus}`);
+        resolve(`Engine status is now ${desiredStatus} `);
       }
 
       let onStatusChanged;
@@ -802,7 +855,7 @@ class MLEngine {
       const timeoutId = lazy.setTimeout(() => {
         this.off("statusChanged", onStatusChanged);
         reject(
-          `Timeout after ${TERMINATE_TIMEOUT}ms: Engine status did not reach ${desiredStatus}`
+          `Timeout after ${TERMINATE_TIMEOUT} ms: Engine status did not reach ${desiredStatus} `
         );
       }, TERMINATE_TIMEOUT);
 
@@ -810,7 +863,7 @@ class MLEngine {
         if (status === desiredStatus) {
           this.off("statusChanged", onStatusChanged);
           lazy.clearTimeout(timeoutId);
-          resolve(`Engine status is now ${desiredStatus}`);
+          resolve(`Engine status is now ${desiredStatus} `);
         }
       };
 

@@ -9,7 +9,11 @@ pub use client::{MockIcon, MockRemoteSettingsClient};
 pub use data::*;
 
 use crate::Suggestion;
+use parking_lot::Once;
 use serde_json::Value as JsonValue;
+
+pub use serde_json::json;
+pub use sql_support::ConnExt;
 
 /// Trait with utility functions for JSON handling in the tests
 pub trait JsonExt {
@@ -43,6 +47,7 @@ impl Suggestion {
             Self::Weather { score, .. } => score,
             Self::Wikipedia { .. } => panic!("with_score not valid for wikipedia suggestions"),
             Self::Fakespot { score, .. } => score,
+            Self::Exposure { score, .. } => score,
         };
         *current_score = score;
         self
@@ -97,4 +102,13 @@ impl Suggestion {
             _ => panic!("has_location_sign only valid for yelp suggestions"),
         }
     }
+}
+
+pub fn before_each() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace"))
+            .is_test(true)
+            .init();
+    });
 }

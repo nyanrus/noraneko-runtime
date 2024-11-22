@@ -48,8 +48,7 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   explicit WebGPUParent();
 
   ipc::IPCResult RecvInstanceRequestAdapter(
-      const dom::GPURequestAdapterOptions& aOptions,
-      const nsTArray<RawId>& aTargetIds,
+      const dom::GPURequestAdapterOptions& aOptions, RawId aAdapterId,
       InstanceRequestAdapterResolver&& resolver);
   ipc::IPCResult RecvAdapterRequestDevice(
       RawId aAdapterId, const ipc::ByteBuf& aByteBuf, RawId aDeviceId,
@@ -151,6 +150,8 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   BufferMapData* GetBufferMapData(RawId aBufferId);
 
   bool UseExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId);
+
+  void DisableExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId);
 
   bool EnsureExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId,
                                          ffi::WGPUDeviceId aDeviceId,

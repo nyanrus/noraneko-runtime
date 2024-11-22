@@ -120,18 +120,17 @@ void nsMathMLmfracFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 nsresult nsMathMLmfracFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
                                               int32_t aModType) {
-  if (nsGkAtoms::linethickness_ == aAttribute) {
+  if (aNameSpaceID == kNameSpaceID_None &&
+      nsGkAtoms::linethickness_ == aAttribute) {
+    // The thickness changes, so a repaint of the bar is needed.
     InvalidateFrame();
+    // The thickness affects vertical offsets.
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::None,
+                                  NS_FRAME_IS_DIRTY);
+    return NS_OK;
   }
   return nsMathMLContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
                                                   aModType);
-}
-
-/* virtual */
-nsresult nsMathMLmfracFrame::MeasureForWidth(DrawTarget* aDrawTarget,
-                                             ReflowOutput& aDesiredSize) {
-  PlaceFlags flags(PlaceFlag::IntrinsicSize, PlaceFlag::MeasureOnly);
-  return PlaceInternal(aDrawTarget, flags, aDesiredSize);
 }
 
 nscoord nsMathMLmfracFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
@@ -146,12 +145,6 @@ nscoord nsMathMLmfracFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
 nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
                                    const PlaceFlags& aFlags,
                                    ReflowOutput& aDesiredSize) {
-  return PlaceInternal(aDrawTarget, aFlags, aDesiredSize);
-}
-
-nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
-                                           const PlaceFlags& aFlags,
-                                           ReflowOutput& aDesiredSize) {
   ////////////////////////////////////
   // Get the children's desired sizes
   nsBoundingMetrics bmNum, bmDen;
@@ -362,6 +355,18 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
   aDesiredSize.Width() = mBoundingMetrics.width;
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
 
+  // Apply width/height to math content box.
+  auto sizes = GetWidthAndHeightForPlaceAdjustment(aFlags);
+  auto shiftX = ApplyAdjustmentForWidthAndHeight(aFlags, sizes, aDesiredSize,
+                                                 mBoundingMetrics);
+  if (sizes.width) {
+    // MathML Core says the math content box is horizontally centered
+    // but the fraction bar still takes the full width of the content box.
+    dxNum += shiftX;
+    dxDen += shiftX;
+    width = *sizes.width;
+  }
+
   // Add padding+border.
   auto borderPadding = GetBorderPaddingForPlace(aFlags);
   InflateReflowAndBoundingMetrics(borderPadding, aDesiredSize,
@@ -384,8 +389,8 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                       ReflowChildFlags::Default);
     // place denominator
     dxDen += denMargin.left;
-    dy = aDesiredSize.Height() - sizeDen.Height() - denMargin.bottom -
-         borderPadding.bottom;
+    dy =
+        aDesiredSize.BlockStartAscent() + denShift - sizeDen.BlockStartAscent();
     FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dxDen, dy,
                       ReflowChildFlags::Default);
     // place the fraction bar - dy is top of bar

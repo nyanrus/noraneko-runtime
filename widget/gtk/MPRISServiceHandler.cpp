@@ -756,7 +756,7 @@ bool MPRISServiceHandler::InitLocalImageFolder() {
     // The XDG_DATA_HOME points to the same location in the host and guest
     // filesystem.
     if (const auto* xdgDataHome = g_getenv("XDG_DATA_HOME")) {
-      rv = NS_NewNativeLocalFile(nsDependentCString(xdgDataHome), true,
+      rv = NS_NewNativeLocalFile(nsDependentCString(xdgDataHome),
                                  getter_AddRefs(mLocalImageFolder));
     }
   } else {
@@ -845,6 +845,11 @@ GVariant* MPRISServiceHandler::GetMetadataAsGVariant() const {
     g_variant_builder_add(&builder, "{sv}", "mpris:artUrl",
                           g_variant_new_string(static_cast<const gchar*>(
                               mMPRISMetadata.mArtUrl.get())));
+  }
+  if (!mMPRISMetadata.mUrl.IsEmpty()) {
+    g_variant_builder_add(&builder, "{sv}", "xesam:url",
+                          g_variant_new_string(static_cast<const gchar*>(
+                              mMPRISMetadata.mUrl.get())));
   }
   if (mPositionState.isSome()) {
     CheckedInt64 length =

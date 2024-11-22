@@ -4,7 +4,7 @@
  *               resistance is enabled.
  */
 
-function getTimeZone(tab) {
+function getTimeZoneOnTab(tab) {
   const extractTime = function () {
     const xslText = `
     <xsl:stylesheet version="1.0"
@@ -17,6 +17,8 @@ function getTimeZone(tab) {
       </xsl:template>
     </xsl:stylesheet>`;
 
+    SpecialPowers.Cu.getJSTestingFunctions().setTimeZone("PST8PDT");
+
     const parser = new DOMParser();
     const xsltProcessor = new XSLTProcessor();
     const xslStylesheet = parser.parseFromString(xslText, "application/xml");
@@ -25,7 +27,11 @@ function getTimeZone(tab) {
     const styledDoc = xsltProcessor.transformToDocument(xmlDoc);
     const time = styledDoc.firstChild.textContent;
 
-    return time;
+    SpecialPowers.Cu.getJSTestingFunctions().setTimeZone(undefined);
+
+    return time
+      .match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}([+-]\d{2}:\d{2})/)
+      .pop();
   };
 
   const extractTimeExpr = `(${extractTime.toString()})();`;
@@ -37,26 +43,43 @@ function getTimeZone(tab) {
   );
 }
 
-add_task(async function test_new_window() {
+async function getTimeZone(enabled) {
+  const overrides = enabled ? "+JSDateTimeUTC" : "-JSDateTimeUTC";
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.fingerprintingProtection", true],
-      ["privacy.fingerprintingProtection.overrides", "+JSDateTimeUTC"],
+      ["privacy.fingerprintingProtection.overrides", overrides],
     ],
   });
+
+  SpecialPowers.Cu.getJSTestingFunctions().setTimeZone("PST8PDT");
 
   // Open a tab for extracting the time zone from XSLT.
   const tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: TEST_PATH + "file_dummy.html",
-    forceNewProcess: true,
   });
 
-  SpecialPowers.Cu.getJSTestingFunctions().setTimeZone("America/Toronto");
-  const timeZone = await getTimeZone(tab);
-
-  ok(timeZone.endsWith("+00:00"), "Timezone was spoofed.");
+  const timeZone = await getTimeZoneOnTab(tab);
 
   BrowserTestUtils.removeTab(tab);
+  SpecialPowers.Cu.getJSTestingFunctions().setTimeZone(undefined);
   await SpecialPowers.popPrefEnv();
+
+  return timeZone;
+}
+
+let realTimeZone = "";
+add_setup(async () => {
+  realTimeZone = await getTimeZone(false);
 });
+
+async function run_test(enabled) {
+  const timeZone = await getTimeZone(enabled);
+  const expected = enabled ? "+00:00" : realTimeZone;
+
+  ok(timeZone.endsWith(expected), `Timezone is ${expected}.`);
+}
+
+add_task(() => run_test(true));
+add_task(() => run_test(false));

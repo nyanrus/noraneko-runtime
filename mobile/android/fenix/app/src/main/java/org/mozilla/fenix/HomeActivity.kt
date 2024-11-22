@@ -6,6 +6,7 @@ package org.mozilla.fenix
 
 import android.annotation.SuppressLint
 import android.app.assist.AssistContent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.Intent.ACTION_MAIN
@@ -48,7 +49,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import mozilla.appservices.places.BookmarkRoot
-import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.MediaSessionAction
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.SearchEngine
@@ -60,6 +60,7 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.storage.HistoryMetadataKey
 import mozilla.components.feature.contextmenu.DefaultSelectionActionDelegate
+import mozilla.components.feature.customtabs.isCustomTabIntent
 import mozilla.components.feature.media.ext.findActiveMediaTab
 import mozilla.components.feature.privatemode.notification.PrivateNotificationFeature
 import mozilla.components.feature.search.BrowserStoreSearchAdapter
@@ -71,6 +72,7 @@ import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
 import mozilla.components.support.ktx.android.content.call
 import mozilla.components.support.ktx.android.content.email
 import mozilla.components.support.ktx.android.content.share
+import mozilla.components.support.ktx.android.view.setupPersistentInsets
 import mozilla.components.support.ktx.kotlin.isUrl
 import mozilla.components.support.ktx.kotlin.toNormalizedUrl
 import mozilla.components.support.locale.LocaleAwareAppCompatActivity
@@ -98,6 +100,8 @@ import org.mozilla.fenix.components.appstate.OrientationMode
 import org.mozilla.fenix.components.metrics.BreadcrumbsRecorder
 import org.mozilla.fenix.components.metrics.GrowthDataWorker
 import org.mozilla.fenix.components.metrics.fonts.FontEnumerationWorker
+import org.mozilla.fenix.crashes.CrashReporterBinding
+import org.mozilla.fenix.crashes.UnsubmittedCrashDialog
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 import org.mozilla.fenix.databinding.ActivityHomeBinding
 import org.mozilla.fenix.debugsettings.data.DefaultDebugSettingsRepository
@@ -141,12 +145,15 @@ import org.mozilla.fenix.perf.StartupPathProvider
 import org.mozilla.fenix.perf.StartupTimeline
 import org.mozilla.fenix.perf.StartupTypeTelemetry
 import org.mozilla.fenix.session.PrivateNotificationService
+import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.shortcut.NewTabShortcutIntentProcessor.Companion.ACTION_OPEN_PRIVATE_TAB
 import org.mozilla.fenix.tabhistory.TabHistoryDialogFragment
 import org.mozilla.fenix.tabstray.TabsTrayFragment
 import org.mozilla.fenix.theme.DefaultThemeManager
+import org.mozilla.fenix.theme.StatusBarColorManager
 import org.mozilla.fenix.theme.ThemeManager
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.utils.changeAppLauncherIconBackgroundColor
 import java.lang.ref.WeakReference
 import java.util.Locale
 
@@ -181,6 +188,29 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             store = components.core.store,
             context = this@HomeActivity,
             fragmentManager = supportFragmentManager,
+            onLinkClicked = { url, shouldOpenInBrowser ->
+                if (shouldOpenInBrowser) {
+                    openToBrowserAndLoad(
+                        searchTermOrURL = url,
+                        newTab = true,
+                        from = BrowserDirection.FromGlobal,
+                    )
+                } else {
+                    startActivity(
+                        SupportUtils.createCustomTabIntent(
+                            context = this,
+                            url = url,
+                        ),
+                    )
+                }
+            },
+        )
+    }
+
+    private val crashReporterBinding by lazy {
+        CrashReporterBinding(
+            store = components.appStore,
+            onReporting = ::showCrashReporter,
         )
     }
 
@@ -269,6 +299,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         // Changing a language on the Language screen restarts the activity, but the activity keeps
         // the old layout direction. We have to update the direction manually.
         window.decorView.layoutDirection = TextUtils.getLayoutDirectionFromLocale(Locale.getDefault())
+        window.setupPersistentInsets()
 
         binding = ActivityHomeBinding.inflate(layoutInflater)
 
@@ -363,12 +394,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             val safeIntent = intent?.toSafeIntent()
             safeIntent
                 ?.let(::getIntentSource)
-                ?.also {
-                    Events.appOpened.record(Events.AppOpenedExtra(it))
+                ?.also { source ->
+                    Events.appOpened.record(
+                        Events.AppOpenedExtra(
+                            source = source,
+                        ),
+                    )
                     // This will record an event in Nimbus' internal event store. Used for behavioral targeting
                     recordEventInNimbus("app_opened")
 
-                    if (safeIntent.action.equals(ACTION_OPEN_PRIVATE_TAB) && it == APP_ICON) {
+                    if (safeIntent.action.equals(ACTION_OPEN_PRIVATE_TAB) && source == APP_ICON) {
                         AppIcon.newPrivateTabTapped.record(NoExtras())
                     }
                 }
@@ -380,8 +415,12 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             extensionsProcessDisabledForegroundController,
             extensionsProcessDisabledBackgroundController,
             serviceWorkerSupport,
-            webExtensionPromptFeature,
+            crashReporterBinding,
         )
+
+        if (!isCustomTabIntent(intent)) {
+            lifecycle.addObserver(webExtensionPromptFeature)
+        }
 
         if (shouldAddToRecentsScreen(intent)) {
             intent.removeExtra(START_IN_RECENTS_SCREEN)
@@ -397,6 +436,11 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         }
 
         components.core.requestInterceptor.setNavigationController(navHost.navController)
+
+        supportFragmentManager.registerFragmentLifecycleCallbacks(
+            StatusBarColorManager(themeManager, this),
+            true,
+        )
 
         if (settings().showContileFeature) {
             components.core.contileTopSitesUpdater.startPeriodicWork()
@@ -571,6 +615,18 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 "finishing" to isFinishing.toString(),
             ),
         )
+
+        if (FxNimbus.features.alternativeAppLauncherIcon.value().enabled) {
+            // User has been enrolled in alternative app icon experiment.
+            with(applicationContext) {
+                changeAppLauncherIconBackgroundColor(
+                    packageManager = applicationContext.packageManager,
+                    appAlias = ComponentName(this, "$packageName.App"),
+                    alternativeAppAlias = ComponentName(this, "$packageName.AlternativeApp"),
+                    resetToDefault = FxNimbus.features.alternativeAppLauncherIcon.value().resetToDefault,
+                )
+            }
+        }
     }
 
     final override fun onPause() {
@@ -1011,7 +1067,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
      * @param engine Optional [SearchEngine] to use when performing a search.
      * @param forceSearch Whether or not to force performing a search.
      * @param flags Flags that will be used when loading the URL (not applied to searches).
-     * @param requestDesktopMode Whether or not to request the desktop mode for the session.
      * @param historyMetadata The [HistoryMetadataKey] of the new tab in case this tab
      * was opened from history.
      * @param additionalHeaders The extra headers to use when loading the URL.
@@ -1024,7 +1079,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         engine: SearchEngine? = null,
         forceSearch: Boolean = false,
         flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
-        requestDesktopMode: Boolean = false,
         historyMetadata: HistoryMetadataKey? = null,
         additionalHeaders: Map<String, String>? = null,
     ) {
@@ -1035,7 +1089,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             engine = engine,
             forceSearch = forceSearch,
             flags = flags,
-            requestDesktopMode = requestDesktopMode,
             historyMetadata = historyMetadata,
             additionalHeaders = additionalHeaders,
         )
@@ -1058,7 +1111,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
      * @param engine Optional [SearchEngine] to use when performing a search.
      * @param forceSearch Whether or not to force performing a search.
      * @param flags Flags that will be used when loading the URL (not applied to searches).
-     * @param requestDesktopMode Whether or not to request the desktop mode for the session.
      * @param historyMetadata The [HistoryMetadataKey] of the new tab in case this tab
      * was opened from history.
      * @param additionalHeaders The extra headers to use when loading the URL.
@@ -1069,7 +1121,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         engine: SearchEngine?,
         forceSearch: Boolean,
         flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
-        requestDesktopMode: Boolean = false,
         historyMetadata: HistoryMetadataKey? = null,
         additionalHeaders: Map<String, String>? = null,
     ) {
@@ -1085,7 +1136,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         // has removed all of them, or we couldn't load any) we will pass searchTermOrURL to Gecko
         // and let it try to load whatever was entered.
         if ((!forceSearch && searchTermOrURL.isUrl()) || engine == null) {
-            val tabId = if (newTab) {
+            if (newTab) {
                 components.useCases.tabsUseCases.addTab(
                     url = searchTermOrURL.toNormalizedUrl(),
                     flags = flags,
@@ -1097,11 +1148,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                     url = searchTermOrURL.toNormalizedUrl(),
                     flags = flags,
                 )
-                components.core.store.state.selectedTabId
-            }
-
-            if (requestDesktopMode && tabId != null) {
-                handleRequestDesktopMode(tabId)
             }
         } else {
             if (newTab) {
@@ -1137,14 +1183,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 "newTab: $newTab",
             )
         }
-    }
-
-    internal fun handleRequestDesktopMode(tabId: String) {
-        components.useCases.sessionUseCases.requestDesktopSite(true, tabId)
-        components.core.store.dispatch(ContentAction.UpdateDesktopModeAction(tabId, true))
-
-        // Reset preference value after opening the tab in desktop mode
-        settings().openNextTabInDesktopMode = false
     }
 
     @VisibleForTesting
@@ -1326,6 +1364,12 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 (systemGestureInsets?.left ?: 0) > 0 && (systemGestureInsets?.right ?: 0) > 0
             NavigationBar.osNavigationUsesGestures.set(isUsingGesturesNavigation)
         }
+    }
+
+    private fun showCrashReporter() {
+        UnsubmittedCrashDialog(
+            dispatcher = { action -> components.appStore.dispatch(AppAction.CrashActionWrapper(action)) },
+        ).show(supportFragmentManager, UnsubmittedCrashDialog.TAG)
     }
 
     companion object {

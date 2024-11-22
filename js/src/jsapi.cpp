@@ -1642,10 +1642,7 @@ JS_PUBLIC_API bool JS::GetFirstArgumentAsTypeHint(JSContext* cx,
 
   UniqueChars bytes;
   const char* source = ValueToSourceForError(cx, args.get(0), bytes);
-  if (!source) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
+  MOZ_ASSERT(source);
 
   JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                            JSMSG_NOT_EXPECTED_TYPE, "Symbol.toPrimitive",
@@ -1918,6 +1915,23 @@ JS_PUBLIC_API JSObject* JS_NewObjectWithGivenProto(JSContext* cx,
   MOZ_ASSERT(!(clasp->flags & JSCLASS_IS_GLOBAL));
 
   return NewObjectWithGivenProto(cx, clasp, proto);
+}
+
+JS_PUBLIC_API JSObject* JS_NewObjectWithGivenProtoAndUseAllocSite(
+    JSContext* cx, const JSClass* clasp, HandleObject proto) {
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  cx->check(proto);
+
+  MOZ_ASSERT(clasp);
+  MOZ_ASSERT(!clasp->isJSFunction());
+  MOZ_ASSERT(clasp != &PlainObject::class_);
+  MOZ_ASSERT(clasp != &ArrayObject::class_);
+  MOZ_ASSERT(!(clasp->flags & JSCLASS_IS_GLOBAL));
+
+  return NewObjectWithGivenProtoAndAllocSite(cx, clasp, proto,
+                                             cx->realm()->localAllocSite);
 }
 
 JS_PUBLIC_API JSObject* JS_NewPlainObject(JSContext* cx) {
@@ -3585,7 +3599,7 @@ JS_PUBLIC_API JS::PropertyKey JS::GetWellKnownSymbolKey(JSContext* cx,
 static bool AddPrefix(JSContext* cx, JS::Handle<JS::PropertyKey> id,
                       FunctionPrefixKind prefixKind,
                       JS::MutableHandle<JS::PropertyKey> out) {
-  JS::Rooted<JSAtom*> atom(cx, js::IdToFunctionName(cx, id, prefixKind));
+  JSAtom* atom = js::IdToFunctionName(cx, id, prefixKind);
   if (!atom) {
     return false;
   }
@@ -3872,6 +3886,10 @@ JS_PUBLIC_API void JS_ReportOutOfMemory(JSContext* cx) {
 
 JS_PUBLIC_API void JS_ReportAllocationOverflow(JSContext* cx) {
   ReportAllocationOverflow(cx);
+}
+
+JS_PUBLIC_API void JS::ReportUncatchableException(JSContext* cx) {
+  cx->reportUncatchableException();
 }
 
 JS_PUBLIC_API bool JS_ExpandErrorArgumentsASCII(JSContext* cx,
@@ -4653,9 +4671,15 @@ const char* AutoFilename::get() const {
   return filename_.as<UniqueChars>().get();
 }
 
-JS_PUBLIC_API bool DescribeScriptedCaller(JSContext* cx, AutoFilename* filename,
+JS_PUBLIC_API bool DescribeScriptedCaller(AutoFilename* filename, JSContext* cx,
                                           uint32_t* lineno,
                                           JS::ColumnNumberOneOrigin* column) {
+#ifdef DEBUG
+  auto noThrow = mozilla::MakeScopeExit([=]() {
+    MOZ_ASSERT(!cx->isThrowingOutOfMemory() && !cx->isThrowingOverRecursed() &&
+               !cx->isExceptionPending());
+  });
+#endif
   if (filename) {
     filename->reset();
   }

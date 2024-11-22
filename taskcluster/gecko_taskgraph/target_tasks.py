@@ -257,13 +257,9 @@ def accept_raptor_android_build(platform):
         return False
     if "p6" in platform and "aarch64" in platform:
         return True
-    if "s21" in platform and "aarch64" in platform:
-        return True
     if "s24" in platform and "aarch64" in platform:
         return True
     if "a55" in platform and "aarch64" in platform:
-        return True
-    if "a51" in platform:
         return True
     return False
 
@@ -307,6 +303,63 @@ def filter_out_shippable(task):
     return not task.attributes.get("shippable", False)
 
 
+def _try_task_os_integration(full_task_graph):
+    matched_tasks = []
+
+    # add source tests: mozperftest, mozbase, mozbuild, mozharness, mozlint
+    matched_tasks.extend(
+        [x for x in full_task_graph.graph.nodes if "source-test-python" in x]
+    )
+
+    # add perf tests: talos xperf/other/webgl, perftest-*, browsertime: amazon, sp3, rdt-post-*, ytp-widevine-*
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if ("talos-xperf" in x or "talos-other" in x or "talos-webgl" in x)
+            and ("swr" not in x and "profiling" not in x)
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "perftest-" in x and ("service-worker" in x or "startup-geckoview" in x)
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "browsertime-" in x
+            and "firefox" in x
+            and "nightlyasrelease" not in x
+            and ("amazon" in x or "billgates-ama" in x or "playback-widevine-" in x)
+            and (
+                "bytecode" not in x
+                and "profiling" not in x
+                and "live" not in x
+                and "webextensions" not in x
+            )
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "browsertime-" in x
+            and "speedometer3" in x
+            and "nightlyasrelease" not in x
+            and ("firefox" in x or "safari" in x or "chrome" in x or "custom-car" in x)
+            and ("bytecode" not in x and "profiling" not in x)
+        ]
+    )
+    return matched_tasks
+
+
 def _try_task_config(full_task_graph, parameters, graph_config):
     requested_tasks = parameters["try_task_config"]["tasks"]
     pattern_tasks = [x for x in requested_tasks if x.endswith("-*")]
@@ -329,6 +382,13 @@ def _try_task_config(full_task_graph, parameters, graph_config):
 
         if "MOZHARNESS_TEST_TAG" in parameters["try_task_config"].get("env", {}):
             matched_tasks = [x for x in matched_tasks if x.endswith("-1")]
+
+    if "MOZHARNESS_TEST_TAG" in parameters["try_task_config"].get("env", {}):
+        if (
+            "os_integration"
+            in parameters["try_task_config"]["env"]["MOZHARNESS_TEST_TAG"]
+        ):
+            matched_tasks.extend(_try_task_os_integration(full_task_graph))
 
     selected_tasks = set(tasks) | set(matched_tasks)
     missing.update(selected_tasks - set(full_task_graph.tasks))
@@ -805,7 +865,14 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
             if "browsertime" in try_name and (
                 "custom-car" in try_name or "cstm-car-m" in try_name
             ):
-                if "hw-s21" in platform and "speedometer3" not in try_name:
+                if "hw-s24" in platform and "speedometer3" not in try_name:
+                    return False
+                if "network-bench" in try_name:
+                    return False
+                # Bug 1898514: avoid tp6m or non-essential tp6 jobs in cron
+                if (
+                    "tp6" in try_name and "essential" not in try_name
+                ) or "tp6m" in try_name:
                     return False
                 return True
         return False
@@ -837,6 +904,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         if "live" in try_name and "sheriffed" not in try_name:
             return False
 
+        if "network-bench" in try_name:
+            return False
+
         # Desktop selection
         if accept_raptor_desktop_build(platform):
             # Select some browsertime tasks as desktop smoke-tests
@@ -863,7 +933,7 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     return True
         # Android selection
         elif accept_raptor_android_build(platform):
-            if "hw-s21" in platform and "speedometer3" not in try_name:
+            if "hw-s24" in platform and "speedometer3" not in try_name:
                 return False
             if "chrome-m" in try_name and "essential" in try_name:
                 return True
@@ -877,9 +947,6 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 return False
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
-                return False
-            # Only run webrender tests
-            if "chrome-m" not in try_name and "-qr" not in platform:
                 return False
             # Select live site tests
             if "-live" in try_name:
@@ -954,7 +1021,7 @@ def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
             platform
         ):
             try_name = attributes.get("raptor_try_name")
-            if "hw-s21" in platform and "speedometer3" not in try_name:
+            if "hw-s24" in platform and "speedometer3" not in try_name:
                 return False
             if (
                 "browsertime" in try_name
@@ -1128,7 +1195,7 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
         "searchfox-macosx64-searchfox/debug",
         "searchfox-macosx64-aarch64-searchfox/debug",
         "searchfox-win64-searchfox/debug",
-        "searchfox-android-armv7-searchfox/debug",
+        "searchfox-android-aarch64-searchfox/debug",
         "searchfox-ios-searchfox/debug",
         "source-test-file-metadata-bugzilla-components",
         "source-test-file-metadata-test-info-all",
@@ -1712,3 +1779,13 @@ def target_tasks_android_l10n_import(full_task_graph, parameters, graph_config):
 @register_target_task("android-l10n-sync")
 def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-sync"]
+
+
+@register_target_task("os-integration")
+def target_tasks_os_integration(full_task_graph, parameters, graph_config):
+    return [
+        l
+        for l, t in full_task_graph.tasks.items()
+        if t.attributes.get("unittest_variant") == "os-integration"
+        and standard_filter(t, parameters)
+    ]

@@ -16,11 +16,14 @@ const { ModelHub, IndexedDBCache } = ChromeUtils.importESModule(
   "chrome://global/content/ml/ModelHub.sys.mjs"
 );
 
-const { getRuntimeWasmFilename } = ChromeUtils.importESModule(
-  "chrome://global/content/ml/Utils.sys.mjs"
-);
-
-const { createEngine, PipelineOptions } = ChromeUtils.importESModule(
+const {
+  createEngine,
+  PipelineOptions,
+  QuantizationLevel,
+  ExecutionPriority,
+  InferenceDevice,
+  LogLevel,
+} = ChromeUtils.importESModule(
   "chrome://global/content/ml/EngineProcess.sys.mjs"
 );
 
@@ -34,7 +37,7 @@ Services.scriptloader.loadSubScript(
 function getDefaultWasmRecords() {
   return [
     {
-      name: getRuntimeWasmFilename(),
+      name: MLEngineParent.WASM_FILENAME,
       version: MLEngineParent.WASM_MAJOR_VERSION + ".0",
     },
   ];
@@ -42,11 +45,12 @@ function getDefaultWasmRecords() {
 
 async function createAndMockMLRemoteSettings({
   autoDownloadFromRemoteSettings = false,
+  records = null,
 } = {}) {
   const runtime = await createMLWasmRemoteClient(
     autoDownloadFromRemoteSettings
   );
-  const options = await createOptionsRemoteClient();
+  const options = await createOptionsRemoteClient(records);
 
   const remoteClients = {
     "ml-onnx-runtime": runtime,
@@ -109,7 +113,7 @@ async function createMLWasmRemoteClient(autoDownloadFromRemoteSettings) {
  *
  * @returns {RemoteSettings}
  */
-async function createOptionsRemoteClient(record = null) {
+async function createOptionsRemoteClient(records = null) {
   const { RemoteSettings } = ChromeUtils.importESModule(
     "resource://services-settings/remote-settings.sys.mjs"
   );
@@ -118,20 +122,23 @@ async function createOptionsRemoteClient(record = null) {
     `${mockedCollectionName}-${_remoteSettingsMockId++}`
   );
 
-  if (!record) {
-    record = {
-      taskName: "echo",
-      modelId: "mozilla/distilvit",
-      processorId: "mozilla/distilvit",
-      tokenizerId: "mozilla/distilvit",
-      modelRevision: "main",
-      processorRevision: "main",
-      tokenizerRevision: "main",
-      id: "74a71cfd-1734-44e6-85c0-69cf3e874138",
-    };
+  if (!records) {
+    records = [
+      {
+        taskName: "moz-echo",
+        modelId: "mozilla/distilvit",
+        processorId: "mozilla/distilvit",
+        tokenizerId: "mozilla/distilvit",
+        modelRevision: "main",
+        processorRevision: "main",
+        tokenizerRevision: "main",
+        dtype: "q8",
+        id: "74a71cfd-1734-44e6-85c0-69cf3e874138",
+      },
+    ];
   }
 
   await client.db.clear();
-  await client.db.importChanges({}, Date.now(), [record]);
+  await client.db.importChanges({}, Date.now(), records);
   return client;
 }

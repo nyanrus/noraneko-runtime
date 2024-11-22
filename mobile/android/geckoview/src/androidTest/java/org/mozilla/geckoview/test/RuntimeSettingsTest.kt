@@ -16,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.BuildConfig
 import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
@@ -215,6 +216,31 @@ class RuntimeSettingsTest : BaseSessionTest() {
             "GeckoRuntimeSettings remains turned off",
             settings.fontInflationEnabled,
             `is`(false),
+        )
+    }
+
+    @Test
+    fun webContentIsolationStrategy() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        // Set isolation strategy
+        geckoRuntimeSettings.setWebContentIsolationStrategy(GeckoRuntimeSettings.STRATEGY_ISOLATE_NOTHING)
+
+        // Check isolation strategy with GeckoView
+        assertThat(
+            "WebContentIsolationStrategy was set to isolate nothing.",
+            geckoRuntimeSettings.webContentIsolationStrategy,
+            equalTo(GeckoRuntimeSettings.STRATEGY_ISOLATE_NOTHING),
+        )
+
+        // Check isolation strategy with Gecko
+        val geckoPreference =
+            (sessionRule.getPrefs("fission.webContentIsolationStrategy").get(0)) as Int
+
+        assertThat(
+            "WebContentIsolationStrategy pref value should be isolate nothing.",
+            geckoPreference,
+            equalTo(GeckoRuntimeSettings.STRATEGY_ISOLATE_NOTHING),
         )
     }
 
@@ -573,6 +599,87 @@ class RuntimeSettingsTest : BaseSessionTest() {
             "UserCharacteristicPingCurrentVersion pref value should be expected value",
             currentVersion,
             equalTo(5),
+        )
+    }
+
+    @Test
+    fun fetchPriorityEnabling() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        geckoRuntimeSettings.setFetchPriorityEnabled(true)
+
+        assertThat(
+            "Fetch Priority settings should be set to the expected value",
+            geckoRuntimeSettings.fetchPriorityEnabled,
+            equalTo(true),
+        )
+
+        val enabled =
+            (sessionRule.getPrefs("network.fetchpriority.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Fetch Priority pref should be set to the expected value",
+            enabled,
+            equalTo(true),
+        )
+    }
+
+    @Test
+    fun fetchPriorityDisabling() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        geckoRuntimeSettings.setFetchPriorityEnabled(false)
+
+        assertThat(
+            "Fetch Priority settings should be set to the expected value",
+            geckoRuntimeSettings.fetchPriorityEnabled,
+            equalTo(false),
+        )
+
+        val enabled =
+            (sessionRule.getPrefs("network.fetchpriority.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Fetch Priority pref should be set to the expected value",
+            enabled,
+            equalTo(false),
+        )
+    }
+
+    @Test
+    fun cookieBehaviorOptInPartitioning() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        geckoRuntimeSettings.setCookieBehaviorOptInPartitioning(true)
+        geckoRuntimeSettings.setCookieBehaviorOptInPartitioningPBM(true)
+
+        assertThat(
+            "CookieBehaviorOptInPartitioning runtime settings should return expected value",
+            geckoRuntimeSettings.cookieBehaviorOptInPartitioning,
+            equalTo(true),
+        )
+
+        assertThat(
+            "CookieBehaviorOptInPartitioningPBM runtime settings should return expected value",
+            geckoRuntimeSettings.cookieBehaviorOptInPartitioningPBM,
+            equalTo(true),
+        )
+
+        val cookieBehaviorOptInPartitioning =
+            (sessionRule.getPrefs("network.cookie.cookieBehavior.optInPartitioning").get(0)) as Boolean
+        val cookieBehaviorOptInPartitioningPBM =
+            (sessionRule.getPrefs("network.cookie.cookieBehavior.optInPartitioning.pbmode").get(0)) as Boolean
+
+        assertThat(
+            "CookieBehaviorOptInPartitioning pref should return expected value",
+            cookieBehaviorOptInPartitioning,
+            equalTo(true),
+        )
+
+        assertThat(
+            "CookieBehaviorOptInPartitioningPBM pref should return expected value",
+            cookieBehaviorOptInPartitioningPBM,
+            equalTo(true),
         )
     }
 }

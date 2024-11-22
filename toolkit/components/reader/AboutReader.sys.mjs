@@ -85,8 +85,6 @@ const DEFAULT_COLORS = {
   "selection-highlight": "#FFFFCC",
 };
 
-Services.telemetry.setEventRecordingEnabled("readermode", true);
-
 const zoomOnCtrl =
   Services.prefs.getIntPref("mousewheel.with_control.action", 3) == 3;
 const zoomOnMeta =
@@ -651,15 +649,9 @@ AboutReader.prototype = {
           target.attributes.getNamedItem(`data-telemetry-id`)?.value;
 
         if (clickTelemetryId && !blurTelemetryIds.has(clickTelemetryId)) {
-          Services.telemetry.recordEvent(
-            "readermode",
-            "button",
-            "click",
-            null,
-            {
-              label: clickTelemetryId,
-            }
-          );
+          Glean.readermode.buttonClick.record({
+            label: clickTelemetryId,
+          });
         }
 
         if (target.classList.contains("dropdown-toggle")) {
@@ -673,15 +665,9 @@ AboutReader.prototype = {
             target.attributes.getNamedItem(`data-telemetry-id`)?.value;
 
           if (blurTelemetryId && blurTelemetryIds.has(blurTelemetryId)) {
-            Services.telemetry.recordEvent(
-              "readermode",
-              "button",
-              "click",
-              null,
-              {
-                label: blurTelemetryId,
-              }
-            );
+            Glean.readermode.buttonClick.record({
+              label: blurTelemetryId,
+            });
           }
         }
         break;
@@ -1276,6 +1262,16 @@ AboutReader.prototype = {
         textFirstFocusable.focus();
       }
     });
+    textFirstFocusable.addEventListener("keydown", e => {
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        if (accordion.hasAttribute("open")) {
+          textResetButton.focus();
+        } else {
+          advancedHeader.focus();
+        }
+      }
+    });
   },
 
   _setColorScheme(newColorScheme) {
@@ -1865,6 +1861,23 @@ AboutReader.prototype = {
       if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         customThemeFirstFocusable.focus();
+      }
+    });
+    defaultThemeFirstFocusable.addEventListener("keydown", e => {
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        let themeLabels = themeButtons.getElementsByTagName("label");
+        for (const label of themeLabels) {
+          if (label.hasAttribute("checked")) {
+            doc.querySelector(`.${label.className}`).focus();
+          }
+        }
+      }
+    });
+    customThemeFirstFocusable.addEventListener("keydown", e => {
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        themeResetButton.focus();
       }
     });
   },

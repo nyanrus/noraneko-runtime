@@ -17,6 +17,7 @@ import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.utils.PendingIntentUtils
 import mozilla.components.support.utils.ThreadUtils
 import mozilla.components.support.utils.ext.stopForegroundCompat
 import mozilla.telemetry.glean.private.NoExtras
@@ -25,7 +26,7 @@ import org.mozilla.focus.GleanMetrics.RecentApps
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.MainActivity
 import org.mozilla.focus.ext.components
-import org.mozilla.focus.utils.IntentUtils
+import java.lang.ref.WeakReference
 
 /**
  * As long as a session is active this service will keep the notification (and our process) alive.
@@ -60,7 +61,7 @@ class SessionNotificationService : Service() {
                     createNotificationChannelIfNeeded()
                     startForeground(NOTIFICATION_ID, buildNotification())
                 } else {
-                    permissionHandler?.invoke()
+                    permissionHandler.get()?.invoke()
                 }
             }
 
@@ -147,7 +148,7 @@ class SessionNotificationService : Service() {
 
     private fun createEraseIntent(): PendingIntent {
         val notificationIntentFlags =
-            IntentUtils.defaultIntentPendingFlags() or PendingIntent.FLAG_ONE_SHOT
+            PendingIntentUtils.defaultFlags or PendingIntent.FLAG_ONE_SHOT
         val intent = Intent(this, SessionNotificationService::class.java)
         intent.action = ACTION_ERASE
 
@@ -156,7 +157,7 @@ class SessionNotificationService : Service() {
 
     private fun createOpenActionIntent(): PendingIntent {
         val openActionIntentFlags =
-            IntentUtils.defaultIntentPendingFlags() or PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntentUtils.defaultFlags or PendingIntent.FLAG_UPDATE_CURRENT
         val intent = Intent(this, MainActivity::class.java)
         intent.action = MainActivity.ACTION_OPEN
 
@@ -165,7 +166,7 @@ class SessionNotificationService : Service() {
 
     private fun createOpenAndEraseActionIntent(): PendingIntent {
         val openAndEraseActionIntentFlags =
-            IntentUtils.defaultIntentPendingFlags() or PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntentUtils.defaultFlags or PendingIntent.FLAG_UPDATE_CURRENT
         val intent = Intent(this, MainActivity::class.java)
 
         intent.action = MainActivity.ACTION_ERASE
@@ -206,7 +207,7 @@ class SessionNotificationService : Service() {
     }
 
     companion object {
-        private var permissionHandler: (() -> Unit)? = null
+        private var permissionHandler: WeakReference<(() -> Unit)?> = WeakReference(null)
         private const val NOTIFICATION_ID = 83
         private const val NOTIFICATION_CHANNEL_ID = "browsing-session"
 
@@ -216,7 +217,7 @@ class SessionNotificationService : Service() {
         internal fun start(context: Context, permissionHandler: (() -> Unit)) {
             val intent = Intent(context, SessionNotificationService::class.java)
             intent.action = ACTION_START
-            this.permissionHandler = permissionHandler
+            this.permissionHandler = WeakReference(permissionHandler)
 
             // For #2901: The application is crashing due to the service not calling `startForeground`
             // before it times out. so this is a speculative fix to decrease the time between these two

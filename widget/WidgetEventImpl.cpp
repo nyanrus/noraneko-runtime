@@ -132,6 +132,7 @@ bool IsForbiddenDispatchingToNonElementContent(EventMessage aMessage) {
     case eDragStart:
     case eDrop:
     case eDragLeave:
+    case eQueryDropTargetHittest:
     // case mouse wheel related message target should be an Element node
     case eLegacyMouseLineOrPageScroll:
     case eLegacyMousePixelScroll:
@@ -252,64 +253,6 @@ const nsCString GetDOMKeyCodeName(uint32_t aKeyCode) {
 
     default:
       return nsPrintfCString("Invalid DOM keyCode (0x%08X)", aKeyCode);
-  }
-}
-
-bool IsValidRawTextRangeValue(RawTextRangeType aRawTextRangeType) {
-  switch (static_cast<TextRangeType>(aRawTextRangeType)) {
-    case TextRangeType::eUninitialized:
-    case TextRangeType::eCaret:
-    case TextRangeType::eRawClause:
-    case TextRangeType::eSelectedRawClause:
-    case TextRangeType::eConvertedClause:
-    case TextRangeType::eSelectedClause:
-      return true;
-    default:
-      return false;
-  }
-}
-
-RawTextRangeType ToRawTextRangeType(TextRangeType aTextRangeType) {
-  return static_cast<RawTextRangeType>(aTextRangeType);
-}
-
-TextRangeType ToTextRangeType(RawTextRangeType aRawTextRangeType) {
-  MOZ_ASSERT(IsValidRawTextRangeValue(aRawTextRangeType));
-  return static_cast<TextRangeType>(aRawTextRangeType);
-}
-
-const char* ToChar(TextRangeType aTextRangeType) {
-  switch (aTextRangeType) {
-    case TextRangeType::eUninitialized:
-      return "TextRangeType::eUninitialized";
-    case TextRangeType::eCaret:
-      return "TextRangeType::eCaret";
-    case TextRangeType::eRawClause:
-      return "TextRangeType::eRawClause";
-    case TextRangeType::eSelectedRawClause:
-      return "TextRangeType::eSelectedRawClause";
-    case TextRangeType::eConvertedClause:
-      return "TextRangeType::eConvertedClause";
-    case TextRangeType::eSelectedClause:
-      return "TextRangeType::eSelectedClause";
-    default:
-      return "Invalid TextRangeType";
-  }
-}
-
-SelectionType ToSelectionType(TextRangeType aTextRangeType) {
-  switch (aTextRangeType) {
-    case TextRangeType::eRawClause:
-      return SelectionType::eIMERawClause;
-    case TextRangeType::eSelectedRawClause:
-      return SelectionType::eIMESelectedRawClause;
-    case TextRangeType::eConvertedClause:
-      return SelectionType::eIMEConvertedClause;
-    case TextRangeType::eSelectedClause:
-      return SelectionType::eIMESelectedClause;
-    default:
-      MOZ_CRASH("TextRangeType is invalid");
-      return SelectionType::eNormal;
   }
 }
 
@@ -551,7 +494,9 @@ bool WidgetEvent::WillBeSentToRemoteProcess() const {
 }
 
 bool WidgetEvent::IsIMERelatedEvent() const {
-  return HasIMEEventMessage() || IsQueryContentEvent() || IsSelectionEvent();
+  return HasIMEEventMessage() ||
+         (IsQueryContentEvent() && mMessage != eQueryDropTargetHittest) ||
+         IsSelectionEvent();
 }
 
 bool WidgetEvent::IsUsingCoordinates() const {
@@ -635,6 +580,10 @@ bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
     }
     case ePointerEventClass: {
       if (IsPointerEventMessageOriginallyMouseEventMessage(mMessage)) {
+        return false;
+      }
+
+      if (SPOOFED_MAX_TOUCH_POINTS > 0) {
         return false;
       }
 

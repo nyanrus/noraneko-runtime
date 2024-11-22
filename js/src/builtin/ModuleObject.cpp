@@ -280,7 +280,9 @@ bool ModuleRequestObject::hasFirstUnsupportedAttributeKey() const {
 }
 
 JSAtom* ModuleRequestObject::getFirstUnsupportedAttributeKey() const {
-  MOZ_ASSERT(hasFirstUnsupportedAttributeKey());
+  if (!hasFirstUnsupportedAttributeKey()) {
+    return nullptr;
+  }
   return &getReservedSlot(FirstUnsupportedAttributeKeySlot)
               .toString()
               ->asAtom();
@@ -356,7 +358,8 @@ bool IndirectBindingMap::lookup(jsid name, ModuleEnvironmentObject** envOut,
 // ModuleNamespaceObject
 
 /* static */
-const ModuleNamespaceObject::ProxyHandler ModuleNamespaceObject::proxyHandler;
+constexpr ModuleNamespaceObject::ProxyHandler
+    ModuleNamespaceObject::proxyHandler;
 
 /* static */
 bool ModuleNamespaceObject::isInstance(HandleValue value) {
@@ -435,10 +438,7 @@ bool ModuleNamespaceObject::addBinding(JSContext* cx,
   return bindings().put(cx, exportedNameId, environment, targetNameId);
 }
 
-const char ModuleNamespaceObject::ProxyHandler::family = 0;
-
-ModuleNamespaceObject::ProxyHandler::ProxyHandler()
-    : BaseProxyHandler(&family, false) {}
+constexpr char ModuleNamespaceObject::ProxyHandler::family = 0;
 
 bool ModuleNamespaceObject::ProxyHandler::getPrototype(
     JSContext* cx, HandleObject proxy, MutableHandleObject protop) const {
@@ -1509,7 +1509,7 @@ ModuleBuilder::ModuleBuilder(FrontendContext* fc,
                              const frontend::EitherParser& eitherParser)
     : fc_(fc),
       eitherParser_(eitherParser),
-      requestedModuleSpecifiers_(fc),
+      requestedModuleIndexes_(fc),
       importEntries_(fc),
       exportEntries_(fc),
       exportNames_(fc) {}
@@ -1642,6 +1642,9 @@ ModuleRequestObject* frontend::StencilModuleMetadata::createModuleRequestObject(
 
   Rooted<ModuleRequestObject*> moduleRequestObject(
       cx, ModuleRequestObject::create(cx, specifier, attributes));
+  if (!moduleRequestObject) {
+    return nullptr;
+  }
 
   if (request.firstUnsupportedAttributeKey) {
     Rooted<JSAtom*> unsupportedAttributeKey(
@@ -2222,8 +2225,13 @@ frontend::MaybeModuleRequestIndex ModuleBuilder::appendModuleRequest(
     return MaybeModuleRequestIndex();
   }
 
+  if (auto ptr = moduleRequestIndexes_.lookup(request)) {
+    return MaybeModuleRequestIndex(ptr->value());
+  }
+
   uint32_t index = moduleRequests_.length();
-  if (!moduleRequests_.append(request)) {
+  if (!moduleRequests_.append(request) ||
+      !moduleRequestIndexes_.put(request, index)) {
     js::ReportOutOfMemory(fc_);
     return MaybeModuleRequestIndex();
   }
@@ -2233,8 +2241,8 @@ frontend::MaybeModuleRequestIndex ModuleBuilder::appendModuleRequest(
 
 bool ModuleBuilder::maybeAppendRequestedModule(
     MaybeModuleRequestIndex moduleRequest, frontend::ParseNode* node) {
-  auto specifier = moduleRequests_[moduleRequest.value()].specifier;
-  if (requestedModuleSpecifiers_.has(specifier)) {
+  uint32_t index = moduleRequest.value();
+  if (requestedModuleIndexes_.has(index)) {
     return true;
   }
 
@@ -2250,7 +2258,7 @@ bool ModuleBuilder::maybeAppendRequestedModule(
     return false;
   }
 
-  return requestedModuleSpecifiers_.put(specifier);
+  return requestedModuleIndexes_.put(index);
 }
 
 void ModuleBuilder::markUsedByStencil(frontend::TaggedParserAtomIndex name) {
@@ -2352,18 +2360,6 @@ static bool EvaluateDynamicImportOptions(
   if (!GetProperty(cx, attributesWrapperObject, attributesWrapperObject, withId,
                    &attributesValue)) {
     return false;
-  }
-
-  // Step 11.d. If the host supports the deprecated assert keyword for import
-  // attributes and attributesObj is undefined, then
-  if (attributesValue.isUndefined() &&
-      cx->options().importAttributesAssertSyntax()) {
-    // Step 11.d.i. Set attributesObj to Completion(Get(options, "assert")).
-    RootedId assertId(cx, NameToId(cx->names().assert_));
-    if (!GetProperty(cx, attributesWrapperObject, attributesWrapperObject,
-                     assertId, &attributesValue)) {
-      return false;
-    }
   }
 
   // Step 11.e. If attributesObj is not undefined, then

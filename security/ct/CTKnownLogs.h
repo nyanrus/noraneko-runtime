@@ -14,7 +14,7 @@
 
 #include <stddef.h>
 
-static const PRTime kCTExpirationTime = INT64_C(1734347159000000);
+static const PRTime kCTExpirationTime = INT64_C(1737976752000000);
 
 namespace mozilla::ct {
 
@@ -72,7 +72,7 @@ const CTLogInfo kCTLogList[] = {
      "\xba",
      91},
     {"Google 'Argon2026h1' log", CTLogState::Admissible,
-     1721666666000,  // 2024-07-22T16:44:26Z
+     1727734767000,  // 2024-09-30T22:19:27Z
      0,              // operated by Google
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x07\xfc\x1e\xe8\x63\x8e\xff\x1c\x31"
@@ -82,7 +82,7 @@ const CTLogInfo kCTLogList[] = {
      "\x3e",
      91},
     {"Google 'Argon2026h2' log", CTLogState::Admissible,
-     1721666666000,  // 2024-07-22T16:44:26Z
+     1727734767000,  // 2024-09-30T22:19:27Z
      0,              // operated by Google
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x2a\x3a\x67\x8b\xfe\xba\x0c\x86\x2b"
@@ -122,7 +122,7 @@ const CTLogInfo kCTLogList[] = {
      "\x86",
      91},
     {"Google 'Xenon2026h1' log", CTLogState::Admissible,
-     1721666666000,  // 2024-07-22T16:44:26Z
+     1727734767000,  // 2024-09-30T22:19:27Z
      0,              // operated by Google
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x3a\x1f\xc8\xbb\xce\xd5\x90\x47\x34"
@@ -132,7 +132,7 @@ const CTLogInfo kCTLogList[] = {
      "\x4c",
      91},
     {"Google 'Xenon2026h2' log", CTLogState::Admissible,
-     1721666666000,  // 2024-07-22T16:44:26Z
+     1727734767000,  // 2024-09-30T22:19:27Z
      0,              // operated by Google
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xe5\x77\x78\x95\x71\x28\xb3\x95\xc9"
@@ -162,7 +162,7 @@ const CTLogInfo kCTLogList[] = {
      "\x97",
      91},
     {"Cloudflare 'Nimbus2026'", CTLogState::Admissible,
-     1724814000000,  // 2024-08-28T03:00:00Z
+     1731088800000,  // 2024-11-08T18:00:00Z
      1,              // operated by Cloudflare
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xd8\x5c\x61\x4f\xac\x6a\xd2\x20\x80"
@@ -242,7 +242,7 @@ const CTLogInfo kCTLogList[] = {
      "\x2e",
      91},
     {"DigiCert 'Wyvern2026h1'", CTLogState::Admissible,
-     1724630400000,  // 2024-08-26T00:00:00Z
+     1731024000000,  // 2024-11-08T00:00:00Z
      2,              // operated by DigiCert
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xec\xbc\x34\x39\xe2\x9a\x8d\xb7\x99"
@@ -252,7 +252,7 @@ const CTLogInfo kCTLogList[] = {
      "\x55",
      91},
     {"DigiCert 'Wyvern2026h2'", CTLogState::Admissible,
-     1724630400000,  // 2024-08-26T00:00:00Z
+     1731024000000,  // 2024-11-08T00:00:00Z
      2,              // operated by DigiCert
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x7a\x73\xdb\x4a\xf2\xde\x4f\xec\xe1"
@@ -292,7 +292,7 @@ const CTLogInfo kCTLogList[] = {
      "\x69",
      91},
     {"DigiCert 'Sphinx2026h1'", CTLogState::Admissible,
-     1724630400000,  // 2024-08-26T00:00:00Z
+     1731024000000,  // 2024-11-08T00:00:00Z
      2,              // operated by DigiCert
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xab\x84\xbe\xf8\x3c\x87\xa2\x42\x25"
@@ -302,7 +302,7 @@ const CTLogInfo kCTLogList[] = {
      "\xf4",
      91},
     {"DigiCert 'Sphinx2026h2'", CTLogState::Admissible,
-     1724630400000,  // 2024-08-26T00:00:00Z
+     1731024000000,  // 2024-11-08T00:00:00Z
      2,              // operated by DigiCert
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xaa\xe0\xf4\x26\x44\x50\x4f\xfd\xa2"
@@ -382,7 +382,7 @@ const CTLogInfo kCTLogList[] = {
      "\x6f",
      91},
     {"Sectigo 'Mammoth2026h1'", CTLogState::Admissible,
-     1722312000000,  // 2024-07-30T04:00:00Z
+     1728925200000,  // 2024-10-14T17:00:00Z
      3,              // operated by Sectigo
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x9e\xcb\x0c\x8a\x51\xcc\x8a\xe2\x0b"
@@ -392,7 +392,7 @@ const CTLogInfo kCTLogList[] = {
      "\xc4",
      91},
     {"Sectigo 'Mammoth2026h2'", CTLogState::Admissible,
-     1722312000000,  // 2024-07-30T04:00:00Z
+     1728925200000,  // 2024-10-14T17:00:00Z
      3,              // operated by Sectigo
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xec\x83\x61\xf2\xd7\xb4\xbb\xe4\xe4"
@@ -402,7 +402,7 @@ const CTLogInfo kCTLogList[] = {
      "\xb6",
      91},
     {"Sectigo 'Sabre2026h1'", CTLogState::Admissible,
-     1722312000000,  // 2024-07-30T04:00:00Z
+     1728925200000,  // 2024-10-14T17:00:00Z
      3,              // operated by Sectigo
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x84\x26\xbc\x36\xbd\xd8\x8d\x3c\x87"
@@ -412,7 +412,7 @@ const CTLogInfo kCTLogList[] = {
      "\x60",
      91},
     {"Sectigo 'Sabre2026h2'", CTLogState::Admissible,
-     1722312000000,  // 2024-07-30T04:00:00Z
+     1728925200000,  // 2024-10-14T17:00:00Z
      3,              // operated by Sectigo
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xce\x35\xca\xec\x39\x07\x82\xda\x77"
@@ -452,7 +452,7 @@ const CTLogInfo kCTLogList[] = {
      "\xa9",
      91},
     {"Let's Encrypt 'Oak2026h1'", CTLogState::Admissible,
-     1724198400000,  // 2024-08-21T00:00:00Z
+     1730678400000,  // 2024-11-04T00:00:00Z
      4,              // operated by Let's Encrypt
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x99\xd4\x61\x70\x22\xfa\x77\x93\x0d"
@@ -462,7 +462,7 @@ const CTLogInfo kCTLogList[] = {
      "\x49",
      91},
     {"Let's Encrypt 'Oak2026h2'", CTLogState::Admissible,
-     1724198400000,  // 2024-08-21T00:00:00Z
+     1730678400000,  // 2024-11-04T00:00:00Z
      4,              // operated by Let's Encrypt
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x6a\x70\x9d\xb3\x96\xe3\xec\x85\x36"
@@ -502,7 +502,7 @@ const CTLogInfo kCTLogList[] = {
      "\x65",
      91},
     {"TrustAsia 'log2026a'", CTLogState::Admissible,
-     1719964800000,  // 2024-07-03T00:00:00Z
+     1726790400000,  // 2024-09-20T00:00:00Z
      5,              // operated by TrustAsia
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\xa7\x4e\x7a\xc9\xa6\x07\xf9\xff\x74"
@@ -512,7 +512,7 @@ const CTLogInfo kCTLogList[] = {
      "\x59",
      91},
     {"TrustAsia 'log2026b'", CTLogState::Admissible,
-     1719964800000,  // 2024-07-03T00:00:00Z
+     1726790400000,  // 2024-09-20T00:00:00Z
      5,              // operated by TrustAsia
      "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48"
      "\xce\x3d\x03\x01\x07\x03\x42\x00\x04\x0f\x12\x8c\xa9\xe6\xe3\xec\x62\xee"

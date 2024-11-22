@@ -33,6 +33,11 @@ Opens the Firefox View pseudo-tab.
 
 Opens a new private browsing window.
 
+### `OPEN_SIDEBAR`
+
+* args: `string` id of the pane to open, e.g., viewHistorySidebar
+
+Opens a sidebar pane.
 
 ### `OPEN_URL`
 
@@ -370,3 +375,11 @@ Sets the visibility of the bookmarks toolbar.
   visibility?: string; // "always", "never", or "newtab"
 }
 ```
+
+### `CREATE_NEW_SELECTABLE_PROFILE`
+
+Creates a new user profile and launches it in a separate instance.
+
+Any message that uses this action should have `canCreateSelectableProfiles` as part of the targeting, to ensure we don't accidentally show a message where the action will not work.
+
+- args: (none)

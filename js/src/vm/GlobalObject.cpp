@@ -9,6 +9,9 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+#  include "builtin/AsyncDisposableStackObject.h"
+#endif
 #include "builtin/AtomicsObject.h"
 #include "builtin/BigInt.h"
 #include "builtin/DataViewObject.h"
@@ -31,7 +34,6 @@
 #include "builtin/ShadowRealm.h"
 #include "builtin/Symbol.h"
 #ifdef JS_HAS_TEMPORAL_API
-#  include "builtin/temporal/Calendar.h"
 #  include "builtin/temporal/Duration.h"
 #  include "builtin/temporal/Instant.h"
 #  include "builtin/temporal/PlainDate.h"
@@ -41,7 +43,6 @@
 #  include "builtin/temporal/PlainYearMonth.h"
 #  include "builtin/temporal/Temporal.h"
 #  include "builtin/temporal/TemporalNow.h"
-#  include "builtin/temporal/TimeZone.h"
 #  include "builtin/temporal/ZonedDateTime.h"
 #endif
 #include "builtin/WeakMapObject.h"
@@ -95,7 +96,7 @@ extern const JSClass ReflectClass;
 
 }  // namespace js
 
-static const JSClass* const protoTable[JSProto_LIMIT] = {
+static constexpr const JSClass* const protoTable[JSProto_LIMIT] = {
 #define INIT_FUNC(name, clasp) clasp,
 #define INIT_FUNC_DUMMY(name, clasp) nullptr,
     JS_FOR_PROTOTYPES(INIT_FUNC, INIT_FUNC_DUMMY)
@@ -106,10 +107,6 @@ static const JSClass* const protoTable[JSProto_LIMIT] = {
 JS_PUBLIC_API const JSClass* js::ProtoKeyToClass(JSProtoKey key) {
   MOZ_ASSERT(key < JSProto_LIMIT);
   return protoTable[key];
-}
-
-static bool IsIteratorHelpersEnabled() {
-  return JS::Prefs::experimental_iterator_helpers();
 }
 
 static bool IsAsyncIteratorHelpersEnabled() {
@@ -137,10 +134,12 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_RegExp:
     case JSProto_Error:
     case JSProto_InternalError:
+    case JSProto_Iterator:
     case JSProto_AggregateError:
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSProto_SuppressedError:
     case JSProto_DisposableStack:
+    case JSProto_AsyncDisposableStack:
 #endif
     case JSProto_EvalError:
     case JSProto_RangeError:
@@ -225,7 +224,6 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
 
 #ifdef JS_HAS_TEMPORAL_API
     case JSProto_Temporal:
-    case JSProto_Calendar:
     case JSProto_Duration:
     case JSProto_Instant:
     case JSProto_PlainDate:
@@ -234,7 +232,6 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_PlainTime:
     case JSProto_PlainYearMonth:
     case JSProto_TemporalNow:
-    case JSProto_TimeZone:
     case JSProto_ZonedDateTime:
       return false;
 #endif
@@ -247,9 +244,6 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_WeakRef:
     case JSProto_FinalizationRegistry:
       return JS::GetWeakRefsEnabled() == JS::WeakRefSpecifier::Disabled;
-
-    case JSProto_Iterator:
-      return !IsIteratorHelpersEnabled();
 
     case JSProto_AsyncIterator:
       return !IsAsyncIteratorHelpersEnabled();
@@ -352,10 +346,8 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
 
   // %IteratorPrototype%.map.[[Prototype]] is %Generator% and
   // %Generator%.prototype.[[Prototype]] is %IteratorPrototype%.
-  // A workaround in initIteratorProto prevents runaway mutual recursion while
-  // setting these up. Ensure the workaround is triggered already:
   if (key == JSProto_GeneratorFunction &&
-      !global->hasBuiltinProto(ProtoKind::IteratorProto)) {
+      !global->hasPrototype(JSProto_Iterator)) {
     if (!getOrCreateIteratorPrototype(cx, global)) {
       return false;
     }
@@ -446,6 +438,19 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
     if (!JS::MaybeFreezeCtorAndPrototype(cx, ctor, proto)) {
       return false;
     }
+  }
+
+  // If the prototype exists, mark the object as used as a prototype to enable
+  // Watchtower observation of protos which may not yet actually have an
+  // instance which yet uses it as a proto!
+  //
+  // You might well be asking: "Why not set IsUsedAsPrototype when constructing
+  // the proto object?". This ends up leading to a fair amount of complexity in
+  // how standard protos are linked together and the properties we want to
+  // enforce. Generally, it's fine if we don't watch for mutations on protos
+  // until they get exposed to user code.
+  if (proto && !JSObject::setFlag(cx, proto, ObjectFlag::IsUsedAsPrototype)) {
+    return false;
   }
 
   if (!isObjectOrFunction) {
@@ -596,13 +601,25 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
   MOZ_ASSERT(clasp->flags & JSCLASS_IS_GLOBAL);
   MOZ_ASSERT(clasp->isTrace(JS_GlobalObjectTraceHook));
 
-  JSObject* obj = NewTenuredObjectWithGivenProto(cx, clasp, nullptr);
+  ObjectFlags objectFlags = {
+      ObjectFlag::QualifiedVarObj,
+      ObjectFlag::GenerationCountedGlobal,
+  };
+
+  JSObject* obj =
+      NewTenuredObjectWithGivenProto(cx, clasp, nullptr, objectFlags);
   if (!obj) {
     return nullptr;
   }
 
   Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
+
+  // Global holds both variables qualified with `var` and those that are not.
   MOZ_ASSERT(global->isUnqualifiedVarObj());
+  MOZ_ASSERT(global->isQualifiedVarObj());
+
+  // Global objects support generation counts.
+  MOZ_ASSERT(global->isGenerationCountedGlobal());
 
   {
     auto data = cx->make_unique<GlobalObjectData>(cx->zone());
@@ -632,13 +649,6 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
   global->data().emptyGlobalScope.init(emptyGlobalScope);
 
   if (!GlobalObject::createIntrinsicsHolder(cx, global)) {
-    return nullptr;
-  }
-
-  if (!JSObject::setQualifiedVarObj(cx, global)) {
-    return nullptr;
-  }
-  if (!JSObject::setGenerationCountedGlobal(cx, global)) {
     return nullptr;
   }
 
@@ -880,6 +890,7 @@ GlobalObject::getOrCreateFinalizationRegistryData() {
   return maybeFinalizationRegistryData();
 }
 
+#ifndef NIGHTLY_BUILD
 bool GlobalObject::addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name) {
   MOZ_ASSERT(name);
 
@@ -890,6 +901,7 @@ bool GlobalObject::addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name) {
 
   return true;
 }
+#endif
 
 /* static */
 bool GlobalObject::createIntrinsicsHolder(JSContext* cx,
@@ -1019,16 +1031,10 @@ bool GlobalObject::addIntrinsicValue(JSContext* cx,
 /* static */
 JSObject* GlobalObject::createIteratorPrototype(JSContext* cx,
                                                 Handle<GlobalObject*> global) {
-  if (!IsIteratorHelpersEnabled()) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::IteratorProto,
-                                   initIteratorProto);
-  }
-
   if (!ensureConstructor(cx, global, JSProto_Iterator)) {
     return nullptr;
   }
   JSObject* proto = &global->getPrototype(JSProto_Iterator);
-  global->initBuiltinProto(ProtoKind::IteratorProto, proto);
   return proto;
 }
 
@@ -1054,15 +1060,22 @@ void GlobalObject::releaseData(JS::GCContext* gcx) {
   gcx->delete_(this, data, MemoryUse::GlobalObjectData);
 }
 
-GlobalObjectData::GlobalObjectData(Zone* zone) : varNames(zone) {}
+GlobalObjectData::GlobalObjectData(Zone* zone)
+#ifndef NIGHTLY_BUILD
+    : varNames(zone)
+#endif
+{
+}
 
 GlobalObjectData::~GlobalObjectData() = default;
 
 void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
+#ifndef NIGHTLY_BUILD
   // Atoms are always tenured so don't need to be traced during minor GC.
   if (trc->runtime()->heapState() != JS::HeapState::MinorCollecting) {
     varNames.trace(trc);
   }
+#endif
 
   for (auto& ctorWithProto : builtinConstructors) {
     TraceNullableEdge(trc, &ctorWithProto.constructor, "global-builtin-ctor");
@@ -1129,6 +1142,8 @@ void GlobalObjectData::addSizeOfIncludingThis(
         regExpRealm.regExpStatics->sizeOfIncludingThis(mallocSizeOf);
   }
 
+#ifndef NIGHTLY_BUILD
   info->objectsMallocHeapGlobalVarNamesSet +=
       varNames.shallowSizeOfExcludingThis(mallocSizeOf);
+#endif
 }

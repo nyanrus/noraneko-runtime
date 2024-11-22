@@ -66,6 +66,10 @@ add_task(async function test_show_shortcuts() {
     Assert.equal(events.length, 1, "One shortcuts opened");
     Assert.equal(events[0].extra.selection, 2, "Selected hi");
 
+    const custom = popup.querySelector("textarea");
+    Assert.ok(custom, "Got custom prompt entry");
+    Assert.ok(custom.style.height, "Dynamic height for custom");
+
     Assert.ok(!SidebarController.isOpen, "Sidebar is closed");
     popup.querySelector("toolbarbutton").click();
     const isOpen = await TestUtils.waitForCondition(
@@ -125,6 +129,17 @@ add_task(async function test_plain_clicks() {
  * Check that input selection can show shortcuts
  */
 add_task(async function test_input_selection() {
+  Assert.equal(GenAI.ignoredInputs.size, 1, "Default ignore 1 type of field");
+  Assert.ok(GenAI.ignoredInputs.has("input"), "Default ignore inputs");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.shortcuts.ignoreFields", "contenteditable,textarea"],
+    ],
+  });
+  Assert.equal(GenAI.ignoredInputs.size, 2, "Ignoring other fields not input");
+  Assert.ok(GenAI.ignoredInputs.has("textarea"), "Now ignore textarea");
+  Assert.ok(!GenAI.ignoredInputs.has("input"), "Not ignoring input for test");
+
   const sandbox = sinon.createSandbox();
   const stub = sandbox
     .stub(GenAI, "handleShortcutsMessage")

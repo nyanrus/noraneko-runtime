@@ -166,6 +166,7 @@ class TestSessionRestore(SessionStoreTestCase):
         self.marionette.execute_script(
             """
             Services.prefs.setBoolPref("sidebar.revamp", true);
+            Services.prefs.setBoolPref("sidebar.animation.enabled", false);
             Services.prefs.setStringPref("sidebar.visibility", "always-show");
             """
         )
@@ -182,7 +183,6 @@ class TestSessionRestore(SessionStoreTestCase):
                 """
                 const window = BrowserWindowTracker.getTopWindow();
                 window.SidebarController.toolbarButton.click();
-                window.SidebarController.sidebarMain.expanded = true;
                 return window.SidebarController.sidebarMain.expanded;
                 """
             ),
@@ -203,19 +203,7 @@ class TestSessionRestore(SessionStoreTestCase):
             self.marionette.execute_script(
                 """
                 const window = BrowserWindowTracker.getTopWindow();
-                function waitForExpandedState() {
-                    let expanded = false;
-                    for (let i = 0; i < 50; i++) {
-                        if (!window.SidebarController.sidebarMain.expanded) {
-                            continue;
-                        } else {
-                            expanded = true;
-                            break;
-                        }
-                    }
-                    return expanded;
-                }
-                return waitForExpandedState();
+                return window.SidebarController.sidebarMain.expanded;
                 """
             ),
             "Sidebar expanded state has been restored.",
@@ -257,4 +245,45 @@ class TestSessionRestore(SessionStoreTestCase):
                 """
             ),
             "Sidebar visibility state has been restored.",
+        )
+
+    def test_restore_sidebar_open_from_backup_pref(self):
+        self.marionette.execute_script(
+            """
+            Services.prefs.setBoolPref("sidebar.revamp", true);
+            Services.prefs.setBoolPref("browser.privatebrowsing.autostart", true);
+            """
+        )
+        self.marionette.restart()
+        self.marionette.set_context("chrome")
+
+        # Open the history panel.
+        self.marionette.execute_async_script(
+            """
+            let resolve = arguments[0];
+            let window = BrowserWindowTracker.getTopWindow();
+            window.SidebarController.show("viewHistorySidebar").then(resolve);
+            """
+        )
+
+        # Restart the browser.
+        self.marionette.restart()
+        self.marionette.execute_async_script(
+            """
+            let resolve = arguments[0];
+            let { BrowserInitState } = ChromeUtils.importESModule("resource:///modules/BrowserGlue.sys.mjs");
+            BrowserInitState.startupIdleTaskPromise.then(resolve);
+            """
+        )
+
+        # Check to see if the history panel was restored.
+        self.assertEqual(
+            self.marionette.execute_script(
+                """
+                let window = BrowserWindowTracker.getTopWindow();
+                return window.SidebarController.currentID;
+                """
+            ),
+            "viewHistorySidebar",
+            "Correct sidebar category has been restored.",
         )

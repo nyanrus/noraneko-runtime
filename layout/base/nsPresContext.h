@@ -85,6 +85,7 @@ class TimelineManager;
 struct MediaFeatureChange;
 enum class MediaFeatureChangePropagation : uint8_t;
 enum class ColorScheme : uint8_t;
+enum class StyleForcedColors : uint8_t;
 namespace layers {
 class ContainerLayer;
 class LayerManager;
@@ -377,10 +378,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return mozilla::PreferenceSheet::PrefsFor(*mDocument);
   }
 
-  bool ForcingColors() const {
-    return mozilla::PreferenceSheet::MayForceColors() &&
-           !PrefSheetPrefs().mUseDocumentColors;
-  }
+  bool ForcingColors() const;
 
   mozilla::ColorScheme DefaultBackgroundColorScheme() const;
   nscolor DefaultBackgroundColor() const;
@@ -402,6 +400,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * nscoord units (as scaled by the device context).
    */
   void SetVisibleArea(const nsRect& aRect);
+
+  /**
+   * Set the initial visible area. This should be called only from
+   * nsDocumentViewer when initializing this pres context visible area with
+   * the document viewer bounds.
+   */
+  void SetInitialVisibleArea(const nsRect& aRect);
 
   nsSize GetSizeForViewportUnits() const { return mSizeForViewportUnits; }
 
@@ -553,6 +558,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void SetOverrideDPPX(float);
   void SetInRDMPane(bool aInRDMPane);
   void UpdateTopInnerSizeForRFP();
+  void UpdateForcedColors(bool aNotify = true);
 
  public:
   float GetFullZoom() { return mFullZoom; }
@@ -1003,7 +1009,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * Returns true if CheckForInterrupt has returned true since the last
    * ReflowStarted call. Cannot itself trigger an interrupt check.
    */
-  bool HasPendingInterrupt() { return mHasPendingInterrupt; }
+  bool HasPendingInterrupt() const { return mHasPendingInterrupt; }
   /**
    * Sets a flag that will trip a reflow interrupt. This only bypasses the
    * interrupt timeout and the pending event check; other checks such as whether
@@ -1395,6 +1401,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // that breaks bindgen in win32.
   FontVisibility mFontVisibility = FontVisibility::Unknown;
   mozilla::dom::PrefersColorSchemeOverride mOverriddenOrEmbedderColorScheme;
+  mozilla::StyleForcedColors mForcedColors;
 
  protected:
   virtual ~nsPresContext();

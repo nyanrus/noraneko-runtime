@@ -48,7 +48,7 @@ impl From<super::StorageFormat> for super::ScalarKind {
             Sf::Bgra8Unorm => Sk::Float,
             Sf::Rgb10a2Uint => Sk::Uint,
             Sf::Rgb10a2Unorm => Sk::Float,
-            Sf::Rg11b10UFloat => Sk::Float,
+            Sf::Rg11b10Ufloat => Sk::Float,
             Sf::Rg32Uint => Sk::Uint,
             Sf::Rg32Sint => Sk::Sint,
             Sf::Rg32Float => Sk::Float,
@@ -521,12 +521,12 @@ impl crate::Expression {
         }
     }
 
-    /// Return true if this expression is a dynamic array index, for [`Access`].
+    /// Return true if this expression is a dynamic array/vector/matrix index,
+    /// for [`Access`].
     ///
     /// This method returns true if this expression is a dynamically computed
-    /// index, and as such can only be used to index matrices and arrays when
-    /// they appear behind a pointer. See the documentation for [`Access`] for
-    /// details.
+    /// index, and as such can only be used to index matrices when they appear
+    /// behind a pointer. See the documentation for [`Access`] for details.
     ///
     /// Note, this does not check the _type_ of the given expression. It's up to
     /// the caller to establish that the `Access` expression is well-typed
@@ -671,6 +671,19 @@ impl GlobalCtx<'_> {
                 value.try_into().map_err(|_| U32EvalError::Negative)
             }
             _ => Err(U32EvalError::NonConst),
+        }
+    }
+
+    /// Try to evaluate the expression in the `arena` using its `handle` and return it as a `bool`.
+    #[allow(dead_code)]
+    pub(super) fn eval_expr_to_bool_from(
+        &self,
+        handle: crate::Handle<crate::Expression>,
+        arena: &crate::Arena<crate::Expression>,
+    ) -> Option<bool> {
+        match self.eval_expr_to_literal_from(handle, arena) {
+            Some(crate::Literal::Bool(value)) => Some(value),
+            _ => None,
         }
     }
 

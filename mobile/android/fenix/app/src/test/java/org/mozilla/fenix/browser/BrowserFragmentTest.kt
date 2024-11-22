@@ -47,7 +47,7 @@ import org.mozilla.fenix.components.toolbar.BrowserToolbarView
 import org.mozilla.fenix.components.toolbar.ToolbarIntegration
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.isTablet
+import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.onboarding.FenixOnboarding
@@ -99,7 +99,7 @@ class BrowserFragmentTest {
         every { browserFragment.requireContext() } returns context
         every { browserFragment.initializeUI(any(), any()) } returns mockk()
         every { browserFragment.fullScreenChanged(any()) } returns Unit
-        every { browserFragment.resumeDownloadDialogState(any(), any(), any(), any()) } returns Unit
+        every { browserFragment.resumeDownloadDialogState(any(), any(), any()) } returns Unit
 
         testTab = createTab(url = "https://mozilla.org")
         store = BrowserStore()
@@ -172,7 +172,7 @@ class BrowserFragmentTest {
         val newSelectedTab = createTab("https://firefox.com")
         addAndSelectTab(newSelectedTab)
         verify(exactly = 1) {
-            browserFragment.resumeDownloadDialogState(newSelectedTab.id, store, context, any())
+            browserFragment.resumeDownloadDialogState(newSelectedTab.id, store, context)
         }
     }
 
@@ -335,11 +335,13 @@ class BrowserFragmentTest {
     @Test
     fun `WHEN toolbar is initialized THEN onConfigurationChanged sets toolbar actions for size in fragment`() {
         val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         browserFragment._browserToolbarView = null
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 0) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
         verify(exactly = 0) { browserFragment.updateTabletToolbarActions(any()) }
+        verify(exactly = 0) { browserFragment.reinitializeEngineView() }
 
         browserFragment._browserToolbarView = browserToolbarView
 
@@ -352,6 +354,7 @@ class BrowserFragmentTest {
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 1) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
         verify(exactly = 1) { browserFragment.updateTabletToolbarActions(any()) }
+        verify(exactly = 1) { browserFragment.reinitializeEngineView() }
 
         unmockkObject(ThemeManager.Companion)
         unmockkStatic(AppCompatResources::class)
@@ -361,6 +364,7 @@ class BrowserFragmentTest {
     fun `WHEN fragment configuration changed THEN menu is dismissed`() {
         val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
         every { browserFragment.context } returns null
+        every { browserFragment.reinitializeEngineView() } just Runs
         browserFragment._browserToolbarView = browserToolbarView
 
         mockkObject(ThemeManager.Companion)
@@ -386,6 +390,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -393,11 +398,11 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.isTablet() } returns true
+        every { browserFragment.isLargeWindow() } returns true
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
 
-        every { browserFragment.isTablet() } returns false
+        every { browserFragment.isLargeWindow() } returns false
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.removeNavigationAction(any()) }
 
@@ -414,6 +419,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -421,7 +427,7 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.isTablet() } returns true
+        every { browserFragment.isLargeWindow() } returns true
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
 
@@ -441,6 +447,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -448,7 +455,7 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.isTablet() } returns false
+        every { browserFragment.isLargeWindow() } returns false
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 0) { browserToolbar.addNavigationAction(any()) }
         verify(exactly = 0) { browserToolbar.removeNavigationAction(any()) }

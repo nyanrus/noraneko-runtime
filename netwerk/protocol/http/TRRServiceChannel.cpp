@@ -9,6 +9,7 @@
 
 #include "HttpLog.h"
 #include "AltServiceChild.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Unused.h"
@@ -426,7 +427,6 @@ nsresult TRRServiceChannel::BeginConnect() {
     mapping->GetConnectionInfo(getter_AddRefs(mConnectionInfo), proxyInfo,
                                OriginAttributes());
     Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_USE_ALTSVC, true);
-    Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_USE_ALTSVC_OE, !isHttps);
   } else if (mConnectionInfo) {
     LOG(("TRRServiceChannel %p Using channel supplied connection info", this));
   } else {
@@ -490,7 +490,7 @@ nsresult TRRServiceChannel::ContinueOnBeforeConnect() {
   LOG(("TRRServiceChannel::ContinueOnBeforeConnect [this=%p]\n", this));
 
   // ensure that we are using a valid hostname
-  if (!net_IsValidHostName(nsDependentCString(mConnectionInfo->Origin()))) {
+  if (!net_IsValidDNSHost(nsDependentCString(mConnectionInfo->Origin()))) {
     return NS_ERROR_UNKNOWN_HOST;
   }
 
@@ -514,9 +514,8 @@ nsresult TRRServiceChannel::ContinueOnBeforeConnect() {
   mConnectionInfo->SetIPv6Disabled(mCaps & NS_HTTP_DISABLE_IPV6);
 
   if (mLoadFlags & LOAD_FRESH_CONNECTION) {
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::NETWORKING_TRR_CONNECTION_CYCLE_COUNT,
-        NS_ConvertUTF8toUTF16(TRRService::ProviderKey()), 1);
+    glean::networking::trr_connection_cycle_count.Get(TRRService::ProviderKey())
+        .Add(1);
     nsresult rv =
         gHttpHandler->ConnMgr()->DoSingleConnectionCleanup(mConnectionInfo);
     LOG(

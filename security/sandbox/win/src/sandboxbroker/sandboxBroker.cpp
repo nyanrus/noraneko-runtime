@@ -159,30 +159,26 @@ static void CacheDirAndAutoClear(nsIProperties* aDirSvc, const char* aDirKey,
 void SandboxBroker::GeckoDependentInitialize() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  bool haveXPCOM = XRE_GetProcessType() != GeckoProcessType_RemoteSandboxBroker;
-  if (haveXPCOM) {
-    // Cache directory paths for use in policy rules, because the directory
-    // service must be called on the main thread.
-    nsresult rv;
-    nsCOMPtr<nsIProperties> dirSvc =
-        do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv);
-    if (NS_FAILED(rv)) {
-      MOZ_ASSERT(false,
-                 "Failed to get directory service, cannot cache directories "
-                 "for rules.");
-      LOG_E(
-          "Failed to get directory service, cannot cache directories for "
-          "rules.");
-      return;
-    }
-
-    CacheDirAndAutoClear(dirSvc, NS_APP_USER_PROFILE_50_DIR, &sProfileDir);
-    CacheDirAndAutoClear(dirSvc, NS_WIN_LOCAL_APPDATA_DIR, &sLocalAppDataDir);
-#ifdef ENABLE_SYSTEM_EXTENSION_DIRS
-    CacheDirAndAutoClear(dirSvc, XRE_USER_SYS_EXTENSION_DIR,
-                         &sUserExtensionsDir);
-#endif
+  // Cache directory paths for use in policy rules, because the directory
+  // service must be called on the main thread.
+  nsresult rv;
+  nsCOMPtr<nsIProperties> dirSvc =
+      do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv);
+  if (NS_FAILED(rv)) {
+    MOZ_ASSERT(false,
+               "Failed to get directory service, cannot cache directories "
+               "for rules.");
+    LOG_E(
+        "Failed to get directory service, cannot cache directories for "
+        "rules.");
+    return;
   }
+
+  CacheDirAndAutoClear(dirSvc, NS_APP_USER_PROFILE_50_DIR, &sProfileDir);
+  CacheDirAndAutoClear(dirSvc, NS_WIN_LOCAL_APPDATA_DIR, &sLocalAppDataDir);
+#ifdef ENABLE_SYSTEM_EXTENSION_DIRS
+  CacheDirAndAutoClear(dirSvc, XRE_USER_SYS_EXTENSION_DIR, &sUserExtensionsDir);
+#endif
 
   // Create sLaunchErrors up front because ClearOnShutdown must be called on the
   // main thread.
@@ -263,9 +259,25 @@ static void AddDeveloperRepoDirToPolicy(sandbox::TargetPolicy* aPolicy) {
   std::replace(repoPath.begin(), repoPath.end(), '/', '\\');
   repoPath.append(WSTRING("\\*"));
 
-  aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                   sandbox::TargetPolicy::FILES_ALLOW_READONLY,
-                   repoPath.c_str());
+  auto result = aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                                 sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                                 repoPath.c_str());
+  if (result != sandbox::SBOX_ALL_OK) {
+    NS_ERROR("Failed to add rule for developer repo dir.");
+    LOG_E("Failed (ResultCode %d) to add read access to developer repo dir",
+          result);
+  }
+
+  // The following is required if the process is using a USER_RESTRICTED or
+  // lower access token level.
+  result = aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                            sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                            L"\\??\\MountPointManager");
+  if (result != sandbox::SBOX_ALL_OK) {
+    NS_ERROR("Failed to add rule for MountPointManager.");
+    LOG_E("Failed (ResultCode %d) to add read access to MountPointManager",
+          result);
+  }
 }
 
 #undef WSTRING

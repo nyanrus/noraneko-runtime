@@ -982,6 +982,7 @@ class AsyncPanZoomController {
     STANDARD, /* Default axis locking mode that remains locked until pan ends */
     STICKY,   /* Allow lock to be broken, with hysteresis */
     DOMINANT_AXIS, /* Only allow movement on one axis */
+    BREAKABLE,     /* Allow lock to be broken until the pan ends */
   };
 
   static AxisLockMode GetAxisLockMode();
@@ -1375,6 +1376,7 @@ class AsyncPanZoomController {
   std::tuple<ParentLayerPoint, ScreenPoint> GetDisplacementsForPanGesture(
       const PanGestureInput& aEvent);
 
+  CSSPoint ToCSSPixels(ParentLayerPoint value) const;
   CSSCoord ToCSSPixels(ParentLayerCoord value) const;
 
  private:
@@ -1626,9 +1628,6 @@ class AsyncPanZoomController {
       const ParentLayerPoint& aVelocity, SideBits aOverscrollSideBits,
       const RefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain,
       const RefPtr<const AsyncPanZoomController>& aScrolledApzc);
-
-  void HandleSmoothScrollOverscroll(const ParentLayerPoint& aVelocity,
-                                    SideBits aOverscrollSideBits);
 
   // Start an overscroll animation with the given initial velocity.
   void StartOverscrollAnimation(const ParentLayerPoint& aVelocity,

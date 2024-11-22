@@ -12,13 +12,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 ChromeUtils.defineLazyGetter(lazy, "SearchModeSwitcherL10n", () => {
-  return new Localization(["preview/enUS-searchFeatures.ftl"]);
+  return new Localization(["browser/browser.ftl"]);
 });
 
 /**
  * Implements the SearchModeSwitcher in the urlbar.
  */
 export class SearchModeSwitcher {
+  static DEFAULT_ICON = lazy.UrlbarUtils.ICON.SEARCH_GLASS;
   #engineListNeedsRebuild = true;
   #popup;
   #input;
@@ -31,7 +32,7 @@ export class SearchModeSwitcher {
       "nsIObserver",
       "nsISupportsWeakReference",
     ]);
-    Services.obs.addObserver(this, "browser-search-engine-modified", true);
+
     lazy.UrlbarPrefs.addObserver(this);
 
     this.#popup = input.document.getElementById("searchmode-switcher-popup");
@@ -39,26 +40,10 @@ export class SearchModeSwitcher {
     this.#toolbarbutton = input.document.querySelector(
       "#urlbar-searchmode-switcher"
     );
-    this.#toolbarbutton.addEventListener("mousedown", this);
-    this.#toolbarbutton.addEventListener("keypress", this);
 
-    let closebutton = input.document.querySelector(
-      "#searchmode-switcher-close"
-    );
-    closebutton.addEventListener("mousedown", this);
-    closebutton.addEventListener("keypress", this);
-
-    let prefsbutton = input.document.querySelector(
-      "#searchmode-switcher-popup-search-settings-button"
-    );
-    prefsbutton.addEventListener("mousedown", this);
-    prefsbutton.addEventListener("keypress", this);
-
-    input.window.addEventListener(
-      "MozAfterPaint",
-      () => this.#updateSearchIcon(),
-      { once: true }
-    );
+    if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+      this.#enableObservers();
+    }
   }
 
   /**
@@ -78,7 +63,7 @@ export class SearchModeSwitcher {
       return; // Left click, down arrow, space or enter only
     }
 
-    let anchor = event.target;
+    let anchor = event.target.closest("#urlbar-searchmode-switcher");
     event.preventDefault();
 
     if (this.#input.document.documentElement.hasAttribute("customizing")) {
@@ -89,21 +74,28 @@ export class SearchModeSwitcher {
       await this.#rebuildSearchModeList(this.#input.window);
       this.#engineListNeedsRebuild = false;
     }
-    if (anchor.getAttribute("open") != "true") {
-      this.#input.view.hideTemporarily();
 
-      this.#popup.addEventListener(
-        "popuphidden",
-        () => {
-          anchor.removeAttribute("open");
-          anchor.setAttribute("aria-expanded", false);
-          this.#input.view.restoreVisibility();
-        },
-        { once: true }
-      );
-      anchor.setAttribute("open", true);
-      anchor.setAttribute("aria-expanded", true);
+    if (anchor.getAttribute("open") == "true") {
+      lazy.PanelMultiView.hidePopup(this.#popup);
+      return;
+    }
 
+    this.#input.view.hideTemporarily();
+
+    this.#popup.addEventListener(
+      "popuphidden",
+      () => {
+        anchor.removeAttribute("open");
+        anchor.setAttribute("aria-expanded", false);
+        this.#input.view.restoreVisibility();
+      },
+      { once: true }
+    );
+    anchor.setAttribute("open", true);
+    anchor.setAttribute("aria-expanded", true);
+
+    if (event.type == "keypress") {
+      // Focus the first item when opened by keypress only.
       this.#popup.addEventListener(
         "popupshown",
         () => {
@@ -111,12 +103,11 @@ export class SearchModeSwitcher {
         },
         { once: true }
       );
-
-      lazy.PanelMultiView.openPopup(this.#popup, anchor, {
-        position: "bottomleft topleft",
-        triggerEvent: event,
-      }).catch(console.error);
     }
+    lazy.PanelMultiView.openPopup(this.#popup, anchor, {
+      position: "bottomleft topleft",
+      triggerEvent: event,
+    }).catch(console.error);
   }
 
   #openPreferences(event) {
@@ -145,13 +136,17 @@ export class SearchModeSwitcher {
   exitSearchMode(event) {
     event.preventDefault();
     this.#input.searchMode = null;
+    // Update the result by the default engine.
+    this.#input.startQuery();
   }
 
   /**
    * Called when the value of the searchMode attribute on UrlbarInput is changed.
    */
   onSearchModeChanged() {
-    this.#updateSearchIcon();
+    if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+      this.#updateSearchIcon();
+    }
   }
 
   handleEvent(event) {
@@ -193,9 +188,20 @@ export class SearchModeSwitcher {
    */
   onPrefChanged(pref) {
     switch (pref) {
-      case "keyword.enabled":
-        this.#updateSearchIcon();
+      case "scotchBonnet.enableOverride": {
+        if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+          this.#enableObservers();
+        } else {
+          this.#disableObservers();
+        }
         break;
+      }
+      case "keyword.enabled": {
+        if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+          this.#updateSearchIcon();
+        }
+        break;
+      }
     }
   }
 
@@ -203,8 +209,9 @@ export class SearchModeSwitcher {
     try {
       await lazy.UrlbarSearchUtils.init();
     } catch {
-      // We should still work if the SearchService is not working.
+      console.error("Search service failed to init");
     }
+
     let { label, icon } = await this.#getDisplayedEngineDetails(
       this.#input.searchMode
     );
@@ -212,18 +219,26 @@ export class SearchModeSwitcher {
     const keywordEnabled = lazy.UrlbarPrefs.get("keyword.enabled");
     const inSearchMode = this.#input.searchMode;
     if (!keywordEnabled && !inSearchMode) {
-      icon = lazy.UrlbarUtils.ICON.SEARCH_GLASS;
+      icon = SearchModeSwitcher.DEFAULT_ICON;
     }
 
     let iconUrl = icon ? `url(${icon})` : "";
     this.#input.document.getElementById(
       "searchmode-switcher-icon"
     ).style.listStyleImage = iconUrl;
-    this.#input.document.l10n.setAttributes(
-      this.#toolbarbutton,
-      "urlbar-searchmode-button",
-      { engine: label }
-    );
+
+    if (label) {
+      this.#input.document.l10n.setAttributes(
+        this.#toolbarbutton,
+        "urlbar-searchmode-button2",
+        { engine: label }
+      );
+    } else {
+      this.#input.document.l10n.setAttributes(
+        this.#toolbarbutton,
+        "urlbar-searchmode-button-no-engine"
+      );
+    }
 
     let labelEl = this.#input.document.getElementById(
       "searchmode-switcher-title"
@@ -247,6 +262,10 @@ export class SearchModeSwitcher {
   }
 
   async #getDisplayedEngineDetails(searchMode = null) {
+    if (!Services.search.hasSuccessfullyInitialized) {
+      return { label: null, icon: SearchModeSwitcher.DEFAULT_ICON };
+    }
+
     if (!searchMode || searchMode.engineName) {
       let engine = searchMode
         ? lazy.UrlbarSearchUtils.getEngineByName(searchMode.engineName)
@@ -266,7 +285,13 @@ export class SearchModeSwitcher {
   async #rebuildSearchModeList() {
     let container = this.#popup.querySelector(".panel-subview-body");
     container.replaceChildren();
-    let engines = await Services.search.getVisibleEngines();
+
+    let engines = [];
+    try {
+      engines = await Services.search.getVisibleEngines();
+    } catch {
+      console.error("Failed to fetch engines");
+    }
     let frag = this.#input.document.createDocumentFragment();
     let remoteContainer = this.#input.document.createXULElement("vbox");
     remoteContainer.className = "remote-options";
@@ -274,7 +299,22 @@ export class SearchModeSwitcher {
 
     let fireCommand = e => {
       if (e.keyCode == KeyEvent.DOM_VK_RETURN) {
-        e.target.doCommand();
+        let event = e.target.ownerDocument.createEvent("xulcommandevent");
+        event.initCommandEvent(
+          "command",
+          true,
+          true,
+          e.target.ownerGlobal,
+          0,
+          e.ctrlKey,
+          e.altKey,
+          e.shiftKey,
+          e.metaKey,
+          0,
+          e,
+          e.inputSource
+        );
+        e.target.dispatchEvent(event);
       }
     };
 
@@ -290,8 +330,8 @@ export class SearchModeSwitcher {
       menuitem.setAttribute("role", "menuitem");
       menuitem.engine = engine;
       menuitem.addEventListener("keypress", fireCommand);
-      menuitem.addEventListener("command", () => {
-        this.search({ engine });
+      menuitem.addEventListener("command", e => {
+        this.search({ engine, openEngineHomePage: e.shiftKey });
       });
 
       menuitem.setAttribute("image", await engine.getIconURL());
@@ -339,19 +379,80 @@ export class SearchModeSwitcher {
     container.appendChild(frag);
   }
 
-  search({ engine = null, restrict = null } = {}) {
+  search({ engine = null, restrict = null, openEngineHomePage = false } = {}) {
     let gBrowser = this.#input.window.gBrowser;
     let search = "";
     let opts = null;
     if (engine) {
-      search =
-        gBrowser.userTypedValue ?? gBrowser.selectedBrowser.searchTerms ?? "";
-      opts = { searchEngine: engine, searchModeEntry: "searchbutton" };
+      let state = this.#input.getBrowserState(gBrowser.selectedBrowser);
+      search = gBrowser.userTypedValue ?? state.persist?.searchTerms ?? "";
+      opts = {
+        searchEngine: engine,
+        searchModeEntry: "searchbutton",
+        openEngineHomePage,
+      };
     } else if (restrict) {
       search = restrict + " " + (gBrowser.userTypedValue || "");
       opts = { searchModeEntry: "searchbutton" };
     }
+
+    if (openEngineHomePage) {
+      opts.focus = false;
+      opts.startQuery = false;
+    }
+
     this.#input.search(search, opts);
+
+    if (openEngineHomePage) {
+      this.#input.openEngineHomePage(search, {
+        searchEngine: opts.searchEngine,
+      });
+    }
+
     this.#popup.hidePopup();
+  }
+
+  #enableObservers() {
+    Services.obs.addObserver(this, "browser-search-engine-modified", true);
+
+    this.#toolbarbutton.addEventListener("command", this);
+    this.#toolbarbutton.addEventListener("keypress", this);
+
+    let closebutton = this.#input.document.querySelector(
+      "#searchmode-switcher-close"
+    );
+    closebutton.addEventListener("command", this);
+    closebutton.addEventListener("keypress", this);
+
+    let prefsbutton = this.#input.document.querySelector(
+      "#searchmode-switcher-popup-search-settings-button"
+    );
+    prefsbutton.addEventListener("command", this);
+    prefsbutton.addEventListener("keypress", this);
+
+    this.#input.window.addEventListener(
+      "MozAfterPaint",
+      () => this.#updateSearchIcon(),
+      { once: true }
+    );
+  }
+
+  #disableObservers() {
+    Services.obs.removeObserver(this, "browser-search-engine-modified");
+
+    this.#toolbarbutton.removeEventListener("command", this);
+    this.#toolbarbutton.removeEventListener("keypress", this);
+
+    let closebutton = this.#input.document.querySelector(
+      "#searchmode-switcher-close"
+    );
+    closebutton.removeEventListener("command", this);
+    closebutton.removeEventListener("keypress", this);
+
+    let prefsbutton = this.#input.document.querySelector(
+      "#searchmode-switcher-popup-search-settings-button"
+    );
+    prefsbutton.removeEventListener("command", this);
+    prefsbutton.removeEventListener("keypress", this);
   }
 }

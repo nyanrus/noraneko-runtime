@@ -1,12 +1,16 @@
 [DEFAULT]
-skip-if = ["release_or_beta"]
+run-if = ["!release_or_beta"]
 
 support-files = [
   "head.js",
 ]
 
+["browser_passwords_empty.js"]
+
 ["browser_passwords_filter.js"]
 
 ["browser_passwords_sidebar.js"]
+
+["browser_passwords_sidebar_import_from_csv.js"]
 
 ["browser_viewmodel.js"]

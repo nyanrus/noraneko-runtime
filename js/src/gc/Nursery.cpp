@@ -61,7 +61,7 @@ static constexpr size_t NurseryChunkUsableSize =
 struct NurseryChunk : public ChunkBase {
   alignas(CellAlignBytes) uint8_t data[NurseryChunkUsableSize];
 
-  static NurseryChunk* fromChunk(TenuredChunk* chunk, ChunkKind kind,
+  static NurseryChunk* fromChunk(ArenaChunk* chunk, ChunkKind kind,
                                  uint8_t index);
 
   explicit NurseryChunk(JSRuntime* runtime, ChunkKind kind, uint8_t chunkIndex)
@@ -166,7 +166,7 @@ inline bool js::NurseryChunk::markPagesInUseHard(size_t endOffset) {
 }
 
 // static
-inline js::NurseryChunk* js::NurseryChunk::fromChunk(TenuredChunk* chunk,
+inline js::NurseryChunk* js::NurseryChunk::fromChunk(ArenaChunk* chunk,
                                                      ChunkKind kind,
                                                      uint8_t index) {
   return new (chunk) NurseryChunk(chunk->runtime, kind, index);
@@ -210,8 +210,8 @@ void js::NurseryDecommitTask::run(AutoLockHelperThreadState& lock) {
     NurseryChunk* nurseryChunk = chunksToDecommit().popCopy();
     AutoUnlockHelperThreadState unlock(lock);
     nurseryChunk->~NurseryChunk();
-    TenuredChunk* tenuredChunk = TenuredChunk::emplace(
-        nurseryChunk, gc, /* allMemoryCommitted = */ false);
+    ArenaChunk* tenuredChunk =
+        ArenaChunk::emplace(nurseryChunk, gc, /* allMemoryCommitted = */ false);
     AutoLockGC lock(gc);
     gc->recycleChunk(tenuredChunk, lock);
   }
@@ -343,6 +343,8 @@ bool js::Nursery::init(AutoLockGCBgAlloc& lock) {
 js::Nursery::~Nursery() { disable(); }
 
 void js::Nursery::enable() {
+  MOZ_ASSERT(TlsContext.get()->generationalDisabled == 0);
+
   if (isEnabled()) {
     return;
   }
@@ -1764,11 +1766,7 @@ bool js::Nursery::registerMallocedBuffer(void* buffer, size_t nbytes) {
     return false;
   }
 
-  toSpace.mallocedBufferBytes += nbytes;
-  if (MOZ_UNLIKELY(toSpace.mallocedBufferBytes > capacity() * 8)) {
-    requestMinorGC(JS::GCReason::NURSERY_MALLOC_BUFFERS);
-  }
-
+  addMallocedBufferBytes(nbytes);
   return true;
 }
 
@@ -1948,6 +1946,10 @@ void js::Nursery::sweepStringsWithBuffer() {
   stringBuffers_.mutableEraseIf([&](StringAndBuffer& entry) {
     if (JSLinearString* dst = sweep(entry.first, entry.second)) {
       entry.first = dst;
+      // See comment in Nursery::addStringBuffer.
+      if (!entry.second->HasMultipleReferences()) {
+        addMallocedBufferBytes(entry.second->AllocationSize());
+      }
       return false;
     }
     return true;
@@ -1963,6 +1965,9 @@ void js::Nursery::sweepStringsWithBuffer() {
       if (!extensibleStringBuffers_.putNew(dst, e.front().value())) {
         oomUnsafe.crash("sweepStringsWithBuffer");
       }
+      // Ensure mallocedBufferBytes includes the buffer size for
+      // removeExtensibleStringBuffer.
+      addMallocedBufferBytes(e.front().value()->AllocationSize());
     }
   }
 }
@@ -2011,7 +2016,7 @@ void js::Nursery::sweep() {
 
 void gc::CellSweepSet::sweep() {
   if (head_) {
-    head_->sweepDependentStrings();
+    ArenaCellSet::sweepDependentStrings(head_);
     head_ = nullptr;
   }
   if (storage_) {
@@ -2110,13 +2115,13 @@ bool js::Nursery::allocateNextChunk(AutoLockGCBgAlloc& lock) {
     return false;
   }
 
-  TenuredChunk* toSpaceChunk = gc->getOrAllocChunk(lock);
+  ArenaChunk* toSpaceChunk = gc->takeOrAllocChunk(lock);
   if (!toSpaceChunk) {
     return false;
   }
 
-  TenuredChunk* fromSpaceChunk = nullptr;
-  if (semispaceEnabled_ && !(fromSpaceChunk = gc->getOrAllocChunk(lock))) {
+  ArenaChunk* fromSpaceChunk = nullptr;
+  if (semispaceEnabled_ && !(fromSpaceChunk = gc->takeOrAllocChunk(lock))) {
     gc->recycleChunk(toSpaceChunk, lock);
     return false;
   }

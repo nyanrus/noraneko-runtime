@@ -1756,7 +1756,6 @@ static void captureDisasmText(const char* text) {
 
 static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setUndefined();
 
   if (args.length() < 1) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -1781,10 +1780,13 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
   uint8_t* jit_end = nullptr;
 
   if (fun->isAsmJSNative() || fun->isWasmWithJitEntry()) {
-    if (fun->isAsmJSNative()) {
+    if (IsAsmJSModule(fun)) {
+      JS_ReportErrorASCII(cx, "Can't disassemble asm.js module function.");
       return false;
     }
-    sprinter.printf("; backend=asmjs\n");
+    if (fun->isAsmJSNative()) {
+      sprinter.printf("; backend=asmjs\n");
+    }
     sprinter.printf("; backend=wasm\n");
 
     js::wasm::Instance& inst = fun->wasmInstance();
@@ -1797,25 +1799,14 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
 
     jit_begin = segment.base() + codeRange.begin();
     jit_end = segment.base() + codeRange.end();
-  } else if (fun->hasJitScript()) {
-    JSScript* script = fun->nonLazyScript();
-    if (script == nullptr) {
-      return false;
-    }
-
-    js::jit::IonScript* ion =
-        script->hasIonScript() ? script->ionScript() : nullptr;
-    js::jit::BaselineScript* baseline =
-        script->hasBaselineScript() ? script->baselineScript() : nullptr;
-    if (ion && ion->method()) {
-      sprinter.printf("; backend=ion\n");
-      jit_begin = ion->method()->raw();
-      jit_end = ion->method()->rawEnd();
-    } else if (baseline) {
-      sprinter.printf("; backend=baseline\n");
-      jit_begin = baseline->method()->raw();
-      jit_end = baseline->method()->rawEnd();
-    }
+  } else if (fun->hasJitScript() && fun->nonLazyScript()->hasIonScript()) {
+    sprinter.printf("; backend=ion\n");
+    jit_begin = fun->nonLazyScript()->ionScript()->method()->raw();
+    jit_end = fun->nonLazyScript()->ionScript()->method()->rawEnd();
+  } else if (fun->hasJitScript() && fun->nonLazyScript()->hasBaselineScript()) {
+    sprinter.printf("; backend=baseline\n");
+    jit_begin = fun->nonLazyScript()->baselineScript()->method()->raw();
+    jit_end = fun->nonLazyScript()->baselineScript()->method()->rawEnd();
   } else {
     JS_ReportErrorASCII(cx,
                         "The function hasn't been warmed up, hence no JIT code "
@@ -1823,9 +1814,8 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  if (jit_begin == nullptr || jit_end == nullptr) {
-    return false;
-  }
+  MOZ_ASSERT(jit_begin);
+  MOZ_ASSERT(jit_end);
 
 #ifdef JS_CODEGEN_ARM
   // The ARM32 disassembler is currently not fuzzing-safe because it doesn't
@@ -1886,9 +1876,7 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args[0].setUndefined();
   args.rval().setString(str);
-
   return true;
 }
 
@@ -2082,6 +2070,10 @@ static bool WasmFunctionTier(JSContext* cx, unsigned argc, Value* vp) {
   if (func && wasm::IsWasmExportedFunction(func)) {
     uint32_t funcIndex = wasm::ExportedFunctionToFuncIndex(func);
     wasm::Instance& instance = wasm::ExportedFunctionToInstance(func);
+    if (funcIndex < instance.code().funcImports().length()) {
+      JS_ReportErrorASCII(cx, "argument is an imported function");
+      return false;
+    }
     wasm::Tier tier = instance.code().funcTier(funcIndex);
     RootedString tierString(cx, JS_NewStringCopyZ(cx, wasm::ToString(tier)));
     if (!tierString) {
@@ -2690,6 +2682,7 @@ static bool SelectForGC(JSContext* cx, unsigned argc, Value* vp) {
   for (unsigned i = 0; i < args.length(); i++) {
     if (args[i].isObject()) {
       if (!cx->runtime()->gc.selectForMarking(&args[i].toObject())) {
+        ReportOutOfMemory(cx);
         return false;
       }
     }
@@ -4757,7 +4750,7 @@ static bool Terminate(JSContext* cx, unsigned arg, Value* vp) {
     fprintf(stderr, "terminate called\n");
   }
 
-  JS_ClearPendingException(cx);
+  JS::ReportUncatchableException(cx);
   return false;
 }
 
@@ -7248,7 +7241,7 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
   JS::AutoFilename filename;
   uint32_t lineno;
 
-  JS::DescribeScriptedCaller(cx, &filename, &lineno);
+  JS::DescribeScriptedCaller(&filename, cx, &lineno);
 
   // CompileOption should be created in the target global's realm.
   RootedObject global(cx);
@@ -8100,6 +8093,15 @@ static bool SetGCCallback(JSContext* cx, unsigned argc, Value* vp) {
 static bool EnqueueMark(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   gc::GCRuntime* gc = &cx->runtime()->gc;
+
+  if (gc->isIncrementalGCInProgress() &&
+      gc->hasZealMode(gc::ZealMode::IncrementalMarkingValidator)) {
+    JS_ReportErrorASCII(
+        cx,
+        "Can't add to test mark queue during incremental GC if marking "
+        "validation is enabled as this can cause failures");
+    return false;
+  }
 
   if (args.get(0).isString()) {
     RootedString val(cx, args[0].toString());
@@ -10076,35 +10078,6 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "  from being used then this returns a truthy string describing the features that\n."
 "  are disabling it.  Otherwise it returns false."),
 
-    JS_FN_HELP("wasmExtractCode", WasmExtractCode, 1, 0,
-"wasmExtractCode(module[, tier])",
-"  Extracts generated machine code from WebAssembly.Module.  The tier is a string,\n"
-"  'stable', 'best', 'baseline', or 'ion'; the default is 'stable'.  If the request\n"
-"  cannot be satisfied then null is returned.  If the request is 'ion' then block\n"
-"  until background compilation is complete."),
-
-    JS_FN_HELP("wasmDis", WasmDisassemble, 1, 0,
-"wasmDis(wasmObject[, options])\n",
-"  Disassembles generated machine code from an exported WebAssembly function,\n"
-"  or from all the functions defined in the module or instance, exported and not.\n"
-"  The `options` is an object with the following optional keys:\n"
-"    asString: boolean - if true, return a string rather than printing on stderr,\n"
-"          the default is false.\n"
-"    tier: string - one of 'stable', 'best', 'baseline', or 'ion'; the default is\n"
-"          'stable'.\n"
-"    kinds: string - if set, and the wasmObject is a module or instance, a\n"
-"           comma-separated list of the following keys, the default is `Function`:\n"
-"      Function         - functions defined in the module\n"
-"      InterpEntry      - C++-to-wasm stubs\n"
-"      JitEntry         - jitted-js-to-wasm stubs\n"
-"      ImportInterpExit - wasm-to-C++ stubs\n"
-"      ImportJitExit    - wasm-to-jitted-JS stubs\n"
-"      all              - all kinds, including obscure ones\n"),
-
-    JS_FN_HELP("wasmFunctionTier", WasmFunctionTier, 1, 0,
-"wasmFunctionTier(wasmFunc)\n",
-"  Returns the best compiled tier for a function. Either 'baseline' or 'optimized'."),
-
     JS_FN_HELP("wasmHasTier2CompilationCompleted", WasmHasTier2CompilationCompleted, 1, 0,
 "wasmHasTier2CompilationCompleted(module)",
 "  Returns a boolean indicating whether a given module has finished compiled code for tier2. \n"
@@ -10617,11 +10590,11 @@ JS_FN_HELP("isSmallFunction", IsSmallFunction, 1, 0,
 
 // clang-format off
 static const JSFunctionSpecWithHelp FuzzingUnsafeTestingFunctions[] = {
-    JS_FN_HELP("getErrorNotes", GetErrorNotes, 1, 0,
+JS_FN_HELP("getErrorNotes", GetErrorNotes, 1, 0,
 "getErrorNotes(error)",
 "  Returns an array of error notes."),
 
-    JS_FN_HELP("setTimeZone", SetTimeZone, 1, 0,
+JS_FN_HELP("setTimeZone", SetTimeZone, 1, 0,
 "setTimeZone(tzname)",
 "  Set the 'TZ' environment variable to the given time zone and applies the new time zone.\n"
 "  The time zone given is validated according to the current environment.\n"
@@ -10653,7 +10626,7 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
 "getEnvironmentObjectType(env)",
 "  Return a string represents the type of given environment object."),
 
-    JS_FN_HELP("shortestPaths", ShortestPaths, 3, 0,
+JS_FN_HELP("shortestPaths", ShortestPaths, 3, 0,
 "shortestPaths(targets, options)",
 "  Return an array of arrays of shortest retaining paths. There is an array of\n"
       "  shortest retaining paths for each object in |targets|. Each element in a path\n"
@@ -10664,10 +10637,10 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
       "    start: The object to start all paths from. If not given, then\n"
       "      the starting point will be the set of GC roots."),
 
-    JS_FN_HELP("getFuseState", GetFuseState, 0, 0,
-      "getFuseState()",
-      "  Return an object describing the calling realm's fuse state, "
-      "as well as the state of any runtime fuses."),
+JS_FN_HELP("getFuseState", GetFuseState, 0, 0,
+"getFuseState()",
+  "  Return an object describing the calling realm's fuse state, "
+  "  as well as the state of any runtime fuses."),
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
     JS_FN_HELP("dumpObject", DumpObject, 1, 0,
@@ -10691,6 +10664,31 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
 "  Return a human-readable description of how the string |str| is represented.\n"),
 #endif
 
+    JS_FN_HELP("wasmExtractCode", WasmExtractCode, 1, 0,
+"wasmExtractCode(module[, tier])",
+"  Extracts generated machine code from WebAssembly.Module.  The tier is a string,\n"
+"  'stable', 'best', 'baseline', or 'ion'; the default is 'stable'.  If the request\n"
+"  cannot be satisfied then null is returned.  If the request is 'ion' then block\n"
+"  until background compilation is complete."),
+
+    JS_FN_HELP("wasmDis", WasmDisassemble, 1, 0,
+"wasmDis(wasmObject[, options])\n",
+"  Disassembles generated machine code from an exported WebAssembly function,\n"
+"  or from all the functions defined in the module or instance, exported and not.\n"
+"  The `options` is an object with the following optional keys:\n"
+"    asString: boolean - if true, return a string rather than printing on stderr,\n"
+"          the default is false.\n"
+"    tier: string - one of 'stable', 'best', 'baseline', or 'ion'; the default is\n"
+"          'stable'.\n"
+"    kinds: string - if set, and the wasmObject is a module or instance, a\n"
+"           comma-separated list of the following keys, the default is `Function`:\n"
+"      Function         - functions defined in the module\n"
+"      InterpEntry      - C++-to-wasm stubs\n"
+"      JitEntry         - jitted-js-to-wasm stubs\n"
+"      ImportInterpExit - wasm-to-C++ stubs\n"
+"      ImportJitExit    - wasm-to-jitted-JS stubs\n"
+"      all              - all kinds, including obscure ones\n"),
+
     JS_FN_HELP("wasmDumpIon", WasmDumpIon, 2, 0,
 "wasmDumpIon(bytecode, funcIndex, [, contents])\n",
 "wasmDumpIon(bytecode, funcIndex, [, contents])"
@@ -10699,6 +10697,10 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
 "    `mir` | `unopt-mir`: Unoptimized MIR (the default)"
 "    `opt-mir`: Optimized MIR"
 "    `lir`: LIR"),
+
+    JS_FN_HELP("wasmFunctionTier", WasmFunctionTier, 1, 0,
+"wasmFunctionTier(wasmFunc)\n",
+"  Returns the best compiled tier for a function. Either 'baseline' or 'optimized'."),
 
     JS_FS_HELP_END
 };

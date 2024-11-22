@@ -11,7 +11,7 @@ const EXPECTED_SNAPSHOTS_DATA = [
   // header data
   {
     lineIndex: 0,
-    value: { total: 3, alerts: 0, statsTotal: 3 },
+    value: { total: 3, alerts: 0, count: 3 },
     field: undefined,
   },
 
@@ -34,7 +34,7 @@ const EXPECTED_SNAPSHOTS_DATA = [
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.megalist.enabled", true],
+      ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
     ],
   });

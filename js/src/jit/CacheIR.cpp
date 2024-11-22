@@ -6,10 +6,12 @@
 
 #include "jit/CacheIR.h"
 
+#include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
 
 #include "jsapi.h"
+#include "jsdate.h"
 #include "jsmath.h"
 #include "jsnum.h"
 
@@ -44,6 +46,7 @@
 #include "vm/BoundFunctionObject.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
+#include "vm/DateObject.h"
 #include "vm/Iteration.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/ProxyObject.h"
@@ -2082,6 +2085,8 @@ const JSClass* js::jit::ClassFor(GuardClassKind kind) {
       return &SetObject::class_;
     case GuardClassKind::Map:
       return &MapObject::class_;
+    case GuardClassKind::Date:
+      return &DateObject::class_;
   }
   MOZ_CRASH("unexpected kind");
 }
@@ -2103,6 +2108,7 @@ void IRGenerator::emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
     case GuardClassKind::ResizableDataView:
     case GuardClassKind::Set:
     case GuardClassKind::Map:
+    case GuardClassKind::Date:
       MOZ_ASSERT(obj->hasClass(ClassFor(kind)));
       break;
 
@@ -3591,22 +3597,26 @@ AttachDecision GetNameIRGenerator::tryAttachGlobalNameGetter(ObjOperandId objId,
 }
 
 static bool NeedEnvironmentShapeGuard(JSContext* cx, JSObject* envObj) {
-  if (!envObj->is<CallObject>()) {
-    return true;
-  }
-
   // We can skip a guard on the call object if the script's bindings are
   // guaranteed to be immutable (and thus cannot introduce shadowing variables).
   // If the function is a relazified self-hosted function it has no BaseScript
   // and we pessimistically create the guard.
-  CallObject* callObj = &envObj->as<CallObject>();
-  JSFunction* fun = &callObj->callee();
-  if (!fun->hasBaseScript() || fun->baseScript()->funHasExtensibleScope() ||
-      DebugEnvironments::hasDebugEnvironment(cx, *callObj)) {
-    return true;
+  if (envObj->is<CallObject>()) {
+    auto* callObj = &envObj->as<CallObject>();
+    JSFunction* fun = &callObj->callee();
+    return !fun->hasBaseScript() ||
+           fun->baseScript()->funHasExtensibleScope() ||
+           DebugEnvironments::hasDebugEnvironment(cx, *callObj);
   }
 
-  return false;
+  // Similar to the call object case, we can also skip a guard if the lexical
+  // environment's bindings are immutable.
+  if (envObj->is<LexicalEnvironmentObject>()) {
+    return envObj->as<LexicalEnvironmentObject>().isExtensible();
+  }
+
+  // Use a shape guard for all other environment objects.
+  return true;
 }
 
 AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
@@ -3761,19 +3771,25 @@ AttachDecision BindNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
     return AttachDecision::NoAction;
   }
 
+  // JSOp::BindUnqualifiedName when writing to a dynamic environment binding.
+  // JSOp::BindName when reading from a dynamic environment binding.
+  bool unqualifiedLookup = JSOp(*pc_) == JSOp::BindUnqualifiedName;
+
   JSObject* env = env_;
   Maybe<PropertyInfo> prop;
   while (true) {
-    if (!env->is<GlobalObject>() && !env->is<EnvironmentObject>()) {
-      return AttachDecision::NoAction;
+    // Stop when we've reached the global object.
+    if (env->is<GlobalObject>()) {
+      break;
     }
-    if (env->is<WithEnvironmentObject>()) {
+
+    if (!env->is<EnvironmentObject>() || env->is<WithEnvironmentObject>()) {
       return AttachDecision::NoAction;
     }
 
     // When we reach an unqualified variables object (like the global) we
     // have to stop looking and return that object.
-    if (env->isUnqualifiedVarObj()) {
+    if (unqualifiedLookup && env->isUnqualifiedVarObj()) {
       break;
     }
 
@@ -3791,9 +3807,16 @@ AttachDecision BindNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
   // If this is an uninitialized lexical or a const, we need to return a
   // RuntimeLexicalErrorObject.
   auto* holder = &env->as<NativeObject>();
-  if (prop.isSome() && holder->is<EnvironmentObject>() &&
-      (holder->getSlot(prop->slot()).isMagic() || !prop->writable())) {
-    return AttachDecision::NoAction;
+  if (prop.isSome() && holder->is<EnvironmentObject>()) {
+    // Uninitialized lexical binding.
+    if (holder->getSlot(prop->slot()).isMagic()) {
+      return AttachDecision::NoAction;
+    }
+
+    // Attempt to write to a const binding.
+    if (unqualifiedLookup && !prop->writable()) {
+      return AttachDecision::NoAction;
+    }
   }
 
   ObjOperandId lastObjId = objId;
@@ -10037,7 +10060,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachBigInt() {
   Int32OperandId int32Id = writer.guardToInt32(argId);
 
   // Convert Int32 to BigInt.
-  writer.int32ToBigIntResult(int32Id);
+  IntPtrOperandId intptrId = writer.int32ToIntPtr(int32Id);
+  writer.intPtrToBigIntResult(intptrId);
   writer.returnFromIC();
 
   trackAttached("BigInt");
@@ -10400,6 +10424,142 @@ AttachDecision InlinableNativeIRGenerator::tryAttachMapGet() {
   writer.returnFromIC();
 
   trackAttached("MapGet");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachDateGetTime(
+    InlinableNative native) {
+  // Ensure |this| is a DateObject.
+  if (!thisval_.isObject() || !thisval_.toObject().is<DateObject>()) {
+    return AttachDecision::NoAction;
+  }
+
+  if (native == InlinableNative::DateGetTime) {
+    // Expecting no arguments.
+    if (argc_ != 0) {
+      return AttachDecision::NoAction;
+    }
+  } else {
+    MOZ_ASSERT(argc_ == 1 && args_[0].isInt32());
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  if (native == InlinableNative::DateGetTime) {
+    // Guard callee is the 'getTime' (or 'valueOf') native function.
+    emitNativeCalleeGuard();
+  } else {
+    // Note: we don't need to call emitNativeCalleeGuard for intrinsics.
+    MOZ_ASSERT(native == InlinableNative::IntrinsicThisTimeValue);
+  }
+
+  // Guard |this| is a DateObject.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  ObjOperandId objId = writer.guardToObject(thisValId);
+  emitOptimisticClassGuard(objId, &thisval_.toObject(), GuardClassKind::Date);
+
+  writer.loadFixedSlotTypedResult(objId, DateObject::offsetOfUTCTimeSlot(),
+                                  ValueType::Double);
+
+  writer.returnFromIC();
+
+  trackAttached(native == InlinableNative::DateGetTime ? "DateGetTime"
+                                                       : "ThisTimeValue");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachDateGet(
+    DateComponent component) {
+  // Ensure |this| is a DateObject.
+  if (!thisval_.isObject() || !thisval_.toObject().is<DateObject>()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Expecting no arguments.
+  if (argc_ != 0) {
+    return AttachDecision::NoAction;
+  }
+
+  // Can't check DateTime cache when time zone is forced to UTC.
+  if (cx_->realm()->creationOptions().forceUTC()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the Date native function.
+  emitNativeCalleeGuard();
+
+  // Guard |this| is a DateObject.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  ObjOperandId objId = writer.guardToObject(thisValId);
+  emitOptimisticClassGuard(objId, &thisval_.toObject(), GuardClassKind::Date);
+
+  // Fill in the local time slots.
+  writer.dateFillLocalTimeSlots(objId);
+
+  switch (component) {
+    case DateComponent::FullYear:
+      writer.loadFixedSlotResult(objId, DateObject::offsetOfLocalYearSlot());
+      break;
+    case DateComponent::Month:
+      writer.loadFixedSlotResult(objId, DateObject::offsetOfLocalMonthSlot());
+      break;
+    case DateComponent::Date:
+      writer.loadFixedSlotResult(objId, DateObject::offsetOfLocalDateSlot());
+      break;
+    case DateComponent::Day:
+      writer.loadFixedSlotResult(objId, DateObject::offsetOfLocalDaySlot());
+      break;
+    case DateComponent::Hours: {
+      ValOperandId secondsIntoYearValId = writer.loadFixedSlot(
+          objId, DateObject::offsetOfLocalSecondsIntoYearSlot());
+      writer.dateHoursFromSecondsIntoYearResult(secondsIntoYearValId);
+      break;
+    }
+    case DateComponent::Minutes: {
+      ValOperandId secondsIntoYearValId = writer.loadFixedSlot(
+          objId, DateObject::offsetOfLocalSecondsIntoYearSlot());
+      writer.dateMinutesFromSecondsIntoYearResult(secondsIntoYearValId);
+      break;
+    }
+    case DateComponent::Seconds: {
+      ValOperandId secondsIntoYearValId = writer.loadFixedSlot(
+          objId, DateObject::offsetOfLocalSecondsIntoYearSlot());
+      writer.dateSecondsFromSecondsIntoYearResult(secondsIntoYearValId);
+      break;
+    }
+  }
+
+  writer.returnFromIC();
+
+  switch (component) {
+    case DateComponent::FullYear:
+      trackAttached("DateGetFullYear");
+      break;
+    case DateComponent::Month:
+      trackAttached("DateGetMonth");
+      break;
+    case DateComponent::Date:
+      trackAttached("DateGetDate");
+      break;
+    case DateComponent::Day:
+      trackAttached("DateGetDay");
+      break;
+    case DateComponent::Hours:
+      trackAttached("DateGetHours");
+      break;
+    case DateComponent::Minutes:
+      trackAttached("DateGetMinutes");
+      break;
+    case DateComponent::Seconds:
+      trackAttached("DateGetSeconds");
+      break;
+  }
   return AttachDecision::Attach;
 }
 
@@ -11823,6 +11983,10 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
     case InlinableNative::IntrinsicGuardToWrapForValidIterator:
     case InlinableNative::IntrinsicGuardToIteratorHelper:
     case InlinableNative::IntrinsicGuardToAsyncIteratorHelper:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case InlinableNative::IntrinsicGuardToAsyncDisposableStack:
+    case InlinableNative::IntrinsicGuardToDisposableStack:
+#endif
       return tryAttachGuardToClass(native);
     case InlinableNative::IntrinsicSubstringKernel:
       return tryAttachSubstringKernel();
@@ -12102,6 +12266,25 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
     case InlinableNative::MapGet:
       return tryAttachMapGet();
 
+    // Date natives and intrinsics.
+    case InlinableNative::DateGetTime:
+    case InlinableNative::IntrinsicThisTimeValue:
+      return tryAttachDateGetTime(native);
+    case InlinableNative::DateGetFullYear:
+      return tryAttachDateGet(DateComponent::FullYear);
+    case InlinableNative::DateGetMonth:
+      return tryAttachDateGet(DateComponent::Month);
+    case InlinableNative::DateGetDate:
+      return tryAttachDateGet(DateComponent::Date);
+    case InlinableNative::DateGetDay:
+      return tryAttachDateGet(DateComponent::Day);
+    case InlinableNative::DateGetHours:
+      return tryAttachDateGet(DateComponent::Hours);
+    case InlinableNative::DateGetMinutes:
+      return tryAttachDateGet(DateComponent::Minutes);
+    case InlinableNative::DateGetSeconds:
+      return tryAttachDateGet(DateComponent::Seconds);
+
     // Testing functions.
     case InlinableNative::TestBailout:
       if (js::SupportDifferentialTesting()) {
@@ -12352,6 +12535,15 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
                        mode_)) {
     MOZ_ASSERT(!isConstructing, "DOM functions are not constructors");
 
+    gc::AllocSite* allocSite = nullptr;
+    if (calleeFunc->jitInfo()->returnType() == JSVAL_TYPE_OBJECT &&
+        JS::Prefs::dom_alloc_site()) {
+      allocSite = maybeCreateAllocSite();
+      if (!allocSite) {
+        return AttachDecision::NoAction;
+      }
+    }
+
     // Guard that |this| is an object.
     ValOperandId thisValId =
         writer.loadArgumentDynamicSlot(ArgumentKind::This, argcId, flags);
@@ -12363,8 +12555,15 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
 
     // Ensure callee matches this stub's callee
     writer.guardSpecificFunction(calleeObjId, calleeFunc);
-    writer.callDOMFunction(calleeObjId, argcId, thisObjId, calleeFunc, flags,
-                           ClampFixedArgc(argc_));
+
+    if (allocSite) {
+      writer.callDOMFunctionWithAllocSite(calleeObjId, argcId, thisObjId,
+                                          calleeFunc, flags,
+                                          ClampFixedArgc(argc_), allocSite);
+    } else {
+      writer.callDOMFunction(calleeObjId, argcId, thisObjId, calleeFunc, flags,
+                             ClampFixedArgc(argc_));
+    }
 
     trackAttached("Call.CallDOM");
   } else if (isSpecialized) {
@@ -13358,6 +13557,7 @@ AttachDecision UnaryArithIRGenerator::tryAttachStub() {
   TRY_ATTACH(tryAttachInt32());
   TRY_ATTACH(tryAttachNumber());
   TRY_ATTACH(tryAttachBitwise());
+  TRY_ATTACH(tryAttachBigIntPtr());
   TRY_ATTACH(tryAttachBigInt());
   TRY_ATTACH(tryAttachStringInt32());
   TRY_ATTACH(tryAttachStringNumber());
@@ -13537,6 +13737,94 @@ AttachDecision UnaryArithIRGenerator::tryAttachBigInt() {
       MOZ_CRASH("Unexpected OP");
   }
 
+  writer.returnFromIC();
+  return AttachDecision::Attach;
+}
+
+AttachDecision UnaryArithIRGenerator::tryAttachBigIntPtr() {
+  if (!val_.isBigInt()) {
+    return AttachDecision::NoAction;
+  }
+  MOZ_ASSERT(res_.isBigInt());
+
+  MOZ_ASSERT(op_ != JSOp::Pos,
+             "Applying the unary + operator on BigInt values throws an error");
+
+  switch (op_) {
+    case JSOp::BitNot:
+    case JSOp::Neg:
+    case JSOp::Inc:
+    case JSOp::Dec:
+      break;
+    case JSOp::ToNumeric:
+      return AttachDecision::NoAction;
+    default:
+      MOZ_CRASH("Unexpected OP");
+  }
+
+  intptr_t val;
+  if (!BigInt::isIntPtr(val_.toBigInt(), &val)) {
+    return AttachDecision::NoAction;
+  }
+
+  using CheckedIntPtr = mozilla::CheckedInt<intptr_t>;
+
+  switch (op_) {
+    case JSOp::BitNot: {
+      // Bitwise operations always return an intptr-sized result.
+      break;
+    }
+    case JSOp::Neg: {
+      auto result = -CheckedIntPtr(val);
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Inc: {
+      auto result = CheckedIntPtr(val) + intptr_t(1);
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Dec: {
+      auto result = CheckedIntPtr(val) - intptr_t(1);
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    default:
+      MOZ_CRASH("Unexpected OP");
+  }
+
+  ValOperandId valId(writer.setInputOperandId(0));
+  BigIntOperandId bigIntId = writer.guardToBigInt(valId);
+  IntPtrOperandId intPtrId = writer.bigIntToIntPtr(bigIntId);
+  IntPtrOperandId resultId;
+  switch (op_) {
+    case JSOp::BitNot:
+      resultId = writer.bigIntPtrNot(intPtrId);
+      trackAttached("UnaryArith.BigIntPtrNot");
+      break;
+    case JSOp::Neg:
+      resultId = writer.bigIntPtrNegation(intPtrId);
+      trackAttached("UnaryArith.BigIntPtrNeg");
+      break;
+    case JSOp::Inc:
+      resultId = writer.bigIntPtrInc(intPtrId);
+      trackAttached("UnaryArith.BigIntPtrInc");
+      break;
+    case JSOp::Dec:
+      resultId = writer.bigIntPtrDec(intPtrId);
+      trackAttached("UnaryArith.BigIntPtrDec");
+      break;
+    default:
+      MOZ_CRASH("Unexpected OP");
+  }
+
+  writer.intPtrToBigIntResult(resultId);
   writer.returnFromIC();
   return AttachDecision::Attach;
 }
@@ -13765,6 +14053,10 @@ AttachDecision BinaryArithIRGenerator::tryAttachStub() {
   // String x Object
   TRY_ATTACH(tryAttachStringObjectConcat());
 
+  // Arithmetic operations or bitwise operations with intptr-sized BigInt
+  // operands.
+  TRY_ATTACH(tryAttachBigIntPtr());
+
   // Arithmetic operations or bitwise operations with BigInt operands
   TRY_ATTACH(tryAttachBigInt());
 
@@ -13775,6 +14067,8 @@ AttachDecision BinaryArithIRGenerator::tryAttachStub() {
   // to come after tryAttachStringInt32Arith, as the guards overlap, and we'd
   // prefer to attach the more specialized Int32 IC if it is possible.
   TRY_ATTACH(tryAttachStringNumberArith());
+
+  TRY_ATTACH(tryAttachDateArith());
 
   trackAttached(IRGenerator::NotAttached);
   return AttachDecision::NoAction;
@@ -14091,6 +14385,196 @@ AttachDecision BinaryArithIRGenerator::tryAttachBigInt() {
   return AttachDecision::Attach;
 }
 
+AttachDecision BinaryArithIRGenerator::tryAttachBigIntPtr() {
+  // Check Guards
+  if (!lhs_.isBigInt() || !rhs_.isBigInt()) {
+    return AttachDecision::NoAction;
+  }
+
+  switch (op_) {
+    case JSOp::Add:
+    case JSOp::Sub:
+    case JSOp::Mul:
+    case JSOp::Div:
+    case JSOp::Mod:
+    case JSOp::Pow:
+      // Arithmetic operations.
+      break;
+
+    case JSOp::BitOr:
+    case JSOp::BitXor:
+    case JSOp::BitAnd:
+    case JSOp::Lsh:
+    case JSOp::Rsh:
+      // Bitwise operations.
+      break;
+
+    default:
+      return AttachDecision::NoAction;
+  }
+
+  intptr_t lhs;
+  intptr_t rhs;
+  if (!BigInt::isIntPtr(lhs_.toBigInt(), &lhs) ||
+      !BigInt::isIntPtr(rhs_.toBigInt(), &rhs)) {
+    return AttachDecision::NoAction;
+  }
+
+  using CheckedIntPtr = mozilla::CheckedInt<intptr_t>;
+
+  switch (op_) {
+    case JSOp::Add: {
+      auto result = CheckedIntPtr(lhs) + rhs;
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Sub: {
+      auto result = CheckedIntPtr(lhs) - rhs;
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Mul: {
+      auto result = CheckedIntPtr(lhs) * rhs;
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Div: {
+      auto result = CheckedIntPtr(lhs) / rhs;
+      if (result.isValid()) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Mod: {
+      // We can't use mozilla::CheckedInt here, because it disallows negative
+      // inputs.
+      if (rhs != 0) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Pow: {
+      intptr_t result;
+      if (BigInt::powIntPtr(lhs, rhs, &result)) {
+        break;
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::BitOr:
+    case JSOp::BitXor:
+    case JSOp::BitAnd: {
+      // Bitwise operations always return an intptr-sized result.
+      break;
+    }
+    case JSOp::Lsh: {
+      if (lhs == 0 || rhs <= 0) {
+        break;
+      }
+      if (size_t(rhs) < BigInt::DigitBits) {
+        intptr_t result = lhs << rhs;
+        if ((result >> rhs) == lhs) {
+          break;
+        }
+      }
+      return AttachDecision::NoAction;
+    }
+    case JSOp::Rsh: {
+      if (lhs == 0 || rhs >= 0) {
+        break;
+      }
+      if (rhs > -intptr_t(BigInt::DigitBits)) {
+        intptr_t result = lhs << -rhs;
+        if ((result >> -rhs) == lhs) {
+          break;
+        }
+      }
+      return AttachDecision::NoAction;
+    }
+    default:
+      MOZ_CRASH("Unexpected OP");
+  }
+
+  ValOperandId lhsId(writer.setInputOperandId(0));
+  ValOperandId rhsId(writer.setInputOperandId(1));
+
+  BigIntOperandId lhsBigIntId = writer.guardToBigInt(lhsId);
+  BigIntOperandId rhsBigIntId = writer.guardToBigInt(rhsId);
+
+  IntPtrOperandId lhsIntPtrId = writer.bigIntToIntPtr(lhsBigIntId);
+  IntPtrOperandId rhsIntPtrId = writer.bigIntToIntPtr(rhsBigIntId);
+
+  IntPtrOperandId resultId;
+  switch (op_) {
+    case JSOp::Add: {
+      resultId = writer.bigIntPtrAdd(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Add");
+      break;
+    }
+    case JSOp::Sub: {
+      resultId = writer.bigIntPtrSub(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Sub");
+      break;
+    }
+    case JSOp::Mul: {
+      resultId = writer.bigIntPtrMul(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Mul");
+      break;
+    }
+    case JSOp::Div: {
+      resultId = writer.bigIntPtrDiv(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Div");
+      break;
+    }
+    case JSOp::Mod: {
+      resultId = writer.bigIntPtrMod(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Mod");
+      break;
+    }
+    case JSOp::Pow: {
+      resultId = writer.bigIntPtrPow(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.Pow");
+      break;
+    }
+    case JSOp::BitOr: {
+      resultId = writer.bigIntPtrBitOr(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.BitOr");
+      break;
+    }
+    case JSOp::BitXor: {
+      resultId = writer.bigIntPtrBitXor(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.BitXor");
+      break;
+    }
+    case JSOp::BitAnd: {
+      resultId = writer.bigIntPtrBitAnd(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.BitAnd");
+      break;
+    }
+    case JSOp::Lsh: {
+      resultId = writer.bigIntPtrLeftShift(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.LeftShift");
+      break;
+    }
+    case JSOp::Rsh: {
+      resultId = writer.bigIntPtrRightShift(lhsIntPtrId, rhsIntPtrId);
+      trackAttached("BinaryArith.BigIntPtr.RightShift");
+      break;
+    }
+    default:
+      MOZ_CRASH("Unexpected OP");
+  }
+
+  writer.intPtrToBigIntResult(resultId);
+  writer.returnFromIC();
+  return AttachDecision::Attach;
+}
+
 AttachDecision BinaryArithIRGenerator::tryAttachStringInt32Arith() {
   // Check for either int32 x string or string x int32.
   if (!(lhs_.isInt32() && rhs_.isString()) &&
@@ -14220,6 +14704,174 @@ AttachDecision BinaryArithIRGenerator::tryAttachStringNumberArith() {
     default:
       MOZ_CRASH("Unhandled op in tryAttachStringNumberArith");
   }
+
+  writer.returnFromIC();
+  return AttachDecision::Attach;
+}
+
+static bool CheckPropertyIsNativeFunction(JSContext* cx, JSObject* obj,
+                                          jsbytecode* pc, PropertyKey propKey,
+                                          JSNative nativeFn, JSFunction** fn,
+                                          NativeObject** holder, size_t* slot) {
+  Maybe<PropertyInfo> prop;
+  NativeGetPropKind kind =
+      CanAttachNativeGetProp(cx, obj, propKey, holder, &prop, pc);
+  if (kind != NativeGetPropKind::Slot) {
+    return false;
+  }
+
+  MOZ_ASSERT(holder);
+  MOZ_ASSERT(prop->isDataProperty());
+
+  *slot = prop->slot();
+  Value calleeVal = (*holder)->getSlot(*slot);
+  if (!calleeVal.isObject() || !calleeVal.toObject().is<JSFunction>()) {
+    return false;
+  }
+
+  if (!IsNativeFunction(calleeVal, nativeFn)) {
+    return false;
+  }
+
+  *fn = &calleeVal.toObject().as<JSFunction>();
+  return true;
+}
+
+static void EmitGuardPropertyIsNativeFunction(CacheIRWriter& writer,
+                                              JSObject* dateObj, JSFunction* fn,
+                                              NativeObject* holder, size_t slot,
+                                              ObjOperandId objId) {
+  MOZ_ASSERT(holder);
+  ObjOperandId holderId =
+      EmitReadSlotGuard(writer, &dateObj->as<NativeObject>(), holder, objId);
+  ValOperandId calleeValId = EmitLoadSlot(writer, holder, holderId, slot);
+  ObjOperandId calleeId = writer.guardToObject(calleeValId);
+  writer.guardSpecificFunction(calleeId, fn);
+}
+
+AttachDecision BinaryArithIRGenerator::tryAttachDateArith() {
+  // Only support subtractions
+  if (op_ != JSOp::Sub) {
+    return AttachDecision::NoAction;
+  }
+
+  // At least one side must be an object.
+  if (!lhs_.isObject() && !rhs_.isObject()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Must be either object or numbers.
+  if (!lhs_.isObject() && !lhs_.isNumber()) {
+    return AttachDecision::NoAction;
+  }
+
+  if (!rhs_.isObject() && !rhs_.isNumber()) {
+    return AttachDecision::NoAction;
+  }
+
+  // We can only operate on Date objects.
+  if (lhs_.isObject() && !lhs_.toObject().is<DateObject>()) {
+    return AttachDecision::NoAction;
+  }
+
+  if (rhs_.isObject() && !rhs_.toObject().is<DateObject>()) {
+    return AttachDecision::NoAction;
+  }
+
+  JSFunction* lhsDateValueOfFn = nullptr;
+  NativeObject* lhsDateValueOfHolder = nullptr;
+  size_t lhsDateValueOfSlot;
+
+  JSFunction* lhsToPrimitiveFn = nullptr;
+  NativeObject* lhsToPrimitiveHolder = nullptr;
+  size_t lhsToPrimitiveSlot;
+
+  if (lhs_.isObject()) {
+    if (!CheckPropertyIsNativeFunction(
+            cx_, &lhs_.toObject(), pc_, NameToId(cx_->names().valueOf),
+            date_valueOf, &lhsDateValueOfFn, &lhsDateValueOfHolder,
+            &lhsDateValueOfSlot)) {
+      return AttachDecision::NoAction;
+    }
+
+    if (!CheckPropertyIsNativeFunction(
+            cx_, &lhs_.toObject(), pc_,
+            PropertyKey::Symbol(cx_->wellKnownSymbols().toPrimitive),
+            date_toPrimitive, &lhsToPrimitiveFn, &lhsToPrimitiveHolder,
+            &lhsToPrimitiveSlot)) {
+      return AttachDecision::NoAction;
+    }
+  }
+
+  JSFunction* rhsDateValueOfFn = nullptr;
+  NativeObject* rhsDateValueOfHolder = nullptr;
+  size_t rhsDateValueOfSlot;
+
+  JSFunction* rhsToPrimitiveFn = nullptr;
+  NativeObject* rhsToPrimitiveHolder = nullptr;
+  size_t rhsToPrimitiveSlot;
+
+  if (rhs_.isObject()) {
+    if (!CheckPropertyIsNativeFunction(
+            cx_, &rhs_.toObject(), pc_, NameToId(cx_->names().valueOf),
+            date_valueOf, &rhsDateValueOfFn, &rhsDateValueOfHolder,
+            &rhsDateValueOfSlot)) {
+      return AttachDecision::NoAction;
+    }
+
+    if (!CheckPropertyIsNativeFunction(
+            cx_, &rhs_.toObject(), pc_,
+            PropertyKey::Symbol(cx_->wellKnownSymbols().toPrimitive),
+            date_toPrimitive, &rhsToPrimitiveFn, &rhsToPrimitiveHolder,
+            &rhsToPrimitiveSlot)) {
+      return AttachDecision::NoAction;
+    }
+  }
+
+  ValOperandId lhsId(writer.setInputOperandId(0));
+  ValOperandId rhsId(writer.setInputOperandId(1));
+
+  NumberOperandId lhsNumId;
+  NumberOperandId rhsNumId;
+
+  if (lhs_.isObject()) {
+    ObjOperandId lhsObjId = writer.guardToObject(lhsId);
+    // The shape guard in EmitGuardPropertyIsNativeFunction ensures the object
+    // is a Date object.
+    EmitGuardPropertyIsNativeFunction(writer, &lhs_.toObject(),
+                                      lhsDateValueOfFn, lhsDateValueOfHolder,
+                                      lhsDateValueOfSlot, lhsObjId);
+    EmitGuardPropertyIsNativeFunction(writer, &lhs_.toObject(),
+                                      lhsToPrimitiveFn, lhsToPrimitiveHolder,
+                                      lhsToPrimitiveSlot, lhsObjId);
+
+    ValOperandId lhsUtcValId =
+        writer.loadFixedSlot(lhsObjId, DateObject::offsetOfUTCTimeSlot());
+    lhsNumId = writer.guardIsNumber(lhsUtcValId);
+  } else {
+    MOZ_ASSERT(lhs_.isNumber());
+    lhsNumId = writer.guardIsNumber(lhsId);
+  }
+
+  if (rhs_.isObject()) {
+    ObjOperandId rhsObjId = writer.guardToObject(rhsId);
+    EmitGuardPropertyIsNativeFunction(writer, &rhs_.toObject(),
+                                      rhsDateValueOfFn, rhsDateValueOfHolder,
+                                      rhsDateValueOfSlot, rhsObjId);
+    EmitGuardPropertyIsNativeFunction(writer, &rhs_.toObject(),
+                                      rhsToPrimitiveFn, rhsToPrimitiveHolder,
+                                      rhsToPrimitiveSlot, rhsObjId);
+
+    ValOperandId rhsUtcValId =
+        writer.loadFixedSlot(rhsObjId, DateObject::offsetOfUTCTimeSlot());
+    rhsNumId = writer.guardIsNumber(rhsUtcValId);
+  } else {
+    MOZ_ASSERT(rhs_.isNumber());
+    rhsNumId = writer.guardIsNumber(rhsId);
+  }
+
+  writer.doubleSubResult(lhsNumId, rhsNumId);
+  trackAttached("BinaryArith.DateSub");
 
   writer.returnFromIC();
   return AttachDecision::Attach;

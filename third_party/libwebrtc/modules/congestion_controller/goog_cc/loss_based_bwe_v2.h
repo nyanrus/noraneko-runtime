@@ -11,6 +11,8 @@
 #ifndef MODULES_CONGESTION_CONTROLLER_GOOG_CC_LOSS_BASED_BWE_V2_H_
 #define MODULES_CONGESTION_CONTROLLER_GOOG_CC_LOSS_BASED_BWE_V2_H_
 
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "absl/types/optional.h"
@@ -147,9 +149,8 @@ class LossBasedBweV2 {
 
   struct PartialObservation {
     int num_packets = 0;
-    int num_lost_packets = 0;
+    std::unordered_map<int64_t, DataSize> lost_packets;
     DataSize size = DataSize::Zero();
-    DataSize lost_size = DataSize::Zero();
   };
 
   struct PaddingInfo {
@@ -170,6 +171,9 @@ class LossBasedBweV2 {
   // Returns `0.0` if not enough loss statistics have been received.
   double GetAverageReportedLossRatio() const;
   double GetAverageReportedPacketLossRatio() const;
+  // Calculates the average loss ratio over the last `observation_window_size`
+  // observations but skips the observation with min and max loss ratio in order
+  // to filter out loss spikes.
   double GetAverageReportedByteLossRatio() const;
   std::vector<ChannelParameters> GetCandidates(bool in_alr) const;
   DataRate GetCandidateBandwidthUpperBound() const;

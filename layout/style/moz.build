@@ -142,6 +142,7 @@ EXPORTS.mozilla.dom += [
     "CSSMediaRule.h",
     "CSSMozDocumentRule.h",
     "CSSNamespaceRule.h",
+    "CSSNestedDeclarations.h",
     "CSSPageRule.h",
     "CSSPositionTryRule.h",
     "CSSPropertyRule.h",
@@ -197,6 +198,7 @@ UNIFIED_SOURCES += [
     "CSSMediaRule.cpp",
     "CSSMozDocumentRule.cpp",
     "CSSNamespaceRule.cpp",
+    "CSSNestedDeclarations.cpp",
     "CSSPageRule.cpp",
     "CSSPositionTryRule.cpp",
     "CSSPropertyRule.cpp",
@@ -258,6 +260,7 @@ UNIFIED_SOURCES += [
     "ServoStyleSet.cpp",
     "ShadowParts.cpp",
     "SharedStyleSheetCache.cpp",
+    "SharedSubResourceCache.cpp",
     "StreamLoader.cpp",
     "StyleAnimationValue.cpp",
     "StyleColor.cpp",
@@ -279,6 +282,9 @@ LOCAL_INCLUDES += [
     "/dom/html",
     "/dom/xul",
     "/image",
+    # For nsHttpChannel.h
+    "/netwerk/base",
+    "/netwerk/protocol/http",
 ]
 
 JAR_MANIFESTS += ["jar.mn"]

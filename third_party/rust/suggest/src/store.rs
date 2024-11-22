@@ -21,10 +21,10 @@ use crate::{
     db::{ConnectionType, IngestedRecord, Sqlite3Extension, SuggestDao, SuggestDb},
     error::Error,
     metrics::{DownloadTimer, SuggestIngestionMetrics, SuggestQueryMetrics},
-    provider::SuggestionProvider,
+    provider::{SuggestionProvider, SuggestionProviderConstraints, DEFAULT_INGEST_PROVIDERS},
     rs::{
         Client, Collection, Record, RemoteSettingsClient, SuggestAttachment, SuggestRecord,
-        SuggestRecordId, SuggestRecordType, DEFAULT_RECORDS_TYPES,
+        SuggestRecordId, SuggestRecordType,
     },
     suggestion::AmpSuggestionType,
     QueryWithMetricsResult, Result, SuggestApiResult, Suggestion, SuggestionQuery,
@@ -34,6 +34,7 @@ use crate::{
 ///
 /// Using a builder is preferred to calling the constructor directly since it's harder to confuse
 /// the data_path and cache_path strings.
+#[derive(uniffi::Object)]
 pub struct SuggestStoreBuilder(Mutex<SuggestStoreBuilderInner>);
 
 #[derive(Default)]
@@ -50,7 +51,9 @@ impl Default for SuggestStoreBuilder {
     }
 }
 
+#[uniffi::export]
 impl SuggestStoreBuilder {
+    #[uniffi::constructor]
     pub fn new() -> SuggestStoreBuilder {
         Self(Mutex::new(SuggestStoreBuilderInner::default()))
     }
@@ -60,6 +63,7 @@ impl SuggestStoreBuilder {
         self
     }
 
+    /// Deprecated: this is no longer used by the suggest component.
     pub fn cache_path(self: Arc<Self>, _path: String) -> Arc<Self> {
         // We used to use this, but we're not using it anymore, just ignore the call
         self
@@ -75,6 +79,11 @@ impl SuggestStoreBuilder {
         self
     }
 
+    /// Add an sqlite3 extension to load
+    ///
+    /// library_name should be the name of the library without any extension, for example `libmozsqlite3`.
+    /// entrypoint should be the entry point, for example `sqlite3_fts5_init`.  If `null` (the default)
+    /// entry point will be used (see https://sqlite.org/loadext.html for details).
     pub fn load_extension(
         self: Arc<Self>,
         library: String,
@@ -109,7 +118,7 @@ impl SuggestStoreBuilder {
 }
 
 /// What should be interrupted when [SuggestStore::interrupt] is called?
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, uniffi::Enum)]
 pub enum InterruptKind {
     /// Interrupt read operations like [SuggestStore::query]
     Read,
@@ -148,13 +157,16 @@ pub enum InterruptKind {
 ///    to request a small subset of the Suggest data and download the rest
 ///    later, while a desktop on a fast link might download the entire dataset
 ///    on the first launch.
+#[derive(uniffi::Object)]
 pub struct SuggestStore {
     inner: SuggestStoreInner<RemoteSettingsClient>,
 }
 
+#[uniffi::export]
 impl SuggestStore {
     /// Creates a Suggest store.
     #[handle_error(Error)]
+    #[uniffi::constructor(default(settings_config = None))]
     pub fn new(
         path: &str,
         settings_config: Option<RemoteSettingsConfig>,
@@ -212,6 +224,7 @@ impl SuggestStore {
     /// This should be called when the user types new input into the address
     /// bar, to ensure that they see fresh suggestions as they type. This
     /// method does not interrupt any ongoing ingests.
+    #[uniffi::method(default(kind = None))]
     pub fn interrupt(&self, kind: Option<InterruptKind>) {
         self.inner.interrupt(kind)
     }
@@ -245,17 +258,29 @@ impl SuggestStore {
     ) -> SuggestApiResult<Option<SuggestProviderConfig>> {
         self.inner.fetch_provider_config(provider)
     }
+}
 
+impl SuggestStore {
     pub fn force_reingest(&self) {
         self.inner.force_reingest()
     }
 }
 
 /// Constraints limit which suggestions to ingest from Remote Settings.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, uniffi::Record)]
 pub struct SuggestIngestionConstraints {
+    #[uniffi(default = None)]
     pub providers: Option<Vec<SuggestionProvider>>,
+    #[uniffi(default = None)]
+    pub provider_constraints: Option<SuggestionProviderConstraints>,
     /// Only run ingestion if the table `suggestions` is empty
+    ///
+    // This is indented to handle periodic updates.  Consumers can schedule an ingest with
+    // `empty_only=true` on startup and a regular ingest with `empty_only=false` to run on a long periodic schedule (maybe
+    // once a day). This allows ingestion to normally be run at a slow, periodic rate.  However, if
+    // there is a schema upgrade that causes the database to be thrown away, then the
+    // `empty_only=true` ingestion that runs on startup will repopulate it.
+    #[uniffi(default = false)]
     pub empty_only: bool,
 }
 
@@ -272,6 +297,7 @@ impl SuggestIngestionConstraints {
                 SuggestionProvider::Weather,
                 SuggestionProvider::AmpMobile,
                 SuggestionProvider::Fakespot,
+                SuggestionProvider::Exposure,
             ]),
             ..Self::default()
         }
@@ -336,6 +362,7 @@ impl<S> SuggestStoreInner<S> {
                     SuggestionProvider::Mdn => dao.fetch_mdn_suggestions(&query),
                     SuggestionProvider::Weather => dao.fetch_weather_suggestions(&query),
                     SuggestionProvider::Fakespot => dao.fetch_fakespot_suggestions(&query),
+                    SuggestionProvider::Exposure => dao.fetch_exposure_suggestions(&query),
                 })
             })?;
             suggestions.extend(new_suggestions);
@@ -423,24 +450,30 @@ where
             return Ok(metrics);
         }
 
-        // Figure out which record types we're ingesting
-        let ingest_record_types = if let Some(rt) = &constraints.providers {
-            rt.iter()
-                .map(|x| x.record_type())
-                // Always ingest these types
-                .chain([SuggestRecordType::Icon, SuggestRecordType::GlobalConfig])
-                .collect::<BTreeSet<_>>()
-        } else {
-            DEFAULT_RECORDS_TYPES.into_iter().collect()
-        };
+        // Figure out which record types we're ingesting and group them by
+        // collection. A record type may be used by multiple providers, but we
+        // want to ingest each one at most once.
+        let mut record_types_by_collection = HashMap::<Collection, BTreeSet<_>>::new();
+        for p in constraints
+            .providers
+            .as_ref()
+            .unwrap_or(&DEFAULT_INGEST_PROVIDERS.to_vec())
+            .iter()
+        {
+            for t in p.record_types() {
+                record_types_by_collection
+                    .entry(t.collection())
+                    .or_default()
+                    .insert(t);
+            }
+        }
 
-        // Group record types by collection
-        let mut record_types_by_collection = HashMap::<Collection, Vec<SuggestRecordType>>::new();
-        for record_type in ingest_record_types {
+        // Always ingest these record types.
+        for rt in [SuggestRecordType::Icon, SuggestRecordType::GlobalConfig] {
             record_types_by_collection
-                .entry(record_type.collection())
+                .entry(rt.collection())
                 .or_default()
-                .push(record_type);
+                .insert(rt);
         }
 
         // Create a single write scope for all DB operations
@@ -458,7 +491,7 @@ where
             // For each record type in that collection, calculate the changes and pass them to
             // [Self::ingest_records]
             for record_type in record_types {
-                breadcrumb!("Ingesting {record_type}");
+                breadcrumb!("Ingesting record_type: {record_type}");
                 metrics.measure_ingest(record_type.to_string(), |download_timer| {
                     let changes = RecordChanges::new(
                         records.iter().filter(|r| r.record_type() == record_type),
@@ -467,8 +500,9 @@ where
                                 && i.collection == collection.name()
                         }),
                     );
-                    write_scope
-                        .write(|dao| self.ingest_records(dao, collection, changes, download_timer))
+                    write_scope.write(|dao| {
+                        self.process_changes(dao, collection, changes, &constraints, download_timer)
+                    })
                 })?;
                 write_scope.err_if_interrupted()?;
             }
@@ -478,28 +512,35 @@ where
         Ok(metrics)
     }
 
-    fn ingest_records(
+    fn process_changes(
         &self,
         dao: &mut SuggestDao,
         collection: Collection,
         changes: RecordChanges<'_>,
+        constraints: &SuggestIngestionConstraints,
         download_timer: &mut DownloadTimer,
     ) -> Result<()> {
         for record in &changes.new {
-            log::trace!("Ingesting: {}", record.id.as_str());
-            self.ingest_record(dao, record, download_timer)?;
+            log::trace!("Ingesting record ID: {}", record.id.as_str());
+            self.process_record(dao, record, constraints, download_timer)?;
         }
         for record in &changes.updated {
             // Drop any data that we previously ingested from this record.
             // Suggestions in particular don't have a stable identifier, and
             // determining which suggestions in the record actually changed is
             // more complicated than dropping and re-ingesting all of them.
-            log::trace!("Reingesting: {}", record.id.as_str());
+            log::trace!("Reingesting updated record ID: {}", record.id.as_str());
             dao.delete_record_data(&record.id)?;
-            self.ingest_record(dao, record, download_timer)?;
+            self.process_record(dao, record, constraints, download_timer)?;
+        }
+        for record in &changes.unchanged {
+            if self.should_reprocess_record(dao, record)? {
+                log::trace!("Reingesting unchanged record ID: {}", record.id.as_str());
+                self.process_record(dao, record, constraints, download_timer)?;
+            }
         }
         for record in &changes.deleted {
-            log::trace!("Deleting: {:?}", record.id);
+            log::trace!("Deleting record ID: {:?}", record.id);
             dao.delete_record_data(&record.id)?;
         }
         dao.update_ingested_records(
@@ -511,15 +552,16 @@ where
         Ok(())
     }
 
-    fn ingest_record(
+    fn process_record(
         &self,
         dao: &mut SuggestDao,
         record: &Record,
+        constraints: &SuggestIngestionConstraints,
         download_timer: &mut DownloadTimer,
     ) -> Result<()> {
         match &record.payload {
             SuggestRecord::AmpWikipedia => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -529,7 +571,7 @@ where
                 )?;
             }
             SuggestRecord::AmpMobile => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -551,7 +593,7 @@ where
                 dao.put_icon(icon_id, &data, &attachment.mimetype)?;
             }
             SuggestRecord::Amo => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -561,7 +603,7 @@ where
                 )?;
             }
             SuggestRecord::Pocket => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -571,7 +613,7 @@ where
                 )?;
             }
             SuggestRecord::Yelp => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -582,7 +624,7 @@ where
                 )?;
             }
             SuggestRecord::Mdn => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -591,12 +633,12 @@ where
                     },
                 )?;
             }
-            SuggestRecord::Weather(data) => dao.insert_weather_data(&record.id, data)?,
+            SuggestRecord::Weather => self.process_weather_record(dao, record, download_timer)?,
             SuggestRecord::GlobalConfig(config) => {
                 dao.put_global_config(&SuggestGlobalConfig::from(config))?
             }
             SuggestRecord::Fakespot => {
-                self.ingest_attachment(
+                self.download_attachment(
                     dao,
                     record,
                     download_timer,
@@ -605,11 +647,36 @@ where
                     },
                 )?;
             }
+            SuggestRecord::Exposure(r) => {
+                // Ingest this record's attachment if its suggestion type
+                // matches a type in the constraints.
+                if let Some(suggestion_types) = constraints
+                    .provider_constraints
+                    .as_ref()
+                    .and_then(|c| c.exposure_suggestion_types.as_ref())
+                {
+                    if suggestion_types.iter().any(|t| *t == r.suggestion_type) {
+                        self.download_attachment(
+                            dao,
+                            record,
+                            download_timer,
+                            |dao, record_id, suggestions| {
+                                dao.insert_exposure_suggestions(
+                                    record_id,
+                                    &r.suggestion_type,
+                                    suggestions,
+                                )
+                            },
+                        )?;
+                    }
+                }
+            }
+            SuggestRecord::Geonames => self.process_geoname_record(dao, record, download_timer)?,
         }
         Ok(())
     }
 
-    fn ingest_attachment<T>(
+    pub(crate) fn download_attachment<T>(
         &self,
         dao: &mut SuggestDao,
         record: &Record,
@@ -633,6 +700,20 @@ where
             Err(_) => Ok(()),
         }
     }
+
+    fn should_reprocess_record(&self, dao: &mut SuggestDao, record: &Record) -> Result<bool> {
+        match &record.payload {
+            SuggestRecord::Exposure(_) => {
+                // Even though the record was previously ingested, its
+                // suggestion wouldn't have been if it never matched the
+                // provider constraints of any ingest. Return true if the
+                // suggestion is not ingested. If the provider constraints of
+                // the current ingest do match the suggestion, we'll ingest it.
+                Ok(!dao.is_exposure_suggestion_ingested(&record.id)?)
+            }
+            _ => Ok(false),
+        }
+    }
 }
 
 /// Tracks changes in suggest records since the last ingestion
@@ -640,6 +721,7 @@ struct RecordChanges<'a> {
     new: Vec<&'a Record>,
     updated: Vec<&'a Record>,
     deleted: Vec<&'a IngestedRecord>,
+    unchanged: Vec<&'a Record>,
 }
 
 impl<'a> RecordChanges<'a> {
@@ -653,12 +735,15 @@ impl<'a> RecordChanges<'a> {
         // Remove existing records from ingested_map.
         let mut new = vec![];
         let mut updated = vec![];
+        let mut unchanged = vec![];
         for r in current {
             match ingested_map.entry(r.id.as_str()) {
                 Entry::Vacant(_) => new.push(r),
                 Entry::Occupied(e) => {
                     if e.remove().last_modified != r.last_modified {
                         updated.push(r);
+                    } else {
+                        unchanged.push(r);
                     }
                 }
             }
@@ -669,6 +754,7 @@ impl<'a> RecordChanges<'a> {
             new,
             deleted,
             updated,
+            unchanged,
         }
     }
 }
@@ -707,7 +793,13 @@ where
         );
         writer
             .write(|dao| {
-                self.ingest_records(dao, ingest_record_type.collection(), changes, &mut timer)
+                self.process_changes(
+                    dao,
+                    ingest_record_type.collection(),
+                    changes,
+                    &SuggestIngestionConstraints::default(),
+                    &mut timer,
+                )
             })
             .unwrap();
     }
@@ -767,24 +859,20 @@ impl SuggestStoreDbs {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use parking_lot::Once;
-    use serde_json::json;
-    use sql_support::ConnExt;
-
     use crate::{testing::*, SuggestionProvider};
 
     /// In-memory Suggest store for testing
-    struct TestStore {
+    pub(crate) struct TestStore {
         pub inner: SuggestStoreInner<MockRemoteSettingsClient>,
     }
 
     impl TestStore {
-        fn new(client: MockRemoteSettingsClient) -> Self {
+        pub fn new(client: MockRemoteSettingsClient) -> Self {
             static COUNTER: AtomicUsize = AtomicUsize::new(0);
             let db_path = format!(
                 "file:test_store_data_{}?mode=memory&cache=shared",
@@ -795,25 +883,25 @@ mod tests {
             }
         }
 
-        fn client_mut(&mut self) -> &mut MockRemoteSettingsClient {
+        pub fn client_mut(&mut self) -> &mut MockRemoteSettingsClient {
             &mut self.inner.settings_client
         }
 
-        fn read<T>(&self, op: impl FnOnce(&SuggestDao) -> Result<T>) -> Result<T> {
+        pub fn read<T>(&self, op: impl FnOnce(&SuggestDao) -> Result<T>) -> Result<T> {
             self.inner.dbs().unwrap().reader.read(op)
         }
 
-        fn count_rows(&self, table_name: &str) -> u64 {
+        pub fn count_rows(&self, table_name: &str) -> u64 {
             let sql = format!("SELECT count(*) FROM {table_name}");
             self.read(|dao| Ok(dao.conn.query_one(&sql)?))
                 .unwrap_or_else(|e| panic!("SQL error in count: {e}"))
         }
 
-        fn ingest(&self, constraints: SuggestIngestionConstraints) {
+        pub fn ingest(&self, constraints: SuggestIngestionConstraints) {
             self.inner.ingest(constraints).unwrap();
         }
 
-        fn fetch_suggestions(&self, query: SuggestionQuery) -> Vec<Suggestion> {
+        pub fn fetch_suggestions(&self, query: SuggestionQuery) -> Vec<Suggestion> {
             self.inner.query(query).unwrap().suggestions
         }
 
@@ -831,15 +919,6 @@ mod tests {
                 .fetch_provider_config(provider)
                 .expect("Error fetching provider config")
         }
-    }
-
-    fn before_each() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| {
-            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace"))
-                .is_test(true)
-                .init();
-        });
     }
 
     /// Tests that `SuggestStore` is usable with UniFFI, which requires exposed
@@ -1955,110 +2034,6 @@ mod tests {
     }
 
     #[test]
-    fn weather() -> anyhow::Result<()> {
-        before_each();
-
-        let store = TestStore::new(MockRemoteSettingsClient::default().with_inline_record(
-            "weather",
-            "weather-1",
-            json!({
-                "min_keyword_length": 3,
-                "keywords": ["ab", "xyz", "weather"],
-                "score": "0.24"
-            }),
-        ));
-        store.ingest(SuggestIngestionConstraints::all_providers());
-        // No match since the query doesn't match any keyword
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xab")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("abx")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xxyz")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xyzx")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("weatherx")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xweather")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xwea")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("x   weather")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("   weather x")),
-            vec![]
-        );
-        // No match since the query is too short
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xy")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("ab")),
-            vec![]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("we")),
-            vec![]
-        );
-        // Matches
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("xyz")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("wea")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("weat")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("weath")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("weathe")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("weather")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::weather("  weather  ")),
-            vec![Suggestion::Weather { score: 0.24 },]
-        );
-
-        assert_eq!(
-            store.fetch_provider_config(SuggestionProvider::Weather),
-            Some(SuggestProviderConfig::Weather {
-                min_keyword_length: 3,
-            })
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn fetch_global_config() -> anyhow::Result<()> {
         before_each();
 
@@ -2066,7 +2041,9 @@ mod tests {
             "configuration",
             "configuration-1",
             json!({
-                "show_less_frequently_cap": 3,
+                "configuration": {
+                    "show_less_frequently_cap": 3,
+                },
             }),
         ));
         store.ingest(SuggestIngestionConstraints::all_providers());
@@ -2115,18 +2092,31 @@ mod tests {
     fn fetch_provider_config_other() -> anyhow::Result<()> {
         before_each();
 
-        let store = TestStore::new(MockRemoteSettingsClient::default().with_inline_record(
+        let store = TestStore::new(MockRemoteSettingsClient::default().with_record(
             "weather",
             "weather-1",
             json!({
                 "min_keyword_length": 3,
-                "keywords": ["weather"],
-                "score": "0.24"
+                "score": 0.24,
+                "max_keyword_length": 1,
+                "max_keyword_word_count": 1,
+                "keywords": []
             }),
         ));
         store.ingest(SuggestIngestionConstraints::all_providers());
+
+        // Sanity-check that the weather config was ingested.
+        assert_eq!(
+            store.fetch_provider_config(SuggestionProvider::Weather),
+            Some(SuggestProviderConfig::Weather {
+                min_keyword_length: 3,
+                score: 0.24,
+            })
+        );
+
         // Getting the config for a different provider should return None.
         assert_eq!(store.fetch_provider_config(SuggestionProvider::Amp), None);
+
         Ok(())
     }
 
@@ -2408,6 +2398,589 @@ mod tests {
                 "fakespot-suggest-products:fakespot-1"
             ]),
         );
+        Ok(())
+    }
+
+    #[test]
+    fn exposure_basic() -> anyhow::Result<()> {
+        before_each();
+
+        let store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-0",
+                    Some(json!({
+                        "suggestion_type": "aaa",
+                    })),
+                    Some(json!({
+                        "keywords": [
+                            "aaa keyword",
+                            "both keyword",
+                            ["common prefix", [" aaa"]],
+                            ["choco", ["bo", "late"]],
+                            ["dup", ["licate 1", "licate 2"]],
+                        ],
+                    })),
+                )
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-1",
+                    Some(json!({
+                        "suggestion_type": "bbb",
+                    })),
+                    Some(json!({
+                        "keywords": [
+                            "bbb keyword",
+                            "both keyword",
+                            ["common prefix", [" bbb"]],
+                        ],
+                    })),
+                ),
+        );
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string(), "bbb".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        let no_matches = vec!["aaa", "both", "common prefi", "choc", "chocolate extra"];
+        for query in &no_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "bbb"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "zzz"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz"])),
+                vec![],
+            );
+        }
+
+        let aaa_only_matches = vec![
+            "aaa keyword",
+            "common prefix a",
+            "common prefix aa",
+            "common prefix aaa",
+            "choco",
+            "chocob",
+            "chocobo",
+            "chocol",
+            "chocolate",
+            "dup",
+            "dupl",
+            "duplicate",
+            "duplicate ",
+            "duplicate 1",
+            "duplicate 2",
+        ];
+        for query in &aaa_only_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb", "aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "zzz"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz", "aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz"])),
+                vec![],
+            );
+        }
+
+        let bbb_only_matches = vec![
+            "bbb keyword",
+            "common prefix b",
+            "common prefix bb",
+            "common prefix bbb",
+        ];
+        for query in &bbb_only_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb", "aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb", "zzz"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz", "bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz"])),
+                vec![],
+            );
+        }
+
+        let both_matches = vec!["both keyword", "common prefix", "common prefix "];
+        for query in &both_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "bbb"])),
+                vec![
+                    Suggestion::Exposure {
+                        suggestion_type: "aaa".into(),
+                        score: 1.0,
+                    },
+                    Suggestion::Exposure {
+                        suggestion_type: "bbb".into(),
+                        score: 1.0,
+                    },
+                ],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb", "aaa"])),
+                vec![
+                    Suggestion::Exposure {
+                        suggestion_type: "aaa".into(),
+                        score: 1.0,
+                    },
+                    Suggestion::Exposure {
+                        suggestion_type: "bbb".into(),
+                        score: 1.0,
+                    },
+                ],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "zzz"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz", "aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["bbb", "zzz"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz", "bbb"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "bbb".into(),
+                    score: 1.0,
+                }],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa", "zzz", "bbb"])),
+                vec![
+                    Suggestion::Exposure {
+                        suggestion_type: "aaa".into(),
+                        score: 1.0,
+                    },
+                    Suggestion::Exposure {
+                        suggestion_type: "bbb".into(),
+                        score: 1.0,
+                    },
+                ],
+            );
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["zzz"])),
+                vec![],
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn exposure_spread_across_multiple_records() -> anyhow::Result<()> {
+        before_each();
+
+        let mut store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-0",
+                    Some(json!({
+                        "suggestion_type": "aaa",
+                    })),
+                    Some(json!({
+                        "keywords": [
+                            "record 0 keyword",
+                            ["sug", ["gest"]],
+                        ],
+                    })),
+                )
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-1",
+                    Some(json!({
+                        "suggestion_type": "aaa",
+                    })),
+                    Some(json!({
+                        "keywords": [
+                            "record 1 keyword",
+                            ["sug", ["arplum"]],
+                        ],
+                    })),
+                ),
+        );
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        let matches = vec![
+            "record 0 keyword",
+            "sug",
+            "sugg",
+            "sugge",
+            "sugges",
+            "suggest",
+            "record 1 keyword",
+            "suga",
+            "sugar",
+            "sugarp",
+            "sugarpl",
+            "sugarplu",
+            "sugarplum",
+        ];
+        for query in &matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+        }
+
+        // Delete the first record.
+        store
+            .client_mut()
+            .delete_record(Collection::Quicksuggest.name(), "exposure-0");
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Keywords from the second record should still return the suggestion.
+        let record_1_matches = vec![
+            "record 1 keyword",
+            "sug",
+            "suga",
+            "sugar",
+            "sugarp",
+            "sugarpl",
+            "sugarplu",
+            "sugarplum",
+        ];
+        for query in &record_1_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["aaa"])),
+                vec![Suggestion::Exposure {
+                    suggestion_type: "aaa".into(),
+                    score: 1.0,
+                }],
+            );
+        }
+
+        // Keywords from the first record should not return the suggestion.
+        let record_0_matches = vec!["record 0 keyword", "sugg", "sugge", "sugges", "suggest"];
+        for query in &record_0_matches {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, &["exposure-test"])),
+                vec![]
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn exposure_ingest() -> anyhow::Result<()> {
+        before_each();
+
+        // Create suggestions with types "aaa" and "bbb".
+        let store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-0",
+                    Some(json!({
+                        "suggestion_type": "aaa",
+                    })),
+                    Some(json!({
+                        "keywords": ["aaa keyword", "both keyword"],
+                    })),
+                )
+                .with_full_record(
+                    "exposure-suggestions",
+                    "exposure-1",
+                    Some(json!({
+                        "suggestion_type": "bbb",
+                    })),
+                    Some(json!({
+                        "keywords": ["bbb keyword", "both keyword"],
+                    })),
+                ),
+        );
+
+        // Ingest but don't pass in any provider constraints. The records will
+        // be ingested but their attachments won't be, so fetches shouldn't
+        // return any suggestions.
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: None,
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        let ingest_1_queries = [
+            ("aaa keyword", vec!["aaa"]),
+            ("aaa keyword", vec!["bbb"]),
+            ("aaa keyword", vec!["aaa", "bbb"]),
+            ("bbb keyword", vec!["aaa"]),
+            ("bbb keyword", vec!["bbb"]),
+            ("bbb keyword", vec!["aaa", "bbb"]),
+            ("both keyword", vec!["aaa"]),
+            ("both keyword", vec!["bbb"]),
+            ("both keyword", vec!["aaa", "bbb"]),
+        ];
+        for (query, types) in &ingest_1_queries {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, types)),
+                vec![],
+            );
+        }
+
+        // Ingest only the "bbb" suggestion. The "bbb" attachment should be
+        // ingested, so "bbb" fetches should return the "bbb" suggestion.
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["bbb".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        let ingest_2_queries = [
+            ("aaa keyword", vec!["aaa"], vec![]),
+            ("aaa keyword", vec!["bbb"], vec![]),
+            ("aaa keyword", vec!["aaa", "bbb"], vec![]),
+            ("bbb keyword", vec!["aaa"], vec![]),
+            ("bbb keyword", vec!["bbb"], vec!["bbb"]),
+            ("bbb keyword", vec!["aaa", "bbb"], vec!["bbb"]),
+            ("both keyword", vec!["aaa"], vec![]),
+            ("both keyword", vec!["bbb"], vec!["bbb"]),
+            ("both keyword", vec!["aaa", "bbb"], vec!["bbb"]),
+        ];
+        for (query, types, expected_types) in &ingest_2_queries {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, types)),
+                expected_types
+                    .iter()
+                    .map(|t| Suggestion::Exposure {
+                        suggestion_type: t.to_string(),
+                        score: 1.0,
+                    })
+                    .collect::<Vec<Suggestion>>(),
+            );
+        }
+
+        // Now ingest the "aaa" suggestion.
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        let ingest_3_queries = [
+            ("aaa keyword", vec!["aaa"], vec!["aaa"]),
+            ("aaa keyword", vec!["bbb"], vec![]),
+            ("aaa keyword", vec!["aaa", "bbb"], vec!["aaa"]),
+            ("bbb keyword", vec!["aaa"], vec![]),
+            ("bbb keyword", vec!["bbb"], vec!["bbb"]),
+            ("bbb keyword", vec!["aaa", "bbb"], vec!["bbb"]),
+            ("both keyword", vec!["aaa"], vec!["aaa"]),
+            ("both keyword", vec!["bbb"], vec!["bbb"]),
+            ("both keyword", vec!["aaa", "bbb"], vec!["aaa", "bbb"]),
+        ];
+        for (query, types, expected_types) in &ingest_3_queries {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::exposure(query, types)),
+                expected_types
+                    .iter()
+                    .map(|t| Suggestion::Exposure {
+                        suggestion_type: t.to_string(),
+                        score: 1.0,
+                    })
+                    .collect::<Vec<Suggestion>>(),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn exposure_ingest_new_record() -> anyhow::Result<()> {
+        before_each();
+
+        // Create an exposure suggestion and ingest it.
+        let mut store = TestStore::new(MockRemoteSettingsClient::default().with_full_record(
+            "exposure-suggestions",
+            "exposure-0",
+            Some(json!({
+                "suggestion_type": "aaa",
+            })),
+            Some(json!({
+                "keywords": ["old keyword"],
+            })),
+        ));
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Add a new record of the same exposure type.
+        store.client_mut().add_full_record(
+            "exposure-suggestions",
+            "exposure-1",
+            Some(json!({
+                "suggestion_type": "aaa",
+            })),
+            Some(json!({
+                "keywords": ["new keyword"],
+            })),
+        );
+
+        // Ingest, but don't ingest the exposure type. The store will download
+        // the new record but shouldn't ingest its attachment.
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: None,
+            ..SuggestIngestionConstraints::all_providers()
+        });
+        assert_eq!(
+            store.fetch_suggestions(SuggestionQuery::exposure("new keyword", &["aaa"])),
+            vec![],
+        );
+
+        // Ingest again with the exposure type. The new record will be
+        // unchanged, but the store should now ingest its attachment.
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Exposure]),
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(vec!["aaa".to_string()]),
+            }),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // The keyword in the new attachment should match the suggestion,
+        // confirming that the new record's attachment was ingested.
+        assert_eq!(
+            store.fetch_suggestions(SuggestionQuery::exposure("new keyword", &["aaa"])),
+            vec![Suggestion::Exposure {
+                suggestion_type: "aaa".to_string(),
+                score: 1.0,
+            }]
+        );
+
         Ok(())
     }
 }

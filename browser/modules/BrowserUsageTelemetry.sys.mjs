@@ -30,6 +30,27 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "gRecentVisitedOriginsExpiry",
   "browser.engagement.recent_visited_origins.expiry"
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "sidebarVerticalTabs",
+  "sidebar.verticalTabs",
+  false,
+  (_aPreference, _previousValue, isVertical) => {
+    // Copy max tab counts into the "new" scalars.
+    Services.telemetry.scalarSetMaximum(
+      isVertical
+        ? VERTICAL_MAX_TAB_COUNT_SCALAR_NAME
+        : MAX_TAB_COUNT_SCALAR_NAME,
+      getOpenTabsAndWinsCounts().tabCount
+    );
+    Services.telemetry.scalarSetMaximum(
+      isVertical
+        ? VERTICAL_MAX_TAB_PINNED_COUNT_SCALAR_NAME
+        : MAX_TAB_PINNED_COUNT_SCALAR_NAME,
+      getPinnedTabsCount()
+    );
+  }
+);
 
 // The upper bound for the count of the visited unique domain names.
 const MAX_UNIQUE_VISITED_DOMAINS = 100;
@@ -42,23 +63,28 @@ const DOMWINDOW_OPENED_TOPIC = "domwindowopened";
 
 // Probe names.
 const MAX_TAB_COUNT_SCALAR_NAME = "browser.engagement.max_concurrent_tab_count";
+const VERTICAL_MAX_TAB_COUNT_SCALAR_NAME =
+  "browser.engagement.max_concurrent_vertical_tab_count";
 const MAX_WINDOW_COUNT_SCALAR_NAME =
   "browser.engagement.max_concurrent_window_count";
 const TAB_OPEN_EVENT_COUNT_SCALAR_NAME =
   "browser.engagement.tab_open_event_count";
+const VERTICAL_TAB_OPEN_EVENT_COUNT_SCALAR_NAME =
+  "browser.engagement.vertical_tab_open_event_count";
 const MAX_TAB_PINNED_COUNT_SCALAR_NAME =
   "browser.engagement.max_concurrent_tab_pinned_count";
+const VERTICAL_MAX_TAB_PINNED_COUNT_SCALAR_NAME =
+  "browser.engagement.max_concurrent_vertical_tab_pinned_count";
 const TAB_PINNED_EVENT_COUNT_SCALAR_NAME =
   "browser.engagement.tab_pinned_event_count";
+const VERTICAL_TAB_PINNED_EVENT_COUNT_SCALAR_NAME =
+  "browser.engagement.vertical_tab_pinned_event_count";
 const WINDOW_OPEN_EVENT_COUNT_SCALAR_NAME =
   "browser.engagement.window_open_event_count";
 const UNIQUE_DOMAINS_COUNT_SCALAR_NAME =
   "browser.engagement.unique_domains_count";
-const TOTAL_URI_COUNT_SCALAR_NAME = "browser.engagement.total_uri_count";
 const UNFILTERED_URI_COUNT_SCALAR_NAME =
   "browser.engagement.unfiltered_uri_count";
-const TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE_SCALAR_NAME =
-  "browser.engagement.total_uri_count_normal_and_private_mode";
 
 export const MINIMUM_TAB_COUNT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, in ms
 
@@ -85,6 +111,7 @@ const UI_TARGET_COMPOSED_ELEMENTS_MAP = new Map([["moz-checkbox", "input"]]);
 const BROWSER_UI_CONTAINER_IDS = {
   "toolbar-menubar": "menu-bar",
   TabsToolbar: "tabs-bar",
+  "vertical-tabs": "vertical-tabs-container",
   PersonalToolbar: "bookmarks-bar",
   "appMenu-popup": "app-menu",
   tabContextMenu: "tabs-context",
@@ -364,10 +391,6 @@ export let URICountListener = {
     }
 
     // Update total URI count, including when in private mode.
-    Services.telemetry.scalarAdd(
-      TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE_SCALAR_NAME,
-      1
-    );
     Glean.browserEngagement.uriCount.add(1);
 
     if (!shouldCountURI) {
@@ -375,7 +398,7 @@ export let URICountListener = {
     }
 
     // Update the URI counts.
-    Services.telemetry.scalarAdd(TOTAL_URI_COUNT_SCALAR_NAME, 1);
+    Glean.browserEngagement.uriCountNormalMode.add(1);
 
     // Update tab count
     BrowserUsageTelemetry._recordTabCounts(getOpenTabsAndWinsCounts());
@@ -476,6 +499,30 @@ export let BrowserUsageTelemetry = {
     );
   },
 
+  get maxTabCountScalarName() {
+    return lazy.sidebarVerticalTabs
+      ? VERTICAL_MAX_TAB_COUNT_SCALAR_NAME
+      : MAX_TAB_COUNT_SCALAR_NAME;
+  },
+
+  get tabOpenEventCountScalarName() {
+    return lazy.sidebarVerticalTabs
+      ? VERTICAL_TAB_OPEN_EVENT_COUNT_SCALAR_NAME
+      : TAB_OPEN_EVENT_COUNT_SCALAR_NAME;
+  },
+
+  get maxTabPinnedCountScalarName() {
+    return lazy.sidebarVerticalTabs
+      ? VERTICAL_MAX_TAB_PINNED_COUNT_SCALAR_NAME
+      : MAX_TAB_PINNED_COUNT_SCALAR_NAME;
+  },
+
+  get tabPinnedEventCountScalarName() {
+    return lazy.sidebarVerticalTabs
+      ? VERTICAL_TAB_PINNED_EVENT_COUNT_SCALAR_NAME
+      : TAB_PINNED_EVENT_COUNT_SCALAR_NAME;
+  },
+
   /**
    * Resets the masked add-on identifiers. Only for use in tests.
    */
@@ -492,7 +539,7 @@ export let BrowserUsageTelemetry = {
     // new subsession.
     const counts = getOpenTabsAndWinsCounts();
     Services.telemetry.scalarSetMaximum(
-      MAX_TAB_COUNT_SCALAR_NAME,
+      this.maxTabCountScalarName,
       counts.tabCount
     );
     Services.telemetry.scalarSetMaximum(
@@ -536,11 +583,7 @@ export let BrowserUsageTelemetry = {
             break;
           case "media.videocontrols.picture-in-picture.enable-when-switching-tabs.enabled":
             if (Services.prefs.getBoolPref(data)) {
-              Services.telemetry.recordEvent(
-                "pictureinpicture.settings",
-                "enable_autotrigger",
-                "settings"
-              );
+              Glean.pictureinpictureSettings.enableAutotriggerSettings.record();
             }
             break;
         }
@@ -590,7 +633,7 @@ export let BrowserUsageTelemetry = {
     // Get the initial tab and windows max counts.
     const counts = getOpenTabsAndWinsCounts();
     Services.telemetry.scalarSetMaximum(
-      MAX_TAB_COUNT_SCALAR_NAME,
+      this.maxTabCountScalarName,
       counts.tabCount
     );
     Services.telemetry.scalarSetMaximum(
@@ -777,13 +820,13 @@ export let BrowserUsageTelemetry = {
       return "keyboard";
     }
 
-    const { URL } = node.ownerDocument;
-    if (URL == AppConstants.BROWSER_CHROME_URL) {
+    const { URL: url } = node.ownerDocument;
+    if (url == AppConstants.BROWSER_CHROME_URL) {
       return this._getBrowserWidgetContainer(node);
     }
     if (
-      URL.startsWith("about:preferences") ||
-      URL.startsWith("about:settings")
+      url.startsWith("about:preferences") ||
+      url.startsWith("about:settings")
     ) {
       // Find the element's category.
       let container = node.closest("[data-category]");
@@ -909,8 +952,10 @@ export let BrowserUsageTelemetry = {
 
     if (item && source) {
       this.recordInteractionEvent(item, source);
-      let scalar = `browser.ui.interaction.${source.replace(/-/g, "_")}`;
-      Services.telemetry.keyedScalarAdd(scalar, telemetryId(item), 1);
+      let name = source
+        .replace(/-/g, "_")
+        .replace(/_([a-z])/g, (m, p) => p.toUpperCase());
+      Glean.browserUiInteraction[name]?.[telemetryId(item)].add(1);
       if (SET_USAGECOUNT_PREF_BUTTONS.includes(item)) {
         let pref = `browser.engagement.${item}.used-count`;
         Services.prefs.setIntPref(pref, Services.prefs.getIntPref(pref, 0) + 1);
@@ -927,10 +972,10 @@ export let BrowserUsageTelemetry = {
       );
       if (triggerContainer) {
         this.recordInteractionEvent(item, contextMenu);
-        let scalar = `browser.ui.interaction.${contextMenu.replace(/-/g, "_")}`;
-        Services.telemetry.keyedScalarAdd(
-          scalar,
-          telemetryId(triggerContainer),
+        let name = contextMenu
+          .replace(/-/g, "_")
+          .replace(/_([a-z])/g, (m, p) => p.toUpperCase());
+        Glean.browserUiInteraction[name]?.[telemetryId(triggerContainer)].add(
           1
         );
       }
@@ -1061,7 +1106,7 @@ export let BrowserUsageTelemetry = {
     let key = `${telemetryId(widgetId, false)}_${action}_${oldPos ?? "na"}_${
       newPos ?? "na"
     }_${reason}`;
-    Services.telemetry.keyedScalarAdd("browser.ui.customized_widgets", key, 1);
+    Glean.browserUi.customizedWidgets[key].add(1);
 
     if (newPos) {
       this.widgetMap.set(widgetId, newPos);
@@ -1087,11 +1132,7 @@ export let BrowserUsageTelemetry = {
 
     for (let [widgetId, position] of this.widgetMap.entries()) {
       let key = `${telemetryId(widgetId, false)}_pinned_${position}`;
-      Services.telemetry.keyedScalarSet(
-        "browser.ui.toolbar_widgets",
-        key,
-        true
-      );
+      Glean.browserUi.mirrorForToolbarWidgets[key].set(true);
     }
   },
 
@@ -1129,7 +1170,7 @@ export let BrowserUsageTelemetry = {
    */
   _onTabOpen() {
     // Update the "tab opened" count and its maximum.
-    Services.telemetry.scalarAdd(TAB_OPEN_EVENT_COUNT_SCALAR_NAME, 1);
+    Services.telemetry.scalarAdd(this.tabOpenEventCountScalarName, 1);
 
     // In the case of opening multiple tabs at once, avoid enumerating all open
     // tabs and windows each time a tab opens.
@@ -1142,7 +1183,7 @@ export let BrowserUsageTelemetry = {
    */
   _onTabsOpened() {
     const { tabCount, loadedTabCount } = getOpenTabsAndWinsCounts();
-    Services.telemetry.scalarSetMaximum(MAX_TAB_COUNT_SCALAR_NAME, tabCount);
+    Services.telemetry.scalarSetMaximum(this.maxTabCountScalarName, tabCount);
 
     this._recordTabCounts({ tabCount, loadedTabCount });
   },
@@ -1151,9 +1192,9 @@ export let BrowserUsageTelemetry = {
     const pinnedTabs = getPinnedTabsCount();
 
     // Update the "tab pinned" count and its maximum.
-    Services.telemetry.scalarAdd(TAB_PINNED_EVENT_COUNT_SCALAR_NAME, 1);
+    Services.telemetry.scalarAdd(this.tabPinnedEventCountScalarName, 1);
     Services.telemetry.scalarSetMaximum(
-      MAX_TAB_PINNED_COUNT_SCALAR_NAME,
+      this.maxTabPinnedCountScalarName,
       pinnedTabs
     );
   },
@@ -1342,11 +1383,6 @@ export let BrowserUsageTelemetry = {
       valueToReport = 0;
     }
 
-    Services.telemetry.scalarSet(
-      "browser.engagement.profile_count",
-      valueToReport
-    );
-    // Manually mirror to Glean
     Glean.browserEngagement.profileCount.set(valueToReport);
   },
 
@@ -1516,15 +1552,14 @@ export let BrowserUsageTelemetry = {
       if (data?.installer_type) {
         let { installer_type, extra } = data;
 
-        // Record the event
-        Services.telemetry.setEventRecordingEnabled("installation", true);
-        Services.telemetry.recordEvent(
-          "installation",
-          "first_seen",
-          installer_type,
-          null,
-          extra
-        );
+        // Record the event (mirrored to legacy telemetry using GIFFT)
+        if (installer_type == "full") {
+          Glean.installation.firstSeenFull.record(extra);
+        } else if (installer_type == "stub") {
+          Glean.installation.firstSeenStub.record(extra);
+        } else if (installer_type == "msix") {
+          Glean.installation.firstSeenMsix.record(extra);
+        }
 
         // Scalars for the new-profile ping. We don't need to collect the build version
         // These are mirrored to legacy telemetry using GIFFT

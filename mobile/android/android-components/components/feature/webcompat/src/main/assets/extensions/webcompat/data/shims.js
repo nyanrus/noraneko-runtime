@@ -380,6 +380,27 @@ const AVAILABLE_SHIMS = [
     onlyIfBlockedByETP: true,
   },
   {
+    id: "figshare",
+    platform: "all",
+    name: "Figshare",
+    bug: "1895990",
+    contentScripts: [
+      {
+        js: "figshare.js",
+        matches: [
+          "*://*.figsharelabs.io/*",
+          "*://opal.latrobe.edu.au/*",
+          "*://repository.lboro.ac.uk/*",
+          "*://portal.sds.ox.ac.uk/*",
+          "*://curate.nd.edu/*",
+          "*://kilthub.cmu.edu/*",
+        ],
+        runAt: "document_start",
+      },
+    ],
+    onlyIfDFPIActive: true,
+  },
+  {
     id: "GoogleAnalyticsAndTagManager",
     platform: "all",
     name: "Google Analytics and Tag Manager",
@@ -443,23 +464,6 @@ const AVAILABLE_SHIMS = [
       "*://pagead2.googlesyndication.com/gpt/pubads_impl_*.js*",
       "*://securepubads.g.doubleclick.net/tag/js/gpt.js*",
       "*://securepubads.g.doubleclick.net/gpt/pubads_impl_*.js*",
-    ],
-    onlyIfBlockedByETP: true,
-  },
-  {
-    id: "Google SafeFrame",
-    platform: "all",
-    name: "Google SafeFrame",
-    bug: "1713691",
-    matches: [
-      {
-        patterns: [
-          "*://tpc.googlesyndication.com/safeframe/*/html/container.html",
-          "*://*.safeframe.googlesyndication.com/safeframe/*/html/container.html",
-        ],
-        target: "google-safeframe.html",
-        types: ["sub_frame"],
-      },
     ],
     onlyIfBlockedByETP: true,
   },

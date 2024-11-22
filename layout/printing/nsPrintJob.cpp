@@ -27,7 +27,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/StaticPrefs_print.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Try.h"
 #include "nsIBrowserChild.h"
 #include "nsIOService.h"
@@ -430,7 +430,7 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   }
 
   if (mIsDoingPrinting && printSilently) {
-    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_SILENT_PRINT, 1);
+    glean::printing::silent_print.Add(1);
   }
 
   MOZ_TRY(devspec->Init(mPrintSettings, mIsCreatingPrintPreview));
@@ -742,8 +742,8 @@ nsresult nsPrintJob::ReconstructAndReflow() {
       return NS_ERROR_FAILURE;
     }
 
-    nsresult rv = UpdateSelectionAndShrinkPrintObject(po, documentIsTopLevel);
-    NS_ENSURE_SUCCESS(rv, rv);
+    po->mDocument->UpdateRemoteFrameEffects();
+    MOZ_TRY(UpdateSelectionAndShrinkPrintObject(po, documentIsTopLevel));
   }
   return NS_OK;
 }
@@ -1421,6 +1421,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   }
   // Process the reflow event Initialize posted
   presShell->FlushPendingNotifications(FlushType::Layout);
+  aPO->mDocument->UpdateRemoteFrameEffects();
 
   MOZ_TRY(UpdateSelectionAndShrinkPrintObject(aPO.get(), documentIsTopLevel));
 

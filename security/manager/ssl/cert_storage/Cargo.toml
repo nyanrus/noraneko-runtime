@@ -7,6 +7,8 @@ license = "MPL-2.0"
 [dependencies]
 base64 = "0.21.0"
 byteorder = "1.2.7"
+clubcard = "0.3"
+clubcard-crlite = "0.3"
 crossbeam-utils = "0.8"
 cstr = "0.2"
 firefox-on-glean = { path = "../../../../toolkit/components/glean/api" }
@@ -17,6 +19,7 @@ nsstring = { path = "../../../../xpcom/rust/nsstring" }
 rkv = { version = "0.19", default-features = false }
 rust_cascade = "1.4.0"
 sha2 = "0.10.2"
+static_prefs = { path = "../../../../modules/libpref/init/static_prefs" }
 storage_variant = { path = "../../../../storage/variant" }
 tempfile = "3"
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }

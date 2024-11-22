@@ -287,42 +287,42 @@ nsIFrame* SVGUtils::GetOuterSVGFrameAndCoveredRegion(nsIFrame* aFrame,
   }
 
   if (aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
-    *aRect = nsRect(0, 0, 0, 0);
-  } else {
-    uint32_t flags = SVGUtils::eForGetClientRects | SVGUtils::eBBoxIncludeFill |
-                     SVGUtils::eBBoxIncludeStroke |
-                     SVGUtils::eBBoxIncludeMarkers |
-                     SVGUtils::eUseUserSpaceOfUseElement;
-
-    auto ctm = nsLayoutUtils::GetTransformToAncestor(RelativeTo{aFrame},
-                                                     RelativeTo{outer});
-
-    float initPositionX = NSAppUnitsToFloatPixels(aFrame->GetPosition().x,
-                                                  AppUnitsPerCSSPixel()),
-          initPositionY = NSAppUnitsToFloatPixels(aFrame->GetPosition().y,
-                                                  AppUnitsPerCSSPixel());
-
-    Matrix mm;
-    ctm.ProjectTo2D();
-    ctm.CanDraw2D(&mm);
-    gfxMatrix m = ThebesMatrix(mm);
-
-    float appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-    float devPixelPerCSSPixel =
-        float(AppUnitsPerCSSPixel()) / appUnitsPerDevPixel;
-
-    // The matrix that GetBBox accepts should operate on "user space",
-    // i.e. with CSS pixel unit.
-    m = m.PreScale(devPixelPerCSSPixel, devPixelPerCSSPixel);
-
-    // Both SVGUtils::GetBBox and nsLayoutUtils::GetTransformToAncestor
-    // will count this displacement, we should remove it here to avoid
-    // double-counting.
-    m = m.PreTranslate(-initPositionX, -initPositionY);
-
-    gfxRect bbox = SVGUtils::GetBBox(aFrame, flags, &m);
-    *aRect = nsLayoutUtils::RoundGfxRectToAppRect(bbox, appUnitsPerDevPixel);
+    *aRect = nsRect();
+    return outer;
   }
+
+  auto ctm = nsLayoutUtils::GetTransformToAncestor(RelativeTo{aFrame},
+                                                   RelativeTo{outer});
+
+  Matrix mm;
+  ctm.ProjectTo2D();
+  ctm.CanDraw2D(&mm);
+  gfxMatrix m = ThebesMatrix(mm);
+
+  float appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
+  float devPixelPerCSSPixel =
+      float(AppUnitsPerCSSPixel()) / appUnitsPerDevPixel;
+
+  // The matrix that GetBBox accepts should operate on "user space",
+  // i.e. with CSS pixel unit.
+  m.PreScale(devPixelPerCSSPixel, devPixelPerCSSPixel);
+
+  auto initPosition = gfxPoint(
+      NSAppUnitsToFloatPixels(aFrame->GetPosition().x, AppUnitsPerCSSPixel()),
+      NSAppUnitsToFloatPixels(aFrame->GetPosition().y, AppUnitsPerCSSPixel()));
+
+  // Both SVGUtils::GetBBox and nsLayoutUtils::GetTransformToAncestor
+  // will count this displacement, we should remove it here to avoid
+  // double-counting.
+  m.PreTranslate(-initPosition);
+
+  uint32_t flags = SVGUtils::eForGetClientRects | SVGUtils::eBBoxIncludeFill |
+                   SVGUtils::eBBoxIncludeStroke |
+                   SVGUtils::eBBoxIncludeMarkers |
+                   SVGUtils::eUseUserSpaceOfUseElement;
+
+  gfxRect bbox = SVGUtils::GetBBox(aFrame, flags, &m);
+  *aRect = nsLayoutUtils::RoundGfxRectToAppRect(bbox, appUnitsPerDevPixel);
 
   return outer;
 }
@@ -347,7 +347,7 @@ gfxMatrix SVGUtils::GetCanvasTM(nsIFrame* aFrame) {
   auto* parent = static_cast<SVGContainerFrame*>(aFrame->GetParent());
   auto* content = static_cast<SVGElement*>(aFrame->GetContent());
 
-  return content->PrependLocalTransformsTo(parent->GetCanvasTM());
+  return content->ChildToUserSpaceTransform() * parent->GetCanvasTM();
 }
 
 bool SVGUtils::GetParentSVGTransforms(const nsIFrame* aFrame,
@@ -888,8 +888,8 @@ gfxRect SVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
     // NOTE: When changing this to apply to other frame types, make sure to
     // also update SVGUtils::FrameSpaceInCSSPxToUserSpaceOffset.
     MOZ_ASSERT(aFrame->GetContent()->IsSVGElement(), "bad cast");
-    SVGElement* element = static_cast<SVGElement*>(aFrame->GetContent());
-    matrix = element->PrependLocalTransformsTo(matrix, eChildToUserSpace);
+    auto* element = static_cast<SVGElement*>(aFrame->GetContent());
+    matrix = element->ChildToUserSpaceTransform() * matrix;
   }
   gfxRect bbox =
       svg->GetBBoxContribution(ToMatrix(matrix), aFlags).ToThebesRect();
@@ -966,9 +966,8 @@ gfxPoint SVGUtils::FrameSpaceInCSSPxToUserSpaceOffset(const nsIFrame* aFrame) {
   // For foreignObject frames, SVGUtils::GetBBox applies their local
   // transform, so we need to do the same here.
   if (aFrame->IsSVGForeignObjectFrame()) {
-    gfxMatrix transform =
-        static_cast<SVGElement*>(aFrame->GetContent())
-            ->PrependLocalTransformsTo(gfxMatrix(), eChildToUserSpace);
+    gfxMatrix transform = static_cast<SVGElement*>(aFrame->GetContent())
+                              ->ChildToUserSpaceTransform();
     NS_ASSERTION(!transform.HasNonTranslation(),
                  "we're relying on this being an offset-only transform");
     return transform.GetTranslation();
@@ -1462,9 +1461,9 @@ bool SVGUtils::GetSVGGlyphExtents(const Element* aElement,
     return false;
   }
 
-  gfxMatrix transform(aSVGToAppSpace);
+  gfxMatrix transform = aSVGToAppSpace;
   if (auto* svg = SVGElement::FromNode(frame->GetContent())) {
-    transform = svg->PrependLocalTransformsTo(aSVGToAppSpace);
+    transform = svg->ChildToUserSpaceTransform() * transform;
   }
 
   *aResult =

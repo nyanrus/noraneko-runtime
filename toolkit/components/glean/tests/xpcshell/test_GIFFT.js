@@ -218,8 +218,6 @@ add_task(function test_gifft_string_list_works() {
 });
 
 add_task(function test_gifft_events() {
-  Telemetry.setEventRecordingEnabled("telemetry.test", true);
-
   Glean.testOnlyIpc.noExtraEvent.record();
   var events = Glean.testOnlyIpc.noExtraEvent.testGetValue();
   Assert.equal(1, events.length);
@@ -236,8 +234,10 @@ add_task(function test_gifft_events() {
   let { extra1, extra2 } = extra;
   let telExtra = { extra1, extra2 };
   Glean.testOnlyIpc.anEvent.record(extra);
+  // Also test a value of "".
+  Glean.testOnlyIpc.anEvent.record({ value: "" });
   events = Glean.testOnlyIpc.anEvent.testGetValue();
-  Assert.equal(1, events.length);
+  Assert.equal(2, events.length);
   Assert.equal("test_only.ipc", events[0].category);
   Assert.equal("an_event", events[0].name);
   Assert.deepEqual(extra, events[0].extra);
@@ -246,6 +246,7 @@ add_task(function test_gifft_events() {
     [
       ["telemetry.test", "not_expired_optout", "object1", undefined, undefined],
       ["telemetry.test", "mirror_with_extra", "object1", extra.value, telExtra],
+      ["telemetry.test", "mirror_with_extra", "object1", "", undefined],
     ],
     { category: "telemetry.test" }
   );

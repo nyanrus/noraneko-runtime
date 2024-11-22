@@ -21,6 +21,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ProfilerLabels.h"
@@ -227,9 +228,28 @@ static nsTArray<T> Copy(nsTArray<T> const& arr) {
 
 // The possible execution strategies of AsyncExecute.
 enum Strategy {
+  // Always and only open the dialog in-process. This is effectively the
+  // only behavior in older versions of Gecko.
   LocalOnly,
+
+  // Always and only open the dialog out-of-process.
   RemoteOnly,
+
+  // Open the dialog out-of-process. If that fails in any way, try to recover by
+  // opening it in-process.
   RemoteWithFallback,
+
+  // Try to open the dialog out-of-process. If and only if the process can't
+  // even be created, fall back to in-process.
+  //
+  // This heuristic is crafted to avoid the out-of-process file-dialog causing
+  // user-experience regressions compared to the previous "LocalOnly" behavior:
+  //  * If the file-dialog actually crashes, then it would have brought down the
+  //    entire browser. In this case just surfacing an error is a strict
+  //    improvement.
+  //  * If the utility process simply fails to start, there's usually nothing
+  //    preventing the dialog from being opened in-process instead. Producing an
+  //    error would be a degradation.
   FallbackUnlessCrash,
 };
 
@@ -622,14 +642,18 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
   // options
   {
     FILEOPENDIALOGOPTIONS fos = 0;
-    fos |= FOS_SHAREAWARE | FOS_OVERWRITEPROMPT | FOS_FORCEFILESYSTEM;
+
+    // FOS_OVERWRITEPROMPT: always confirm on overwrite in Save dialogs
+    // FOS_FORCEFILESYSTEM: provide only filesystem-objects, not more exotic
+    //    entities like libraries
+    fos |= FOS_OVERWRITEPROMPT | FOS_FORCEFILESYSTEM;
 
     // Handle add to recent docs settings
     if (IsPrivacyModeEnabled() || !mAddToRecentDocs) {
       fos |= FOS_DONTADDTORECENT;
     }
 
-    // mode specific
+    // mode specification
     switch (mMode) {
       case modeOpen:
         fos |= FOS_FILEMUSTEXIST;
@@ -738,7 +762,7 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
         // multiple selection
         for (auto const& str : paths) {
           nsCOMPtr<nsIFile> file;
-          if (NS_SUCCEEDED(NS_NewLocalFile(str, false, getter_AddRefs(file)))) {
+          if (NS_SUCCEEDED(NS_NewLocalFile(str, getter_AddRefs(file)))) {
             self->mFiles.AppendObject(file);
           }
         }
@@ -751,49 +775,6 @@ void nsFilePicker::ClearFiles() {
   mUnicodeFile.Truncate();
   mFiles.Clear();
 }
-
-namespace {
-class GetFilesInDirectoryCallback final
-    : public mozilla::dom::GetFilesCallback {
- public:
-  explicit GetFilesInDirectoryCallback(
-      RefPtr<mozilla::MozPromise<nsTArray<mozilla::PathString>, nsresult,
-                                 true>::Private>
-          aPromise)
-      : mPromise(std::move(aPromise)) {}
-  void Callback(
-      nsresult aStatus,
-      const FallibleTArray<RefPtr<mozilla::dom::BlobImpl>>& aBlobImpls) {
-    if (NS_FAILED(aStatus)) {
-      mPromise->Reject(aStatus, __func__);
-      return;
-    }
-    nsTArray<mozilla::PathString> filePaths;
-    filePaths.SetCapacity(aBlobImpls.Length());
-    for (const auto& blob : aBlobImpls) {
-      if (blob->IsFile()) {
-        mozilla::PathString pathString;
-        mozilla::ErrorResult error;
-        blob->GetMozFullPathInternal(pathString, error);
-        nsresult rv = error.StealNSResult();
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          mPromise->Reject(rv, __func__);
-          return;
-        }
-        filePaths.AppendElement(pathString);
-      } else {
-        NS_WARNING("Got a non-file blob, can't do content analysis on it");
-      }
-    }
-    mPromise->Resolve(std::move(filePaths), __func__);
-  }
-
- private:
-  RefPtr<mozilla::MozPromise<nsTArray<mozilla::PathString>, nsresult,
-                             true>::Private>
-      mPromise;
-};
-}  // anonymous namespace
 
 RefPtr<nsFilePicker::ContentAnalysisResponse>
 nsFilePicker::CheckContentAnalysisService() {
@@ -813,7 +794,30 @@ nsFilePicker::CheckContentAnalysisService() {
                                                                    __func__);
   }
 
-  nsCOMPtr<nsIURI> uri = mBrowsingContext->Canonical()->GetCurrentURI();
+  nsCOMPtr<nsIURI> uri =
+      mozilla::contentanalysis::ContentAnalysis::GetURIForBrowsingContext(
+          mBrowsingContext->Canonical());
+  if (!uri) {
+    return nsFilePicker::ContentAnalysisResponse::CreateAndReject(
+        NS_ERROR_FAILURE, __func__);
+  }
+
+  // Entries may be files or folders.  Folder contents will be recursively
+  // checked.
+  nsTArray<mozilla::PathString> filePaths;
+  if (mMode == modeGetFolder || !mUnicodeFile.IsEmpty()) {
+    RefPtr<nsIFile> folderOrFile;
+    nsresult rv = GetFile(getter_AddRefs(folderOrFile));
+    if (NS_WARN_IF(NS_FAILED(rv) || !folderOrFile)) {
+      return nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv,
+                                                                    __func__);
+    }
+    filePaths.AppendElement(folderOrFile->NativePath());
+  } else {
+    // multiple selections
+    std::transform(mFiles.begin(), mFiles.end(), MakeBackInserter(filePaths),
+                   [](auto* entry) { return entry->NativePath(); });
+  }
 
   auto processOneItem = [self = RefPtr{this},
                          contentAnalysis = std::move(contentAnalysis),
@@ -852,77 +856,8 @@ nsFilePicker::CheckContentAnalysisService() {
     return promise;
   };
 
-  // Since getting the files to analyze might be asynchronous, use a MozPromise
-  // to unify the logic below.
-  RefPtr<mozilla::MozPromise<nsTArray<mozilla::PathString>, nsresult,
-                             true>::Private>
-      getFilesToAnalyzePromise = nullptr;
-  if (mMode == modeGetFolder) {
-    nsCOMPtr<nsIFile> file;
-    nsresult rv = GetFile(getter_AddRefs(file));
-    if (NS_WARN_IF(NS_FAILED(rv) || !file)) {
-      return nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv,
-                                                                    __func__);
-    }
-    // We just need to iterate over the directory, so use the junk scope
-    RefPtr<mozilla::dom::Directory> directory = mozilla::dom::Directory::Create(
-        xpc::NativeGlobal(xpc::PrivilegedJunkScope()), file);
-    if (!directory) {
-      // The directory may have been deleted
-      return nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv,
-                                                                    __func__);
-    }
-    mozilla::dom::OwningFileOrDirectory owningDirectory;
-    owningDirectory.SetAsDirectory() = directory;
-    nsTArray<mozilla::dom::OwningFileOrDirectory> directoryArray{
-        std::move(owningDirectory)};
-
-    mozilla::ErrorResult error;
-    RefPtr<mozilla::dom::GetFilesHelper> helper =
-        mozilla::dom::GetFilesHelper::Create(directoryArray, true, error);
-    rv = error.StealNSResult();
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv,
-                                                                    __func__);
-    }
-
-    getFilesToAnalyzePromise = mozilla::MakeRefPtr<mozilla::MozPromise<
-        nsTArray<mozilla::PathString>, nsresult, true>::Private>(__func__);
-    auto getFilesCallback = mozilla::MakeRefPtr<GetFilesInDirectoryCallback>(
-        getFilesToAnalyzePromise);
-    helper->AddCallback(getFilesCallback);
-  } else {
-    nsCOMArray<nsIFile> files;
-    if (!mUnicodeFile.IsEmpty()) {
-      nsCOMPtr<nsIFile> file;
-      rv = GetFile(getter_AddRefs(file));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv,
-                                                                      __func__);
-      }
-      files.AppendElement(file);
-    } else {
-      files.AppendElements(mFiles);
-    }
-    nsTArray<mozilla::PathString> paths(files.Length());
-    std::transform(files.begin(), files.end(), MakeBackInserter(paths),
-                   [](auto* entry) { return entry->NativePath(); });
-    getFilesToAnalyzePromise = mozilla::MakeRefPtr<mozilla::MozPromise<
-        nsTArray<mozilla::PathString>, nsresult, true>::Private>(__func__);
-    getFilesToAnalyzePromise->Resolve(std::move(paths), __func__);
-  }
-
-  MOZ_ASSERT(getFilesToAnalyzePromise);
-  return getFilesToAnalyzePromise->Then(
-      mozilla::GetMainThreadSerialEventTarget(), __func__,
-      [processOneItem](nsTArray<mozilla::PathString> aPaths) mutable {
-        return mozilla::detail::AsyncAll<mozilla::PathString>(std::move(aPaths),
-                                                              processOneItem);
-      },
-      [](nsresult aError) {
-        return nsFilePicker::ContentAnalysisResponse::CreateAndReject(aError,
-                                                                      __func__);
-      });
+  return mozilla::detail::AsyncAll<mozilla::PathString>(std::move(filePaths),
+                                                        processOneItem);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -973,7 +908,7 @@ nsresult nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
           // file already exists.
           nsCOMPtr<nsIFile> file;
           nsresult rv =
-              NS_NewLocalFile(self->mUnicodeFile, false, getter_AddRefs(file));
+              NS_NewLocalFile(self->mUnicodeFile, getter_AddRefs(file));
 
           bool flag = false;
           if (NS_SUCCEEDED(rv) && NS_SUCCEEDED(file->Exists(&flag)) && flag) {
@@ -1040,7 +975,7 @@ nsFilePicker::GetFile(nsIFile** aFile) {
   if (mUnicodeFile.IsEmpty()) return NS_OK;
 
   nsCOMPtr<nsIFile> file;
-  nsresult rv = NS_NewLocalFile(mUnicodeFile, false, getter_AddRefs(file));
+  nsresult rv = NS_NewLocalFile(mUnicodeFile, getter_AddRefs(file));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1162,7 +1097,7 @@ void nsFilePicker::RememberLastUsedDirectory() {
   }
 
   nsCOMPtr<nsIFile> file;
-  if (NS_FAILED(NS_NewLocalFile(mUnicodeFile, false, getter_AddRefs(file)))) {
+  if (NS_FAILED(NS_NewLocalFile(mUnicodeFile, getter_AddRefs(file)))) {
     NS_WARNING("RememberLastUsedDirectory failed to init file path.");
     return;
   }

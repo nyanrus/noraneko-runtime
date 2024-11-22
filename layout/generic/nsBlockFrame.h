@@ -236,16 +236,18 @@ class nsBlockFrame : public nsContainerFrame {
   bool MarkerIsEmpty() const;
 
   // Return true if this frame has a ::marker frame.
-  bool HasMarker() const { return HasOutsideMarker() || HasInsideMarker(); }
+  bool HasMarker() const { return HasAnyStateBits(NS_BLOCK_HAS_MARKER); }
 
   // Return true if this frame has an inside ::marker frame.
   bool HasInsideMarker() const {
-    return HasAnyStateBits(NS_BLOCK_HAS_INSIDE_MARKER);
+    return HasMarker() && StyleList()->mListStylePosition ==
+                              mozilla::StyleListStylePosition::Inside;
   }
 
   // Return true if this frame has an outside ::marker frame.
   bool HasOutsideMarker() const {
-    return HasAnyStateBits(NS_BLOCK_HAS_OUTSIDE_MARKER);
+    return HasMarker() && StyleList()->mListStylePosition ==
+                              mozilla::StyleListStylePosition::Outside;
   }
 
   /**
@@ -274,11 +276,11 @@ class nsBlockFrame : public nsContainerFrame {
                                     BaselineExportContext aExportContext) const;
 
   // MinISize() and PrefISize() are helpers to implement IntrinsicISize().
-  nscoord MinISize(gfxContext* aContext);
-  nscoord PrefISize(gfxContext* aContext);
+  nscoord MinISize(const mozilla::IntrinsicSizeInput& aInput);
+  nscoord PrefISize(const mozilla::IntrinsicSizeInput& aInput);
 
  public:
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
   nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const override;
@@ -672,15 +674,40 @@ class nsBlockFrame : public nsContainerFrame {
    * whether this block is in a block formatting-context whose root block has
    * -webkit-line-clamp: <n>.
    */
-  bool IsInLineClampContext() const;
+  bool IsInLineClampContext() const { return !!GetLineClampRoot(); }
 
   /**
    * @return false iff this block does not have a float on any child list.
    * This function is O(1).
    */
   bool MaybeHasFloats() const;
+  /**
+   * This indicates that exactly one line in this block has the
+   * LineClampEllipsis flag set, and that such a line must be found
+   * and have that flag cleared when reflowing this element's nearest legacy box
+   * container.
+   */
+  bool HasLineClampEllipsis() const {
+    return HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS);
+  }
+  /**
+   * This indicates that we have a descendant in our block formatting context
+   * that has such a line.
+   */
+  bool HasLineClampEllipsisDescendant() const {
+    return HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS_DESCENDANT);
+  }
+  void SetHasLineClampEllipsis(bool aValue) {
+    AddOrRemoveStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS, aValue);
+  }
+  void SetHasLineClampEllipsisDescendant(bool aValue) {
+    AddOrRemoveStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS_DESCENDANT, aValue);
+  }
 
  protected:
+  nsBlockFrame* GetLineClampRoot() const;
+  nscoord ApplyLineClamp(nscoord aContentBlockEndEdge);
+
   /** grab overflow lines from this block's prevInFlow, and make them
    * part of this block's mLines list.
    * @return true if any lines were drained.

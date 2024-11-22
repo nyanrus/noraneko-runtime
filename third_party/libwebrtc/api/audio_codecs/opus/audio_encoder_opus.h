@@ -15,11 +15,11 @@
 #include <vector>
 
 #include "absl/types/optional.h"
-#include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/opus/audio_encoder_opus_config.h"
-#include "api/field_trials_view.h"
+#include "api/environment/environment.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
@@ -33,10 +33,9 @@ struct RTC_EXPORT AudioEncoderOpus {
   static void AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs);
   static AudioCodecInfo QueryAudioEncoder(const AudioEncoderOpusConfig& config);
   static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
+      const Environment& env,
       const AudioEncoderOpusConfig& config,
-      int payload_type,
-      absl::optional<AudioCodecPairId> codec_pair_id = absl::nullopt,
-      const FieldTrialsView* field_trials = nullptr);
+      const AudioEncoderFactory::Options& options);
 };
 
 }  // namespace webrtc

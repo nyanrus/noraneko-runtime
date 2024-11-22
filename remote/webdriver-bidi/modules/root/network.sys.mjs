@@ -316,6 +316,7 @@ class NetworkModule extends RootBiDiModule {
   #decodedBodySizeMap;
   #interceptMap;
   #networkListener;
+  #redirectedRequests;
   #subscribedEvents;
 
   constructor(messageHandler) {
@@ -326,6 +327,11 @@ class NetworkModule extends RootBiDiModule {
 
     // Map of intercept id to InterceptProperties
     this.#interceptMap = new Map();
+
+    // Set of request ids which are being redirected using continueRequest with
+    // a url parameter. Those requests will lead to an additional beforeRequestSent
+    // event which needs to be filtered out.
+    this.#redirectedRequests = new Set();
 
     // Set of event names which have active subscriptions
     this.#subscribedEvents = new Set();
@@ -484,10 +490,9 @@ class NetworkModule extends RootBiDiModule {
    *     request.
    * @param {string=} options.method
    *     Optional string to replace the method of the request.
-   * @param {string=} options.url [unsupported]
+   * @param {string=} options.url
    *     Optional string to replace the url of the request. If the provided url
    *     is not a valid URL, an InvalidArgumentError will be thrown.
-   *     Support will be added in https://bugzilla.mozilla.org/show_bug.cgi?id=1898158
    *
    * @throws {InvalidArgumentError}
    *     Raised if an argument is of an invalid type or value.
@@ -550,9 +555,11 @@ class NetworkModule extends RootBiDiModule {
     if (url !== null) {
       lazy.assert.string(url, `Expected "url" to be a string, got ${url}`);
 
-      throw new lazy.error.UnsupportedOperationError(
-        `"url" not supported yet in network.continueRequest`
-      );
+      if (!URL.canParse(url)) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "url" to be a valid URL, got ${url}`
+        );
+      }
     }
 
     if (!this.#blockedRequests.has(requestId)) {
@@ -576,7 +583,7 @@ class NetworkModule extends RootBiDiModule {
 
     if (headers !== null) {
       // Delete all existing request headers.
-      request.getHeadersList().forEach(([name]) => {
+      request.headers.forEach(([name]) => {
         request.clearRequestHeader(name);
       });
 
@@ -596,8 +603,7 @@ class NetworkModule extends RootBiDiModule {
       }
 
       let foundCookieHeader = false;
-      const requestHeaders = request.getHeadersList();
-      for (const [name] of requestHeaders) {
+      for (const [name] of request.headers) {
         if (name.toLowerCase() == "cookie") {
           // If there is already a cookie header, use merge: false to override
           // the value.
@@ -615,6 +621,13 @@ class NetworkModule extends RootBiDiModule {
     if (body !== null) {
       const value = deserializeBytesValue(body);
       request.setRequestBody(value);
+    }
+
+    if (url !== null) {
+      // Store the requestId in the redirectedRequests set to skip the extra
+      // beforeRequestSent event.
+      this.#redirectedRequests.add(requestId);
+      request.redirectTo(url);
     }
 
     request.wrappedChannel.resume();
@@ -720,8 +733,7 @@ class NetworkModule extends RootBiDiModule {
 
     if (headers !== null) {
       // Delete all existing response headers.
-      response
-        .getHeadersList()
+      response.headers
         .filter(
           ([name]) =>
             // All headers in IMMUTABLE_RESPONSE_HEADERS cannot be changed and
@@ -1360,8 +1372,7 @@ class NetworkModule extends RootBiDiModule {
     }
 
     const challenges = [];
-
-    for (const [name, value] of response.getHeadersList()) {
+    for (const [name, value] of response.headers) {
       if (name.toLowerCase() === headerName) {
         // A single header can contain several challenges.
         const headerChallenges = lazy.parseChallengeHeader(value);
@@ -1457,7 +1468,7 @@ class NetworkModule extends RootBiDiModule {
     const headers = [];
     const cookies = [];
 
-    for (const [name, value] of request.getHeadersList()) {
+    for (const [name, value] of request.headers) {
       headers.push(this.#serializeHeader(name, value));
       if (name.toLowerCase() == "cookie") {
         // TODO: Retrieve the actual cookies from the cookie store.
@@ -1475,7 +1486,7 @@ class NetworkModule extends RootBiDiModule {
       }
     }
 
-    const timings = request.getFetchTimings();
+    const timings = request.timings;
 
     return {
       request: requestId,
@@ -1503,9 +1514,9 @@ class NetworkModule extends RootBiDiModule {
     // TODO: Ideally we should have a `isCacheStateLocal` getter
     // const fromCache = response.isCacheStateLocal();
     const fromCache = response.fromCache;
-    const mimeType = response.getComputedMimeType();
+    const mimeType = response.mimeType;
     const headers = [];
-    for (const [name, value] of response.getHeadersList()) {
+    for (const [name, value] of response.headers) {
       headers.push(this.#serializeHeader(name, value));
     }
 
@@ -1669,6 +1680,14 @@ class NetworkModule extends RootBiDiModule {
   #onBeforeRequestSent = (name, data) => {
     const { request } = data;
 
+    if (this.#redirectedRequests.has(request.requestId)) {
+      // If this beforeRequestSent event corresponds to a request that has
+      // just been redirected using continueRequest, skip the event and remove
+      // it from the redirectedRequests set.
+      this.#redirectedRequests.delete(request.requestId);
+      return;
+    }
+
     const browsingContext = lazy.TabManager.getBrowsingContextById(
       request.contextId
     );
@@ -1709,7 +1728,7 @@ class NetworkModule extends RootBiDiModule {
       protocolEventName,
       beforeRequestSentEvent
     );
-    if (beforeRequestSentEvent.isBlocked) {
+    if (beforeRequestSentEvent.isBlocked && request.supportsInterception) {
       // TODO: Requests suspended in beforeRequestSent still reach the server at
       // the moment. https://bugzilla.mozilla.org/show_bug.cgi?id=1849686
       request.wrappedChannel.suspend(
@@ -1819,7 +1838,8 @@ class NetworkModule extends RootBiDiModule {
 
     if (
       protocolEventName === "network.responseStarted" &&
-      responseEvent.isBlocked
+      responseEvent.isBlocked &&
+      request.supportsInterception
     ) {
       request.wrappedChannel.suspend(
         this.#getSuspendMarkerText(request, "responseStarted")
@@ -1998,6 +2018,12 @@ class NetworkModule extends RootBiDiModule {
         this.#subscribeEvent(value);
       }
     }
+  }
+
+  _sendEventsForCachedResource(params) {
+    this.#onBeforeRequestSent("beforerequest-sent", params);
+    this.#onResponseEvent("response-started", params);
+    this.#onResponseEvent("response-completed", params);
   }
 
   _setDecodedBodySize(params) {

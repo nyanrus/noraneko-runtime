@@ -18,6 +18,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UITour: "resource:///modules/UITour.sys.mjs",
@@ -218,6 +221,8 @@ export const SpecialMessageActions = {
       "cookiebanners.service.detectOnly",
       "messaging-system.askForFeedback",
       "browser.toolbars.bookmarks.visibility",
+      "sidebar.verticalTabs",
+      "sidebar.revamp",
     ];
 
     if (
@@ -458,6 +463,10 @@ export const SpecialMessageActions = {
     }
   },
 
+  async createAndOpenProfile() {
+    await lazy.SelectableProfileService.createNewProfile();
+  },
+
   /**
    * Processes "Special Message Actions", which are definitions of behaviors such as opening tabs
    * installing add-ons, or focusing the awesome bar that are allowed to can be triggered from
@@ -482,6 +491,9 @@ export const SpecialMessageActions = {
       case "OPEN_PRIVATE_BROWSER_WINDOW":
         // Forcefully open about:privatebrowsing
         window.OpenBrowserWindow({ private: true });
+        break;
+      case "OPEN_SIDEBAR":
+        window.SidebarController.show(action.data);
         break;
       case "OPEN_URL":
         window.openLinkIn(
@@ -677,6 +689,9 @@ export const SpecialMessageActions = {
         break;
       case "SET_BOOKMARKS_TOOLBAR_VISIBILITY":
         this.setBookmarksToolbarVisibility(window, action.data?.visibility);
+        break;
+      case "CREATE_NEW_SELECTABLE_PROFILE":
+        this.createAndOpenProfile();
         break;
     }
     return undefined;

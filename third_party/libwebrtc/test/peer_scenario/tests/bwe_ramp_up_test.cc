@@ -16,6 +16,7 @@
 #include "api/units/time_delta.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
 #include "pc/media_session.h"
 #include "pc/test/mock_peer_connection_observers.h"
@@ -73,7 +74,7 @@ TEST(BweRampupTest, BweRampUpWhenCapacityIncrease) {
   SchedulableNetworkNodeBuilder schedulable_builder(*s.net(),
                                                     std::move(schedule));
 
-  auto caller_node = schedulable_builder.Build();
+  auto caller_node = schedulable_builder.Build(/*random_seed=*/1);
   auto callee_node = s.net()->NodeBuilder().capacity_kbps(5000).Build().node;
   s.net()->CreateRoute(caller->endpoint(), {caller_node}, callee->endpoint());
   s.net()->CreateRoute(callee->endpoint(), {callee_node}, caller->endpoint());

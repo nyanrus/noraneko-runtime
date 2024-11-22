@@ -13,6 +13,7 @@
         <vbox class="tab-background">
           <hbox class="tab-context-line"/>
           <hbox class="tab-loading-burst" flex="1"/>
+          <hbox class="tab-group-line"/>
         </vbox>
         <hbox class="tab-content" align="center">
           <stack class="tab-icon-stack">
@@ -79,8 +80,9 @@
 
     static get inheritedAttributes() {
       return {
-        ".tab-background": "selected=visuallyselected,fadein,multiselected",
-        ".tab-line": "selected=visuallyselected,multiselected",
+        ".tab-background":
+          "selected=visuallyselected,fadein,multiselected,dragover-createGroup",
+        ".tab-group-line": "selected=visuallyselected,multiselected",
         ".tab-loading-burst": "pinned,bursting,notselectedsinceload",
         ".tab-content":
           "pinned,selected=visuallyselected,titlechanged,attention",
@@ -191,6 +193,15 @@
 
     get pinned() {
       return this.hasAttribute("pinned");
+    }
+
+    get visible() {
+      return (
+        this.isConnected &&
+        !this.hidden &&
+        !this.closing &&
+        !this.group?.collapsed
+      );
     }
 
     get hidden() {
@@ -321,7 +332,7 @@
     }
 
     get group() {
-      if (this.parentElement.tagName == "tab-group") {
+      if (this.parentElement?.tagName == "tab-group") {
         return this.parentElement;
       }
       return null;
@@ -376,7 +387,7 @@
         });
       }
 
-      if (this.hidden || this.closing) {
+      if (!this.visible) {
         return;
       }
 

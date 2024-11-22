@@ -5,6 +5,7 @@
 package org.mozilla.fenix.settings.logins.fragment
 
 import android.content.DialogInterface
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -15,9 +16,11 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.addCallback
+import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.core.view.MenuProvider
+import androidx.core.view.isVisible
 import androidx.fragment.app.setFragmentResult
 import androidx.fragment.app.setFragmentResultListener
 import androidx.lifecycle.Lifecycle
@@ -28,6 +31,7 @@ import com.google.android.material.snackbar.Snackbar
 import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
+import org.mozilla.fenix.BiometricAuthenticationManager
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.HomeActivity
@@ -38,10 +42,11 @@ import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentLoginDetailBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.increaseTapArea
-import org.mozilla.fenix.ext.redirectToReAuth
+import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.ext.simplifiedUrl
+import org.mozilla.fenix.settings.biometric.bindBiometricsCredentialsPromptOrShowWarning
 import org.mozilla.fenix.settings.logins.LoginsFragmentStore
 import org.mozilla.fenix.settings.logins.SavedLogin
 import org.mozilla.fenix.settings.logins.controller.SavedLoginsStorageController
@@ -66,6 +71,7 @@ class LoginDetailFragment : SecureFragment(R.layout.fragment_login_detail), Menu
 
     private var _binding: FragmentLoginDetailBinding? = null
     private val binding get() = _binding!!
+    private lateinit var startForResult: ActivityResultLauncher<Intent>
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -74,6 +80,14 @@ class LoginDetailFragment : SecureFragment(R.layout.fragment_login_detail), Menu
     ): View? {
         val view = inflater.inflate(R.layout.fragment_login_detail, container, false)
         _binding = FragmentLoginDetailBinding.bind(view)
+
+        startForResult = registerForActivityResult {
+            BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt =
+                false
+            BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticated = true
+            setSecureContentVisibility(true)
+        }
+
         savedLoginsStore =
             StoreProvider.get(findNavController().getBackStackEntry(R.id.savedLogins)) {
                 LoginsFragmentStore(
@@ -124,6 +138,28 @@ class LoginDetailFragment : SecureFragment(R.layout.fragment_login_detail), Menu
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt) {
+            BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt =
+                false
+            BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticated = false
+            setSecureContentVisibility(false)
+
+            bindBiometricsCredentialsPromptOrShowWarning(
+                view = requireView(),
+                onShowPinVerification = { intent -> startForResult.launch(intent) },
+                onAuthSuccess = {
+                    BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticated =
+                        true
+                    setSecureContentVisibility(true)
+                },
+            )
+        } else {
+            setSecureContentVisibility(BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticated)
+        }
+    }
+
     /**
      * As described in #10727, the User should re-auth if the fragment is paused and the user is not
      * navigating to SavedLoginsFragment or EditLoginFragment
@@ -132,11 +168,6 @@ class LoginDetailFragment : SecureFragment(R.layout.fragment_login_detail), Menu
     override fun onPause() {
         deleteDialog?.isShowing.run { deleteDialog?.dismiss() }
         menu.close()
-        redirectToReAuth(
-            listOf(R.id.editLoginFragment, R.id.savedLoginsFragment),
-            findNavController().currentDestination?.id,
-            R.id.loginDetailFragment,
-        )
         super.onPause()
     }
 
@@ -248,6 +279,14 @@ class LoginDetailFragment : SecureFragment(R.layout.fragment_login_detail), Menu
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+        // If you've made it here you're already authenticated. Let's reset the values so we don't
+        // prompt the user again when navigating back.
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt = false
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticated = true
+    }
+
+    private fun setSecureContentVisibility(isVisible: Boolean) {
+        binding.loginDetailLayout.isVisible = isVisible
     }
 
     companion object {

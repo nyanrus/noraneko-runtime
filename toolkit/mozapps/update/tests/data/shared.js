@@ -77,6 +77,7 @@ const FILE_BACKUP_UPDATE_ELEVATED_LOG = "backup-update-elevated.log";
 const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
 const FILE_CHANNEL_PREFS =
   AppConstants.platform == "macosx" ? "ChannelPrefs" : "channel-prefs.js";
+const FILE_INFO_PLIST = "Info.plist";
 const FILE_LAST_UPDATE_ELEVATED_LOG = "last-update-elevated.log";
 const FILE_LAST_UPDATE_LOG = "last-update.log";
 const FILE_PRECOMPLETE = "precomplete";
@@ -98,6 +99,9 @@ const FILE_UPDATES_XML_TMP = "updates.xml.tmp";
 const UPDATE_SETTINGS_CONTENTS =
   "[Settings]\nACCEPTED_MAR_CHANNEL_IDS=xpcshell-test\n";
 const PRECOMPLETE_CONTENTS = 'rmdir "nonexistent_dir/"\n';
+
+const DIR_APP_INFO_PLIST_FILE_CONTENTS =
+  '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleDevelopmentRegion</key><string>English</string><key>CFBundleDisplayName</key><string>dir</string><key>CFBundleExecutable</key><string>firefox</string><key>CFBundleIdentifier</key><string>org.mozilla.firefox</string><key>CFBundleInfoDictionaryVersion</key><string>6.0</string><key>CFBundleName</key><string>dir</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleSignature</key><string>????</string><key>CFBundleVersion</key><string>1.0</string></dict></plist>';
 
 const PR_RDWR = 0x04;
 const PR_CREATE_FILE = 0x08;
@@ -178,7 +182,8 @@ function waitForEvent(topic, status = null) {
 
 /* Triggers post-update processing */
 async function testPostUpdateProcessing() {
-  await gAUS.internal.postUpdateProcessing();
+  // All of the post update processing happens during initialization
+  await gAUS.internal.init(/* force = */ true);
 }
 
 /* Initializes the update service stub */
@@ -189,6 +194,15 @@ async function initUpdateServiceStub() {
   await updateServiceStub.init();
 }
 
+/* Initializes the Update Service, even if it has already been initialized */
+async function reInitUpdateService() {
+  return gAUS.internal.init(/* force = */ true);
+}
+
+async function initUpdateService() {
+  return gAUS.init();
+}
+
 /**
  * Reloads the update xml files.
  *
@@ -197,8 +211,8 @@ async function initUpdateServiceStub() {
  *         be reset. If false (the default), the update xml files will be read
  *         to populate the update metadata.
  */
-function reloadUpdateManagerData(skipFiles = false) {
-  gUpdateManager.internal.reload(skipFiles);
+async function reloadUpdateManagerData(skipFiles = false) {
+  await gUpdateManager.internal.reload(skipFiles);
 }
 
 const observer = {
@@ -941,4 +955,82 @@ async function waitForUpdatePing(archiveChecker, expectedProperties) {
     100
   );
   return updatePing;
+}
+
+/**
+ * It's frequently desirable to run a test many times with different parameters
+ * each time.
+ *
+ * @param  testFn
+ *         The function to test. It is expected to be a function that takes a
+ *         single object of named parameters. For example:
+ *           function test({param1, param2})
+ * @param  parameters
+ *         This can either be an object or an array of objects.
+ *
+ *         If it is an array of objects, it will be treated as a list of
+ *         sets of parameters. The number of times the test is executed will be
+ *         equal to the length of the array.
+ *         For example:
+ *           [{param1: value1}, {param1: value2}]
+ *
+ *         If it is an object, each key will be treated as a parameter with the
+ *         corresponding value will be an array of values that parameter can
+ *         have. The number of times the test is executed will be equal to the
+ *         product of all the array lengths.
+ *         For example:
+ *            {param1: [value1, value2], {param2: [value3]}}
+ * @param  options
+ *         An additional object can be passed that with any of these supported
+ *         options:
+ *           skipFn
+ *             This is evaluated with the test's parameters before each test. If
+ *             it returns `true`, the test is not run with that set of
+ *             parameters.
+ */
+async function parameterizedTest(testFn, parameters, { skipFn } = {}) {
+  logTestInfo(`parameterizedTest - Testing ${testFn.name}`);
+
+  const maybeRunTest = async params => {
+    const invocationDesc = `${testFn.name}(${JSON.stringify(params)})`;
+    if (skipFn && (await skipFn(params))) {
+      logTestInfo("parameterizedTest - SKIPPING " + invocationDesc);
+      return;
+    }
+    logTestInfo("parameterizedTest - START " + invocationDesc);
+    await testFn(params);
+    logTestInfo("parameterizedTest - COMPLETE " + invocationDesc);
+  };
+
+  if (Array.isArray(parameters)) {
+    for (const params of parameters) {
+      await maybeRunTest(params);
+    }
+  } else {
+    const recurse = async (chosenParams, remainingPossibleParams) => {
+      if (!remainingPossibleParams.length) {
+        await maybeRunTest(chosenParams);
+        return;
+      }
+      const [param, argValues] = remainingPossibleParams.shift();
+      for (const argValue of argValues) {
+        chosenParams[param] = argValue;
+        // Clone parameters when we recurse.
+        await recurse(Object.assign({}, chosenParams), [
+          ...remainingPossibleParams,
+        ]);
+      }
+    };
+    await recurse({}, Object.entries(parameters));
+  }
+
+  logTestInfo(`parameterizedTest - Finished testing ${testFn.name}`);
+}
+
+async function startBitsMarDownload(url) {
+  return gAUS.wrappedJSObject.makeBitsRequest({ url });
+}
+
+async function connectToBitsMarDownload(bitsId) {
+  return gAUS.wrappedJSObject.makeBitsRequest({ bitsId });
 }

@@ -79,8 +79,8 @@ function allowedHub(urlString) {
     const host = url.hostname;
     const fullPrefix = `${scheme}//${host}`;
 
-    return ALLOWED_HUBS.some(allowedHub => {
-      const [allowedScheme, allowedHost] = allowedHub.split("://");
+    return ALLOWED_HUBS.some(hubName => {
+      const [allowedScheme, allowedHost] = hubName.split("://");
       if (allowedHost === "*") {
         return `${allowedScheme}:` === scheme;
       }
@@ -747,13 +747,28 @@ export class IndexedDBCache {
 
     let deletePromises = [];
     const filesToMaybeDelete = new Set();
-    for (const { taskName, model, revision, file } of tasks) {
-      if (filterFn && !filterFn({ taskName, model, revision, file })) {
+    for (const task of tasks) {
+      if (
+        filterFn &&
+        !filterFn({
+          taskName: task.taskName,
+          model: task.model,
+          revision: task.revision,
+          file: task.file,
+        })
+      ) {
         continue;
       }
-      filesToMaybeDelete.add(JSON.stringify([model, revision, file]));
+      filesToMaybeDelete.add(
+        JSON.stringify([task.model, task.revision, task.file])
+      );
       deletePromises.push(
-        this.#deleteData(this.taskStoreName, [taskName, model, revision, file])
+        this.#deleteData(this.taskStoreName, [
+          task.taskName,
+          task.model,
+          task.revision,
+          task.file,
+        ])
       );
     }
     await Promise.all(deletePromises);
@@ -774,17 +789,25 @@ export class IndexedDBCache {
     const filesToDelete = filesToMaybeDelete.difference(remainingFiles);
 
     for (const key of filesToDelete) {
-      const [model, revision, file] = JSON.parse(key);
+      const [modelValue, revisionValue, fileValue] = JSON.parse(key);
 
       deletePromises.push(
         this.#deleteData(
           this.fileStoreName,
-          this.#generatePrimaryKey({ model, revision, file })
+          this.#generatePrimaryKey({
+            model: modelValue,
+            revision: revisionValue,
+            file: fileValue,
+          })
         )
       );
 
       deletePromises.push(
-        this.#deleteData(this.headersStoreName, [model, revision, file])
+        this.#deleteData(this.headersStoreName, [
+          modelValue,
+          revisionValue,
+          fileValue,
+        ])
       );
     }
 
@@ -818,12 +841,12 @@ export class IndexedDBCache {
 
     const filePromises = [];
 
-    for (const { model, revision } of modelRevisions) {
+    for (const task of modelRevisions) {
       filePromises.push(
         this.#getData({
           storeName: this.headersStoreName,
           indexName: this.#indices.modelRevisionIndex.name,
-          key: [model, revision],
+          key: [task.model, task.revision],
         })
       );
     }
@@ -850,7 +873,6 @@ export class IndexedDBCache {
     });
 
     const models = [];
-
     for (const { key } of modelRevisions) {
       models.push({ name: key[0], revision: key[1] });
     }
@@ -918,39 +940,54 @@ export class ModelHub {
    * parseModelUrl("/org1/model1/revision/file/path");
    * // returns { model: "org1/model1", revision: "v1", file: "file/path" }
    */
-  parseUrl(url) {
+  parseUrl(url, options = {}) {
     let parts;
+    const rootUrl = options.rootUrl || this.rootUrl;
+    const urlTemplate =
+      options.urlTemplate || this.urlTemplate || DEFAULT_URL_TEMPLATE;
+
+    // Check if the URL is relative or absolute
     if (url.startsWith("/")) {
       // relative URL
-      parts = url.slice(1).split("/");
+      parts = url.slice(1); // Remove leading slash
     } else {
       // absolute URL
-      if (!url.startsWith(this.rootUrl)) {
+      if (!url.startsWith(rootUrl)) {
         throw new Error(`Invalid domain for model URL: ${url}`);
       }
       const urlObject = new URL(url);
-      const rootUrlObject = new URL(this.rootUrl);
+      const rootUrlObject = new URL(rootUrl);
 
       // Remove the root URL's pathname from the full URL's pathname
       const relativePath = urlObject.pathname.substring(
         rootUrlObject.pathname.length
       );
-
-      parts = relativePath.slice(1).split("/");
+      parts = relativePath.slice(1); // Remove leading slash
     }
 
-    if (parts.length < 3) {
-      throw new Error(`Invalid model URL: ${url}`);
+    // Match the parts with the template
+    const templateRegex = urlTemplate
+      .replace("{model}", "(?<model>[^/]+/[^/]+)")
+      .replace("{revision}", "(?<revision>[^/]+)");
+
+    // Create a regex to match the structure
+    const regex = new RegExp(`^${templateRegex}/(?<file>.+)$`);
+    const match = parts.match(regex);
+
+    if (!match) {
+      throw new Error(`Invalid model URL format: ${url}`);
     }
 
-    const file = parts.slice(3).join("/");
-    if (file == null || !file.length) {
+    // Extract the matched parts
+    const { model, revision, file } = match.groups;
+
+    if (!file || !file.length) {
       throw new Error(`Invalid model URL: ${url}`);
     }
 
     return {
-      model: `${parts[0]}/${parts[1]}`,
-      revision: parts[2],
+      model,
+      revision,
       file,
     };
   }

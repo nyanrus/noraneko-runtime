@@ -23,11 +23,12 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.isTablet
+import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.theme.ThemeManager
 
@@ -148,8 +149,6 @@ class DefaultToolbarIntegration(
         toolbar = toolbar,
         isPrivate = isPrivate,
         customTabId = customTabId,
-        onShoppingCfrActionClicked = interactor::onShoppingCfrActionClicked,
-        onShoppingCfrDisplayed = interactor::onShoppingCfrDisplayed,
     )
 
     init {
@@ -159,7 +158,10 @@ class DefaultToolbarIntegration(
             DisplayToolbar.Indicators.HIGHLIGHT,
         )
 
-        addNewTabBrowserAction()
+        if (!context.isTabStripEnabled()) {
+            addNewTabBrowserAction()
+        }
+
         addTabCounterBrowserAction()
     }
 
@@ -213,7 +215,7 @@ class DefaultToolbarIntegration(
     }
 
     private fun buildTabCounterMenu(): TabCounterMenu? =
-        when ((context.settings().navigationToolbarEnabled && context.isTablet())) {
+        when ((context.settings().navigationToolbarEnabled && context.isLargeWindow())) {
             true -> null
             false -> FenixTabCounterMenu(
                 context = context,

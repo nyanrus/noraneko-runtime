@@ -2164,8 +2164,9 @@ nsresult nsDocShell::Now(DOMHighResTimeStamp* aWhen) {
 
 NS_IMETHODIMP
 nsDocShell::SetWindowDraggingAllowed(bool aValue) {
-  RefPtr<nsDocShell> parent = GetInProcessParentDocshell();
-  if (!aValue && mItemType == typeChrome && !parent) {
+  RefPtr<nsDocShell> parent;
+  if (!aValue && mItemType == typeChrome &&
+      !(parent = GetInProcessParentDocshell())) {
     // Window dragging is always allowed for top level
     // chrome docshells.
     return NS_ERROR_FAILURE;
@@ -2179,8 +2180,8 @@ nsDocShell::GetWindowDraggingAllowed(bool* aValue) {
   // window dragging regions in CSS (-moz-window-drag:drag)
   // can be slow. Default behavior is to only allow it for
   // chrome top level windows.
-  RefPtr<nsDocShell> parent = GetInProcessParentDocshell();
-  if (mItemType == typeChrome && !parent) {
+  RefPtr<nsDocShell> parent;
+  if (mItemType == typeChrome && !(parent = GetInProcessParentDocshell())) {
     // Top level chrome window
     *aValue = true;
   } else {
@@ -4321,13 +4322,11 @@ bool nsDocShell::FillLoadStateFromCurrentEntry(
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsDocShell::InitWindow(nativeWindow aParentNativeWindow,
-                       nsIWidget* aParentWidget, int32_t aX, int32_t aY,
+nsDocShell::InitWindow(nsIWidget* aParentWidget, int32_t aX, int32_t aY,
                        int32_t aWidth, int32_t aHeight) {
   SetParentWidget(aParentWidget);
   SetPositionAndSize(aX, aY, aWidth, aHeight, 0);
   NS_ENSURE_TRUE(Initialize(), NS_ERROR_FAILURE);
-
   return NS_OK;
 }
 
@@ -4607,24 +4606,6 @@ nsDocShell::SetParentWidget(nsIWidget* aParentWidget) {
   mParentWidget = aParentWidget;
 
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::GetParentNativeWindow(nativeWindow* aParentNativeWindow) {
-  NS_ENSURE_ARG_POINTER(aParentNativeWindow);
-
-  if (mParentWidget) {
-    *aParentNativeWindow = mParentWidget->GetNativeData(NS_NATIVE_WIDGET);
-  } else {
-    *aParentNativeWindow = nullptr;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetParentNativeWindow(nativeWindow aParentNativeWindow) {
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -6416,7 +6397,7 @@ nsresult nsDocShell::CreateAboutBlankDocumentViewer(
   }
 
   if (!mBrowsingContext->AncestorsAreCurrent() ||
-      mBrowsingContext->IsInBFCache()) {
+      (mozilla::SessionHistoryInParent() && mBrowsingContext->IsInBFCache())) {
     mBrowsingContext->RemoveRootFromBFCacheSync();
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -9000,6 +8981,11 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
   nsCOMPtr<nsPIDOMWindowInner> win =
       scriptGlobal ? scriptGlobal->GetCurrentInnerWindow() : nullptr;
 
+  // The check for uninvoked directives must come before ScrollToAnchor() is
+  // called.
+  const bool hasTextDirectives =
+      doc->FragmentDirective()->HasUninvokedDirectives();
+
   // ScrollToAnchor doesn't necessarily cause us to scroll the window;
   // the function decides whether a scroll is appropriate based on the
   // arguments it receives.  But even if we don't end up scrolling,
@@ -9034,9 +9020,11 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
   // reference to avoid null derefs. See bug 914521.
   if (win) {
     // Fire a hashchange event URIs differ, and only in their hashes.
+    // If the fragment contains a directive, compare hasRef.
     bool doHashchange = aState.mSameExceptHashes &&
-                        (aState.mCurrentURIHasRef != aState.mNewURIHasRef ||
-                         !aState.mCurrentHash.Equals(aState.mNewHash));
+                        (!aState.mCurrentHash.Equals(aState.mNewHash) ||
+                         (hasTextDirectives &&
+                          aState.mCurrentURIHasRef != aState.mNewURIHasRef));
 
     if (aState.mHistoryNavBetweenSameDoc || doHashchange) {
       win->DispatchSyncPopState();
@@ -9294,43 +9282,44 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
 
   // XXXbz mTiming should know what channel it's for, so we don't
   // need this hackery.
-  bool toBeReset = false;
-  bool isJavaScript = SchemeIsJavascript(aLoadState->URI());
+  const bool isJavaScript = SchemeIsJavascript(aLoadState->URI());
+  const bool isExternalProtocol =
+      nsContentUtils::IsExternalProtocol(aLoadState->URI());
+  const bool isDownload = !aLoadState->FileName().IsVoid();
+  const bool toBeReset = !isJavaScript && MaybeInitTiming();
 
-  if (!isJavaScript) {
-    toBeReset = MaybeInitTiming();
-  }
-  bool isNotDownload = aLoadState->FileName().IsVoid();
-  if (mTiming && isNotDownload) {
+  // FIXME(emilio): Should this be done by javascript: uris? What about external
+  // protocols?
+  if (mTiming && !isDownload) {
     mTiming->NotifyBeforeUnload();
   }
   // Check if the page doesn't want to be unloaded. The javascript:
   // protocol handler deals with this for javascript: URLs.
-  if (!isJavaScript && isNotDownload &&
+  // NOTE(emilio): As of this writing, other browsers fire beforeunload for
+  // external protocols, so keep doing that even though they don't return data
+  // and thus we won't really unload this...
+  if (!isJavaScript && !isDownload &&
       !aLoadState->NotifiedBeforeUnloadListeners() && mDocumentViewer) {
-    bool okToUnload;
-
     // Check if request is exempted from HTTPSOnlyMode and if https-first is
     // enabled, if so it means:
     //    * https-first failed to upgrade request to https
     //    * we already asked for permission to unload and the user accepted
     //      otherwise we wouldn't be here.
-    bool isPrivateWin = GetOriginAttributes().IsPrivateBrowsing();
-    bool isHistoryOrReload = false;
-    uint32_t loadType = aLoadState->LoadType();
+    const bool isPrivateWin = GetOriginAttributes().IsPrivateBrowsing();
+    const uint32_t loadType = aLoadState->LoadType();
 
     // Check if request is a reload.
-    if (loadType == LOAD_RELOAD_NORMAL ||
+    const bool isHistoryOrReload =
+        loadType == LOAD_RELOAD_NORMAL ||
         loadType == LOAD_RELOAD_BYPASS_CACHE ||
         loadType == LOAD_RELOAD_BYPASS_PROXY ||
         loadType == LOAD_RELOAD_BYPASS_PROXY_AND_CACHE ||
-        loadType == LOAD_HISTORY) {
-      isHistoryOrReload = true;
-    }
+        loadType == LOAD_HISTORY;
 
     // If it isn't a reload, the request already failed to be upgraded and
     // https-first is enabled then don't ask the user again for permission to
     // unload and just unload.
+    bool okToUnload;
     if (!isHistoryOrReload && aLoadState->IsExemptFromHTTPSFirstMode() &&
         nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
       rv = mDocumentViewer->PermitUnload(
@@ -9348,7 +9337,7 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
     }
   }
 
-  if (mTiming && isNotDownload) {
+  if (mTiming && !isDownload) {
     mTiming->NotifyUnloadAccepted(mCurrentURI);
   }
 
@@ -9382,7 +9371,7 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
   // new request parameter.
   // Also pass nullptr for the document, since it doesn't affect the return
   // value for our purposes here.
-  bool savePresentation =
+  const bool savePresentation =
       CanSavePresentation(aLoadState->LoadType(), nullptr, nullptr,
                           /* aReportBFCacheComboTelemetry */ true);
 
@@ -9403,12 +9392,12 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
     }
   }
 
-  // Don't stop current network activity for javascript: URL's since
-  // they might not result in any data, and thus nothing should be
-  // stopped in those cases. In the case where they do result in
-  // data, the javascript: URL channel takes care of stopping
-  // current network activity.
-  if (!isJavaScript && isNotDownload) {
+  // Don't stop current network activity for javascript: URL's since they might
+  // not result in any data, and thus nothing should be stopped in those cases.
+  // In the case where they do result in data, the javascript: URL channel takes
+  // care of stopping current network activity. Similarly, downloads don't
+  // unload this document...
+  if (!isJavaScript && !isDownload && !isExternalProtocol) {
     // Stop any current network activity.
     // Also stop content if this is a zombie doc. otherwise
     // the onload will be delayed by other loads initiated in the
@@ -9416,7 +9405,6 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
     // didn't fully load before the next load was initiated.
     // If not a zombie, don't stop content until data
     // starts arriving from the new URI...
-
     if ((mDocumentViewer && mDocumentViewer->GetPreviousViewer()) ||
         LOAD_TYPE_HAS_FLAGS(aLoadState->LoadType(), LOAD_FLAGS_STOP_CONTENT)) {
       rv = Stop(nsIWebNavigation::STOP_ALL);
@@ -10073,6 +10061,14 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
                    contentPolicyType == nsIContentPolicy::TYPE_INTERNAL_FRAME,
                "DoURILoad thinks this is a frame and InternalLoad does not");
 
+    if (auto* iframe = HTMLIFrameElement::FromNodeOrNull(
+            mBrowsingContext->GetEmbedderElement())) {
+      // Per spec, reload doesn't cacel lazy loading iframes.
+      if (!(aLoadState->LoadType() & LOAD_RELOAD_NORMAL)) {
+        iframe->CancelLazyLoading(true /* aClearLazyLoadState */);
+      }
+    }
+
     if (StaticPrefs::dom_block_external_protocol_in_iframes()) {
       // Only allow URLs able to return data in iframes.
       if (nsContentUtils::IsExternalProtocol(aLoadState->URI())) {
@@ -10430,7 +10426,7 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
   }
 
   nsLoadFlags loadFlags = aLoadState->CalculateChannelLoadFlags(
-      mBrowsingContext, Some(uriModified), Some(isEmbeddingBlockedError));
+      mBrowsingContext, uriModified, Some(isEmbeddingBlockedError));
 
   nsCOMPtr<nsIChannel> channel;
   if (DocumentChannel::CanUseDocumentChannel(aLoadState->URI()) &&

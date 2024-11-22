@@ -109,6 +109,7 @@ class GlobalObjectData {
 
   ~GlobalObjectData();
 
+#ifndef NIGHTLY_BUILD
   // The global environment record's [[VarNames]] list that contains all
   // names declared using FunctionDeclaration, GeneratorDeclaration, and
   // VariableDeclaration declarations in global code in this global's realm.
@@ -117,6 +118,7 @@ class GlobalObjectData {
   using VarNamesSet =
       GCHashSet<HeapPtr<JSAtom*>, DefaultHasher<JSAtom*>, CellAllocPolicy>;
   VarNamesSet varNames;
+#endif
 
   // The original values for built-in constructors (with their prototype
   // objects) based on JSProtoKey.
@@ -136,7 +138,6 @@ class GlobalObjectData {
   // Built-in prototypes for this global. Note that this is different from the
   // set of built-in constructors/prototypes based on JSProtoKey.
   enum class ProtoKind {
-    IteratorProto,
     ArrayIteratorProto,
     StringIteratorProto,
     RegExpStringIteratorProto,
@@ -758,18 +759,18 @@ class GlobalObject : public NativeObject {
 
  public:
   NativeObject* maybeGetIteratorPrototype() {
-    if (JSObject* obj = maybeBuiltinProto(ProtoKind::IteratorProto)) {
-      return &obj->as<NativeObject>();
+    if (!hasPrototype(JSProto_Iterator)) {
+      return nullptr;
     }
-    return nullptr;
+    return &(getPrototype(JSProto_Iterator).as<NativeObject>());
   }
 
   static JSObject* getOrCreateIteratorPrototype(JSContext* cx,
                                                 Handle<GlobalObject*> global) {
-    if (JSObject* proto = global->maybeBuiltinProto(ProtoKind::IteratorProto)) {
-      return proto;
+    if (!ensureConstructor(cx, global, JSProto_Iterator)) {
+      return nullptr;
     }
-    return createIteratorPrototype(cx, global);
+    return &global->getPrototype(JSProto_Iterator);
   }
 
   static NativeObject* getOrCreateArrayIteratorPrototype(
@@ -999,6 +1000,7 @@ class GlobalObject : public NativeObject {
   // global.
   bool valueIsEval(const Value& val);
 
+#ifndef NIGHTLY_BUILD
   void removeFromVarNames(JSAtom* name) { data().varNames.remove(name); }
 
   // Whether the given name is in [[VarNames]].
@@ -1006,6 +1008,7 @@ class GlobalObject : public NativeObject {
 
   // Add a name to [[VarNames]].  Reports OOM on failure.
   [[nodiscard]] bool addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name);
+#endif
 
   static ArgumentsObject* getOrCreateArgumentsTemplateObject(JSContext* cx,
                                                              bool mapped);
@@ -1027,7 +1030,6 @@ class GlobalObject : public NativeObject {
       JSContext* cx, Handle<GlobalObject*> global);
 
   // Implemented in vm/Iteration.cpp.
-  static bool initIteratorProto(JSContext* cx, Handle<GlobalObject*> global);
   template <ProtoKind Kind, const JSClass* ProtoClass,
             const JSFunctionSpec* Methods, const bool needsFuseProperty = false>
   static bool initObjectIteratorProto(JSContext* cx,

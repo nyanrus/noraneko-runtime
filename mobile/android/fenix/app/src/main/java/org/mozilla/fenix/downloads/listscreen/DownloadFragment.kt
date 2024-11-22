@@ -116,7 +116,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     private fun observeModeChanges() {
         viewLifecycleOwner.lifecycleScope.launch {
             downloadStore.flow()
-                .distinctUntilChangedBy { it.mode::class }
+                .distinctUntilChangedBy { it.mode }
                 .map { it.mode }
                 .collect { mode ->
                     invalidateOptionsMenu()
@@ -290,6 +290,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     override fun onDetach() {
         super.onDetach()
         context?.let {
+            activity?.title = getString(R.string.app_name)
             activity?.findViewById<Toolbar>(R.id.navigationToolbar)?.setToolbarColors(
                 it.getColorFromAttr(R.attr.textPrimary),
                 it.getColorFromAttr(R.attr.layer1),

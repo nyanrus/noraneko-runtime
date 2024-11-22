@@ -151,6 +151,25 @@ var gBrowserInit = {
     gNavToolbox.palette = document.getElementById(
       "BrowserToolbarPalette"
     ).content;
+
+    let isVerticalTabs = Services.prefs.getBoolPref(
+      "sidebar.verticalTabs",
+      false
+    );
+    let nonRemovables;
+
+    // We don't want these normally non-removable elements to get put back into the
+    // tabstrip if we're initializing with vertical tabs.
+    // We should refrain from excluding popups here to make sure CUI doesn't
+    // get into a blank saved state.
+    if (isVerticalTabs) {
+      nonRemovables = [gBrowser.tabContainer];
+      for (let elem of nonRemovables) {
+        elem.setAttribute("removable", "true");
+        // tell CUI to ignore this element when it builds the toolbar areas
+        elem.setAttribute("skipintoolbarset", "true");
+      }
+    }
     for (let area of CustomizableUI.areas) {
       let type = CustomizableUI.getAreaType(area);
       /*@nora:inject:start*/
@@ -158,6 +177,35 @@ var gBrowserInit = {
       /*@nora:inject:end*/
         let node = document.getElementById(area);
         CustomizableUI.registerToolbarNode(node);
+      }
+    }
+    if (isVerticalTabs) {
+      // Show the vertical tabs toolbar
+      setToolbarVisibility(
+        document.getElementById(CustomizableUI.AREA_VERTICAL_TABSTRIP),
+        true,
+        false,
+        false
+      );
+      let tabstripToolbar = document.getElementById(
+        CustomizableUI.AREA_TABSTRIP
+      );
+      let wasCollapsed = tabstripToolbar.collapsed;
+      TabBarVisibility.update();
+      if (tabstripToolbar.collapsed !== wasCollapsed) {
+        let eventParams = {
+          detail: {
+            visible: !tabstripToolbar.collapsed,
+          },
+          bubbles: true,
+        };
+        let event = new CustomEvent("toolbarvisibilitychange", eventParams);
+        tabstripToolbar.dispatchEvent(event);
+      }
+
+      for (let elem of nonRemovables) {
+        elem.setAttribute("removable", "false");
+        elem.removeAttribute("skipintoolbarset");
       }
     }
     BrowserSearch.initPlaceHolder();
@@ -327,10 +375,6 @@ var gBrowserInit = {
     TelemetryTimestamps.add("delayedStartupStarted");
 
     this._cancelDelayedStartup();
-
-    // Bug 1531854 - The hidden window is force-created here
-    // until all of its dependencies are handled.
-    Services.appShell.hiddenDOMWindow;
 
     gBrowser.addEventListener(
       "PermissionStateChange",
@@ -619,7 +663,9 @@ var gBrowserInit = {
 
     ShoppingSidebarManager.ensureInitialized();
 
-    SelectableProfileService?.init();
+    if (Services.prefs.getBoolPref("browser.profiles.enabled", false)) {
+      SelectableProfileService?.init();
+    }
 
     SessionStore.promiseAllWindowsRestored.then(() => {
       this._schedulePerWindowIdleTasks();
@@ -898,7 +944,6 @@ var gBrowserInit = {
               "resource:///modules/DownloadsMacFinderProgress.sys.mjs"
             ).DownloadsMacFinderProgress.register();
           }
-          Services.telemetry.setEventRecordingEnabled("downloads", true);
         } catch (ex) {
           console.error(ex);
         }
@@ -918,6 +963,10 @@ var gBrowserInit = {
       gGfxUtils.init();
     });
 
+    scheduleIdleTask(async () => {
+      await gProfiles.init();
+    });
+
     // This should always go last, since the idle tasks (except for the ones with
     // timeouts) should execute in order. Note that this observer notification is
     // not guaranteed to fire, since the window could close before we get here.
@@ -927,10 +976,6 @@ var gBrowserInit = {
         window,
         "browser-idle-startup-tasks-finished"
       );
-    });
-
-    scheduleIdleTask(() => {
-      gProfiles.init();
     });
   },
 
@@ -1201,7 +1246,6 @@ var gBrowserInit = {
     // Final window teardown, do this last.
     gBrowser.destroy();
     window.XULBrowserWindow = null;
-
     /*@nora:inject:start*/
     let webPanelId = new URL(window.location.href).searchParams.get(
       "floorpWebPanelId"

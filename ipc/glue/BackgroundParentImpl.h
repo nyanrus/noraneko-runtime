@@ -56,16 +56,6 @@ class BackgroundParentImpl : public PBackgroundParent {
       const PersistenceType& aPersistenceType,
       const PrincipalInfo& aPrincipalInfo) override;
 
-  already_AddRefed<PBackgroundLSDatabaseParent>
-  AllocPBackgroundLSDatabaseParent(const PrincipalInfo& aPrincipalInfo,
-                                   const uint32_t& aPrivateBrowsingId,
-                                   const uint64_t& aDatastoreId) override;
-
-  mozilla::ipc::IPCResult RecvPBackgroundLSDatabaseConstructor(
-      PBackgroundLSDatabaseParent* aActor, const PrincipalInfo& aPrincipalInfo,
-      const uint32_t& aPrivateBrowsingId,
-      const uint64_t& aDatastoreId) override;
-
   PBackgroundLSObserverParent* AllocPBackgroundLSObserverParent(
       const uint64_t& aObserverId) override;
 
@@ -192,6 +182,10 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   bool DeallocPBroadcastChannelParent(PBroadcastChannelParent* aActor) override;
 
+  virtual PCookieStoreParent* AllocPCookieStoreParent() override;
+
+  virtual bool DeallocPCookieStoreParent(PCookieStoreParent* aActor) override;
+
   PServiceWorkerManagerParent* AllocPServiceWorkerManagerParent() override;
 
   bool DeallocPServiceWorkerManagerParent(
@@ -315,11 +309,13 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   already_AddRefed<PServiceWorkerRegistrationParent>
   AllocPServiceWorkerRegistrationParent(
-      const IPCServiceWorkerRegistrationDescriptor&) final;
+      const IPCServiceWorkerRegistrationDescriptor&,
+      const IPCClientInfo&) final;
 
   mozilla::ipc::IPCResult RecvPServiceWorkerRegistrationConstructor(
       PServiceWorkerRegistrationParent* aActor,
-      const IPCServiceWorkerRegistrationDescriptor& aDescriptor) override;
+      const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
+      const IPCClientInfo& aForClient) override;
 
   PEndpointForReportParent* AllocPEndpointForReportParent(
       const nsAString& aGroupName,

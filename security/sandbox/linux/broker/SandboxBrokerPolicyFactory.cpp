@@ -8,7 +8,6 @@
 #include "SandboxInfo.h"
 #include "SandboxLogging.h"
 
-#include "base/shared_memory.h"
 #include "mozilla/Array.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Omnijar.h"
@@ -19,6 +18,7 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/ipc/SharedMemory.h"
 #include "nsComponentManagerUtils.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
@@ -323,7 +323,7 @@ static void AddLdLibraryEnvPaths(SandboxBroker::Policy* aPolicy) {
 
 static void AddSharedMemoryPaths(SandboxBroker::Policy* aPolicy, pid_t aPid) {
   std::string shmPath("/dev/shm");
-  if (base::SharedMemory::AppendPosixShmPrefix(&shmPath, aPid)) {
+  if (ipc::SharedMemory::AppendPosixShmPrefix(&shmPath, aPid)) {
     aPolicy->AddPrefix(rdwrcr, shmPath.c_str());
   }
 }
@@ -406,6 +406,14 @@ static void AddGLDependencies(SandboxBroker::Policy* policy) {
     nsAutoCString snapDesktopShare(snapDesktopDir);
     snapDesktopShare.AppendLiteral("/usr/share");
     policy->AddDir(rdonly, snapDesktopShare.get());
+  }
+
+  // Introduced by Snap's core24 changes there is a gpu-2404 dependency and
+  // it is recommended to allow access to all of it?
+  if (const char* snapRoot = PR_GetEnv("SNAP")) {
+    nsAutoCString snapRootString(snapRoot);
+    snapRootString.AppendLiteral("/gpu-2404");
+    policy->AddDir(rdonly, snapRootString.get());
   }
 
   // Note: This function doesn't do anything about Mesa's shader
@@ -548,7 +556,7 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
       // GetSpecialSystemDirectory(Unix_XDG_ConfigHome) ?
       nsCOMPtr<nsIFile> confDirOrXDGConfigHomeDir;
       if (!xdgConfigHome.IsEmpty()) {
-        rv = NS_NewNativeLocalFile(xdgConfigHome, true,
+        rv = NS_NewNativeLocalFile(xdgConfigHome,
                                    getter_AddRefs(confDirOrXDGConfigHomeDir));
         // confDirOrXDGConfigHomeDir = nsIFile($XDG_CONFIG_HOME)
       } else {
@@ -679,20 +687,6 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
   // Whitelisted for reading by the user/distro
   AddDynamicPathList(policy, "security.sandbox.content.read_path_whitelist",
                      rdonly);
-
-#if defined(MOZ_CONTENT_TEMP_DIR)
-  // Add write permissions on the content process specific temporary dir.
-  nsCOMPtr<nsIFile> tmpDir;
-  rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
-                              getter_AddRefs(tmpDir));
-  if (NS_SUCCEEDED(rv)) {
-    nsAutoCString tmpPath;
-    rv = tmpDir->GetNativePath(tmpPath);
-    if (NS_SUCCEEDED(rv)) {
-      policy->AddDir(rdwrcr, tmpPath.get());
-    }
-  }
-#endif
 
   // userContent.css and the extensions dir sit in the profile, which is
   // normally blocked.

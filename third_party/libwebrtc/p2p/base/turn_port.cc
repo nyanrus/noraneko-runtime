@@ -989,7 +989,9 @@ void TurnPort::Release() {
 
 void TurnPort::Close() {
   if (!ready()) {
-    OnAllocateError(SERVER_NOT_REACHABLE_ERROR, "");
+    OnAllocateError(
+        SERVER_NOT_REACHABLE_ERROR,
+        GetProtocol() != PROTO_UDP ? "Failed to establish connection" : "");
   }
   request_manager_.Clear();
   // Stop the port from creating new connections.
@@ -1297,8 +1299,8 @@ void TurnPort::SetCallbacksForTest(CallbacksForTest* callbacks) {
   callbacks_for_test_ = callbacks;
 }
 
-bool TurnPort::SetEntryChannelId(const rtc::SocketAddress& address,
-                                 int channel_id) {
+bool TurnPort::SetEntryChannelIdForTesting(const rtc::SocketAddress& address,
+                                           int channel_id) {
   TurnEntry* entry = FindEntry(address);
   if (!entry) {
     return false;
@@ -1415,10 +1417,10 @@ void TurnAllocateRequest::OnResponse(StunMessage* response) {
   }
 
   const StunUInt32Attribute* lifetime_attr =
-      response->GetUInt32(STUN_ATTR_TURN_LIFETIME);
+      response->GetUInt32(STUN_ATTR_LIFETIME);
   if (!lifetime_attr) {
     RTC_LOG(LS_WARNING) << port_->ToString()
-                        << ": Missing STUN_ATTR_TURN_LIFETIME attribute in "
+                        << ": Missing STUN_ATTR_LIFETIME attribute in "
                            "allocate success response";
     return;
   }
@@ -1585,10 +1587,10 @@ void TurnRefreshRequest::OnResponse(StunMessage* response) {
 
   // Check mandatory attributes as indicated in RFC5766, Section 7.3.
   const StunUInt32Attribute* lifetime_attr =
-      response->GetUInt32(STUN_ATTR_TURN_LIFETIME);
+      response->GetUInt32(STUN_ATTR_LIFETIME);
   if (!lifetime_attr) {
     RTC_LOG(LS_WARNING) << port_->ToString()
-                        << ": Missing STUN_ATTR_TURN_LIFETIME attribute in "
+                        << ": Missing STUN_ATTR_LIFETIME attribute in "
                            "refresh success response.";
     return;
   }

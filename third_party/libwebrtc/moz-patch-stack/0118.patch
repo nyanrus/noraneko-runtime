@@ -1,30 +1,23 @@
-From: Byron Campen <docfaraday@gmail.com>
-Date: Thu, 25 Jul 2024 10:07:00 -0500
-Subject: Bug 1909234 - (fix-4fec6f9c67dc) Hollow out the new ssl_adapter lib.
- r?mjf
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 17 Sep 2024 13:33:00 -0500
+Subject: Bug 1918268 - (fix-96c1b9c5ea) provide template arg for optional to
+ fix compile error
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ee2f06666bcc6d22c4d7c93b78fb52d28452d055
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ca2211dbb0dd8864768cdcce1ea146bdbb0faeda
 ---
- rtc_base/BUILD.gn | 2 ++
- 1 file changed, 2 insertions(+)
+ video/video_send_stream_impl.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
-index e0d3a77765..3c13f01e7f 100644
---- a/rtc_base/BUILD.gn
-+++ b/rtc_base/BUILD.gn
-@@ -1652,6 +1652,7 @@ if (!build_with_mozilla) {
+diff --git a/video/video_send_stream_impl.cc b/video/video_send_stream_impl.cc
+index 181f146540..265f79a479 100644
+--- a/video/video_send_stream_impl.cc
++++ b/video/video_send_stream_impl.cc
+@@ -782,7 +782,7 @@ MediaStreamAllocationConfig VideoSendStreamImpl::GetAllocationConfig() const {
+       !config_.suspend_below_min_bitrate,
+       encoder_bitrate_priority_,
+       (content_type_ == VideoEncoderConfig::ContentType::kRealtimeVideo)
+-          ? absl::optional(TrackRateElasticity::kCanConsumeExtraRate)
++          ? absl::optional<TrackRateElasticity>(TrackRateElasticity::kCanConsumeExtraRate)
+           : absl::nullopt};
  }
  
- rtc_library("ssl_adapter") {
-+if (!build_with_mozilla) {
-   visibility = [ "*" ]
-   sources = [
-     "openssl_adapter.cc",
-@@ -1701,6 +1702,7 @@ rtc_library("ssl_adapter") {
-     configs += [ ":external_ssl_library" ]
-   }
- }
-+}
- 
- rtc_source_set("gtest_prod") {
-   sources = [ "gtest_prod_util.h" ]

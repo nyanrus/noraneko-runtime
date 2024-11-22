@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     back::{self, Baked},
-    proc::{self, NameKey},
+    proc::{self, ExpressionKindTracker, NameKey},
     valid, Handle, Module, Scalar, ScalarKind, ShaderStage, TypeInner,
 };
 use std::{fmt, mem};
@@ -346,6 +346,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 info,
                 expressions: &function.expressions,
                 named_expressions: &function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&function.expressions),
             };
             let name = self.names[&NameKey::Function(handle)].clone();
 
@@ -386,6 +387,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 info,
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
 
             self.write_wrapped_functions(module, &ctx)?;
@@ -963,7 +965,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let constant = &module.constants[handle];
         self.write_type(module, constant.ty)?;
         let name = &self.names[&NameKey::Constant(handle)];
-        write!(self.out, " {}", name)?;
+        write!(self.out, " {name}")?;
         // Write size for array type
         if let TypeInner::Array { base, size, .. } = module.types[constant.ty].inner {
             self.write_array_size(module, base, size)?;
@@ -2381,11 +2383,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 // decimal part even it's zero
                 crate::Literal::F64(value) => write!(self.out, "{value:?}L")?,
                 crate::Literal::F32(value) => write!(self.out, "{value:?}")?,
-                crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
-                crate::Literal::I32(value) => write!(self.out, "{}", value)?,
-                crate::Literal::U64(value) => write!(self.out, "{}uL", value)?,
-                crate::Literal::I64(value) => write!(self.out, "{}L", value)?,
-                crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
+                crate::Literal::U32(value) => write!(self.out, "{value}u")?,
+                crate::Literal::I32(value) => write!(self.out, "{value}")?,
+                crate::Literal::U64(value) => write!(self.out, "{value}uL")?,
+                crate::Literal::I64(value) => write!(self.out, "{value}L")?,
+                crate::Literal::Bool(value) => write!(self.out, "{value}")?,
                 crate::Literal::AbstractInt(_) | crate::Literal::AbstractFloat(_) => {
                     return Err(Error::Custom(
                         "Abstract types should not appear in IR presented to backends".into(),

@@ -427,6 +427,7 @@ class DefaultSessionControlController(
                 searchEngine,
                 searchEngine == store.state.search.selectedOrDefaultSearchEngine,
                 searchAccessPoint,
+                activity.components.nimbus.events,
             )
         }
 
@@ -448,15 +449,11 @@ class DefaultSessionControlController(
             if (existingTabForUrl == null) {
                 TopSites.openInNewTab.record(NoExtras())
 
-                val tabId = addTabUseCase.invoke(
+                addTabUseCase.invoke(
                     url = appendSearchAttributionToUrlIfNeeded(topSite.url),
                     selectTab = true,
                     startLoading = true,
                 )
-
-                if (settings.openNextTabInDesktopMode) {
-                    activity.handleRequestDesktopMode(tabId)
-                }
             } else {
                 selectTabUseCase.invoke(existingTabForUrl.id)
             }

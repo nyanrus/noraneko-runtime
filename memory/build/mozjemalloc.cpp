@@ -426,7 +426,7 @@ struct arena_chunk_t {
   size_t ndirty;
 
   // Map of pages within chunk that keeps track of free/large/small.
-  arena_chunk_map_t map[1];  // Dynamically sized.
+  arena_chunk_map_t map[];  // Dynamically sized.
 };
 
 // ***************************************************************************
@@ -577,8 +577,8 @@ DEFINE_GLOBAL(size_t) gChunkNumPages = kChunkSize >> gPageSize2Pow;
 // Number of pages necessary for a chunk header plus a guard page.
 DEFINE_GLOBAL(size_t)
 gChunkHeaderNumPages =
-    1 + (((sizeof(arena_chunk_t) +
-           sizeof(arena_chunk_map_t) * (gChunkNumPages - 1) + gPageSizeMask) &
+    1 + (((sizeof(arena_chunk_t) + sizeof(arena_chunk_map_t) * gChunkNumPages +
+           gPageSizeMask) &
           ~gPageSizeMask) >>
          gPageSize2Pow);
 
@@ -1020,7 +1020,7 @@ struct arena_run_t {
 #endif
 
   // Bitmask of in-use regions (0: in use, 1: free).
-  unsigned mRegionsMask[1];  // Dynamically sized.
+  unsigned mRegionsMask[];  // Dynamically sized.
 };
 
 struct arena_bin_t {
@@ -1148,6 +1148,7 @@ struct arena_t {
   // on first use to avoid recursive malloc initialization (e.g. on OSX
   // arc4random allocates memory).
   mozilla::non_crypto::XorShift128PlusRNG* mPRNG;
+  bool mIsPRNGInitializing;
 
  public:
   // Current count of pages within unused runs that are potentially
@@ -1198,10 +1199,14 @@ struct arena_t {
   //  |      46  | 3584 |
   //  |      47  | 3840 |
   //  +----------+------+
-  arena_bin_t mBins[1];  // Dynamically sized.
+  arena_bin_t mBins[];  // Dynamically sized.
 
   explicit arena_t(arena_params_t* aParams, bool aIsPrivate);
   ~arena_t();
+
+  void ResetSmallAllocRandomization();
+
+  void InitPRNG() MOZ_REQUIRES(mLock);
 
  private:
   void InitChunk(arena_chunk_t* aChunk, size_t aMinCommittedPages);
@@ -1909,7 +1914,7 @@ arena_t* TypedBaseAlloc<arena_t>::sFirstFree = nullptr;
 template <>
 size_t TypedBaseAlloc<arena_t>::size_of() {
   // Allocate enough space for trailing bins.
-  return sizeof(arena_t) + (sizeof(arena_bin_t) * (NUM_SMALL_CLASSES - 1));
+  return sizeof(arena_t) + (sizeof(arena_bin_t) * NUM_SMALL_CLASSES);
 }
 
 template <typename T>
@@ -3390,6 +3395,40 @@ void arena_bin_t::Init(SizeClass aSizeClass) {
   mSizeDivisor = FastDivisor<uint16_t>(aSizeClass.Size(), try_run_size);
 }
 
+void arena_t::ResetSmallAllocRandomization() {
+  if (MOZ_UNLIKELY(opt_randomize_small)) {
+    MaybeMutexAutoLock lock(mLock);
+    InitPRNG();
+  }
+  mRandomizeSmallAllocations = opt_randomize_small;
+}
+
+void arena_t::InitPRNG() {
+  // Both another thread could race and the code backing RandomUint64
+  // (arc4random for example) may allocate memory while here, so we must
+  // ensure to start the mPRNG initialization only once and to not hold
+  // the lock while initializing.
+  mIsPRNGInitializing = true;
+  {
+    mLock.Unlock();
+    mozilla::Maybe<uint64_t> prngState1 = mozilla::RandomUint64();
+    mozilla::Maybe<uint64_t> prngState2 = mozilla::RandomUint64();
+    mLock.Lock();
+
+    mozilla::non_crypto::XorShift128PlusRNG prng(prngState1.valueOr(0),
+                                                 prngState2.valueOr(0));
+    if (mPRNG) {
+      *mPRNG = prng;
+    } else {
+      void* backing =
+          base_alloc(sizeof(mozilla::non_crypto::XorShift128PlusRNG));
+      mPRNG = new (backing)
+          mozilla::non_crypto::XorShift128PlusRNG(std::move(prng));
+    }
+  }
+  mIsPRNGInitializing = false;
+}
+
 void* arena_t::MallocSmall(size_t aSize, bool aZero) {
   void* ret;
   arena_bin_t* bin;
@@ -3424,29 +3463,14 @@ void* arena_t::MallocSmall(size_t aSize, bool aZero) {
   MOZ_DIAGNOSTIC_ASSERT(aSize == bin->mSizeClass);
 
   {
-    // Before we lock, we determine if we need to randomize the allocation
-    // because if we do, we need to create the PRNG which might require
-    // allocating memory (arc4random on OSX for example) and we need to
-    // avoid the deadlock
-    if (MOZ_UNLIKELY(mRandomizeSmallAllocations && mPRNG == nullptr)) {
-      // This is frustrating. Because the code backing RandomUint64 (arc4random
-      // for example) may allocate memory, and because
-      // mRandomizeSmallAllocations is true and we haven't yet initilized mPRNG,
-      // we would re-enter this same case and cause a deadlock inside e.g.
-      // arc4random.  So we temporarily disable mRandomizeSmallAllocations to
-      // skip this case and then re-enable it
-      mRandomizeSmallAllocations = false;
-      mozilla::Maybe<uint64_t> prngState1 = mozilla::RandomUint64();
-      mozilla::Maybe<uint64_t> prngState2 = mozilla::RandomUint64();
-      void* backing =
-          base_alloc(sizeof(mozilla::non_crypto::XorShift128PlusRNG));
-      mPRNG = new (backing) mozilla::non_crypto::XorShift128PlusRNG(
-          prngState1.valueOr(0), prngState2.valueOr(0));
-      mRandomizeSmallAllocations = true;
+    MaybeMutexAutoLock lock(mLock);
+
+    if (MOZ_UNLIKELY(mRandomizeSmallAllocations && mPRNG == nullptr &&
+                     !mIsPRNGInitializing)) {
+      InitPRNG();
     }
     MOZ_ASSERT(!mRandomizeSmallAllocations || mPRNG);
 
-    MaybeMutexAutoLock lock(mLock);
     run = bin->mCurrentRun;
     if (MOZ_UNLIKELY(!run || run->mNumFree == 0)) {
       run = bin->mCurrentRun = GetNonFullBinRun(bin);
@@ -4180,6 +4204,7 @@ arena_t::arena_t(arena_params_t* aParams, bool aIsPrivate) {
   MOZ_RELEASE_ASSERT(mLock.Init(doLock));
 
   mPRNG = nullptr;
+  mIsPRNGInitializing = false;
 
   mIsPrivate = aIsPrivate;
 
@@ -4873,6 +4898,7 @@ inline void MozJemalloc::jemalloc_stats_internal(
 
   // Gather runtime settings.
   aStats->opt_junk = opt_junk;
+  aStats->opt_randomize_small = opt_randomize_small;
   aStats->opt_zero = opt_zero;
   aStats->quantum = kQuantum;
   aStats->quantum_max = kMaxQuantumClass;
@@ -5089,9 +5115,23 @@ inline void MozJemalloc::jemalloc_free_dirty_pages(void) {
   if (malloc_initialized) {
     MutexAutoLock lock(gArenas.mLock);
     MOZ_ASSERT(gArenas.IsOnMainThreadWeak());
-    for (auto arena : gArenas.iter()) {
+    for (auto* arena : gArenas.iter()) {
       MaybeMutexAutoLock arena_lock(arena->mLock);
       arena->Purge(1);
+    }
+  }
+}
+
+inline void MozJemalloc::jemalloc_free_excess_dirty_pages(void) {
+  if (malloc_initialized) {
+    MutexAutoLock lock(gArenas.mLock);
+    for (auto* arena : gArenas.iter()) {
+      MaybeMutexAutoLock arena_lock(arena->mLock);
+
+      size_t maxDirty = arena->EffectiveMaxDirty();
+      if (arena->mNumDirty > maxDirty) {
+        arena->Purge(maxDirty);
+      }
     }
   }
 }
@@ -5146,6 +5186,40 @@ inline void MozJemalloc::moz_dispose_arena(arena_id_t aArenaId) {
 
 inline void MozJemalloc::moz_set_max_dirty_page_modifier(int32_t aModifier) {
   gArenas.SetDefaultMaxDirtyPageModifier(aModifier);
+}
+
+inline void MozJemalloc::jemalloc_reset_small_alloc_randomization(
+    bool aRandomizeSmall) {
+  // When this process got forked by ForkServer then it inherited the existing
+  // state of mozjemalloc. Specifically, parsing of MALLOC_OPTIONS has already
+  // been done but it may not reflect anymore the current set of options after
+  // the fork().
+  //
+  // Similar behavior is also present on Android where it is also required to
+  // perform this step.
+  //
+  // Content process will have randomization on small malloc disabled via the
+  // MALLOC_OPTIONS environment variable set by parent process, missing this
+  // will lead to serious performance regressions because CPU prefetch will
+  // break, cf bug 1912262.  However on forkserver-forked Content processes, the
+  // environment is not yet reset when the postfork child handler is being
+  // called.
+  //
+  // This API is here to allow those Content processes (spawned by ForkServer or
+  // Android service) to notify jemalloc to turn off the randomization on small
+  // allocations and perform the required reinitialization of already existing
+  // arena's PRNG.  It is important to make sure that the PRNG state is properly
+  // re-initialized otherwise child processes would share all the same state.
+
+  {
+    AutoLock<StaticMutex> lock(gInitLock);
+    opt_randomize_small = aRandomizeSmall;
+  }
+
+  MutexAutoLock lock(gArenas.mLock);
+  for (auto* arena : gArenas.iter()) {
+    arena->ResetSmallAllocRandomization();
+  }
 }
 
 #define MALLOC_DECL(name, return_type, ...)                          \

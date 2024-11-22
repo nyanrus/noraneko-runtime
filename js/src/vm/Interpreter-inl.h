@@ -15,21 +15,16 @@
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "util/CheckedArithmetic.h"
-#include "vm/ArgumentsObject.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_SEARCH_STACK
 #include "vm/JSAtomUtils.h"   // AtomizeString
 #include "vm/Realm.h"
-#include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StaticStrings.h"
 #include "vm/ThrowMsgKind.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordTupleShared.h"
 #endif
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  include "vm/DisposableRecord-inl.h"
-#endif
 #include "vm/GlobalObject-inl.h"
 #include "vm/JSAtomUtils-inl.h"  // PrimitiveValueToId, TypeName
 #include "vm/JSContext-inl.h"
@@ -73,41 +68,14 @@ static inline bool IsUninitializedLexicalSlot(HandleObject obj,
       obj->as<NativeObject>().getSlot(propInfo.slot()));
 }
 
-static inline bool CheckUninitializedLexical(JSContext* cx, PropertyName* name_,
+static inline bool CheckUninitializedLexical(JSContext* cx,
+                                             Handle<PropertyName*> name,
                                              HandleValue val) {
   if (IsUninitializedLexical(val)) {
-    Rooted<PropertyName*> name(cx, name_);
     ReportRuntimeLexicalError(cx, JSMSG_UNINITIALIZED_LEXICAL, name);
     return false;
   }
   return true;
-}
-
-inline bool GetLengthProperty(const Value& lval, MutableHandleValue vp) {
-  /* Optimize length accesses on strings, arrays, and arguments. */
-  if (lval.isString()) {
-    vp.setInt32(lval.toString()->length());
-    return true;
-  }
-  if (lval.isObject()) {
-    JSObject* obj = &lval.toObject();
-    if (obj->is<ArrayObject>()) {
-      vp.setNumber(obj->as<ArrayObject>().length());
-      return true;
-    }
-
-    if (obj->is<ArgumentsObject>()) {
-      ArgumentsObject* argsobj = &obj->as<ArgumentsObject>();
-      if (!argsobj->hasOverriddenLength()) {
-        uint32_t length = argsobj->initialLength();
-        MOZ_ASSERT(length < INT32_MAX);
-        vp.setInt32(int32_t(length));
-        return true;
-      }
-    }
-  }
-
-  return false;
 }
 
 enum class GetNameMode { Normal, TypeOf };
@@ -129,7 +97,8 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
 
   /* Take the slow path if shape was not found in a native object. */
   if (!receiver->is<NativeObject>() || !holder->is<NativeObject>() ||
-      receiver->is<WithEnvironmentObject>()) {
+      (receiver->is<WithEnvironmentObject>() &&
+       receiver->as<WithEnvironmentObject>().supportUnscopables())) {
     Rooted<jsid> id(cx, NameToId(name));
     if (!GetProperty(cx, receiver, receiver, id, vp)) {
       return false;
@@ -140,8 +109,11 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
       /* Fast path for Object instance properties. */
       vp.set(holder->as<NativeObject>().getSlot(propInfo.slot()));
     } else {
+      // Unwrap 'with' environments for reasons given in
+      // GetNameBoundInEnvironment.
+      RootedObject normalized(cx, MaybeUnwrapWithEnvironment(receiver));
       RootedId id(cx, NameToId(name));
-      if (!NativeGetExistingProperty(cx, receiver, holder.as<NativeObject>(),
+      if (!NativeGetExistingProperty(cx, normalized, holder.as<NativeObject>(),
                                      id, propInfo, vp)) {
         return false;
       }
@@ -178,9 +150,8 @@ inline bool GetEnvironmentName(JSContext* cx, HandleObject envChain,
                                MutableHandleValue vp) {
   {
     PropertyResult prop;
-    JSObject* obj = nullptr;
     NativeObject* pobj = nullptr;
-    if (LookupNameNoGC(cx, name, envChain, &obj, &pobj, &prop)) {
+    if (LookupNameNoGC(cx, name, envChain, &pobj, &prop)) {
       if (FetchNameNoGC(pobj, prop, vp.address())) {
         return true;
       }

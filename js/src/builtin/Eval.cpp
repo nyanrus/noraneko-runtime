@@ -12,6 +12,7 @@
 #include "frontend/BytecodeCompiler.h"  // frontend::CompileEvalScript
 #include "gc/HashUtil.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/EnvironmentChain.h"       // JS::EnvironmentChain
 #include "js/friend/ErrorMessages.h"   // js::GetErrorMessage, JSMSG_*
 #include "js/friend/JSMEnvironment.h"  // JS::NewJSMEnvironment, JS::ExecuteInJSMEnvironment, JS::GetJSMEnvironmentOfScriptedCaller, JS::IsJSMEnvironment
 #include "js/friend/WindowProxy.h"     // js::IsWindowProxy
@@ -234,7 +235,8 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
                        jsbytecode* pc, MutableHandleValue vp) {
   MOZ_ASSERT((evalType == INDIRECT_EVAL) == !caller);
   MOZ_ASSERT((evalType == INDIRECT_EVAL) == !pc);
-  MOZ_ASSERT_IF(evalType == INDIRECT_EVAL, IsGlobalLexicalEnvironment(env));
+  MOZ_ASSERT_IF(evalType == INDIRECT_EVAL,
+                env->is<GlobalLexicalEnvironmentObject>());
   AssertInnerizedEnvironmentChain(cx, *env);
 
   // Step 2.
@@ -403,18 +405,20 @@ static bool ExecuteInExtensibleLexicalEnvironment(
 JS_PUBLIC_API bool js::ExecuteInFrameScriptEnvironment(
     JSContext* cx, HandleObject objArg, HandleScript scriptArg,
     MutableHandleObject envArg) {
-  RootedObject varEnv(cx, NonSyntacticVariablesObject::create(cx));
+  Rooted<NonSyntacticVariablesObject*> varEnv(
+      cx, NonSyntacticVariablesObject::create(cx));
   if (!varEnv) {
     return false;
   }
 
-  RootedObjectVector envChain(cx);
+  JS::EnvironmentChain envChain(cx, JS::SupportUnscopables::No);
   if (!envChain.append(objArg)) {
     return false;
   }
 
-  RootedObject env(cx);
-  if (!js::CreateObjectsForEnvironmentChain(cx, envChain, varEnv, &env)) {
+  Rooted<WithEnvironmentObject*> env(
+      cx, js::CreateObjectsForEnvironmentChain(cx, envChain, varEnv));
+  if (!env) {
     return false;
   }
 
@@ -425,8 +429,7 @@ JS_PUBLIC_API bool js::ExecuteInFrameScriptEnvironment(
   // to |this|, and will fail if it is not bound to a message manager.
   ObjectRealm& realm = ObjectRealm::get(varEnv);
   Rooted<NonSyntacticLexicalEnvironmentObject*> lexicalEnv(
-      cx,
-      realm.getOrCreateNonSyntacticLexicalEnvironment(cx, env, varEnv, objArg));
+      cx, realm.getOrCreateNonSyntacticLexicalEnvironment(cx, env, varEnv));
   if (!lexicalEnv) {
     return false;
   }
@@ -440,7 +443,8 @@ JS_PUBLIC_API bool js::ExecuteInFrameScriptEnvironment(
 }
 
 JS_PUBLIC_API JSObject* JS::NewJSMEnvironment(JSContext* cx) {
-  RootedObject varEnv(cx, NonSyntacticVariablesObject::create(cx));
+  Rooted<NonSyntacticVariablesObject*> varEnv(
+      cx, NonSyntacticVariablesObject::create(cx));
   if (!varEnv) {
     return nullptr;
   }
@@ -458,14 +462,13 @@ JS_PUBLIC_API JSObject* JS::NewJSMEnvironment(JSContext* cx) {
 JS_PUBLIC_API bool JS::ExecuteInJSMEnvironment(JSContext* cx,
                                                HandleScript scriptArg,
                                                HandleObject varEnv) {
-  RootedObjectVector emptyChain(cx);
+  JS::EnvironmentChain emptyChain(cx, JS::SupportUnscopables::No);
   return ExecuteInJSMEnvironment(cx, scriptArg, varEnv, emptyChain);
 }
 
-JS_PUBLIC_API bool JS::ExecuteInJSMEnvironment(JSContext* cx,
-                                               HandleScript scriptArg,
-                                               HandleObject varEnv,
-                                               HandleObjectVector targetObj) {
+JS_PUBLIC_API bool JS::ExecuteInJSMEnvironment(
+    JSContext* cx, HandleScript scriptArg, HandleObject varEnv,
+    const EnvironmentChain& targetObj) {
   cx->check(varEnv);
   MOZ_ASSERT(
       ObjectRealm::get(varEnv).getNonSyntacticLexicalEnvironment(varEnv));
@@ -488,8 +491,9 @@ JS_PUBLIC_API bool JS::ExecuteInJSMEnvironment(JSContext* cx,
     //  (*) This environment intercepts JSOp::GlobalThis.
 
     // Wrap the target objects in WithEnvironments.
-    RootedObject envChain(cx);
-    if (!js::CreateObjectsForEnvironmentChain(cx, targetObj, env, &envChain)) {
+    Rooted<WithEnvironmentObject*> envChain(
+        cx, js::CreateObjectsForEnvironmentChain(cx, targetObj, env));
+    if (!envChain) {
       return false;
     }
 

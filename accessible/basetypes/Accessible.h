@@ -600,6 +600,8 @@ class Accessible {
 
   bool IsHTMLRadioButton() const { return mType == eHTMLRadioButtonType; }
 
+  bool IsHTMLSpinner() const { return mType == eHTMLSpinnerType; }
+
   bool IsHTMLTable() const { return mType == eHTMLTableType; }
   bool IsHTMLTableCell() const { return mType == eHTMLTableCellType; }
   bool IsHTMLTableRow() const { return mType == eHTMLTableRowType; }
@@ -727,7 +729,8 @@ class Accessible {
   /**
    * Return the localized string for the given key.
    */
-  static void TranslateString(const nsString& aKey, nsAString& aStringOut);
+  static void TranslateString(const nsString& aKey, nsAString& aStringOut,
+                              const nsTArray<nsString>& aParams = {});
 
  protected:
   // Some abstracted group utility methods.

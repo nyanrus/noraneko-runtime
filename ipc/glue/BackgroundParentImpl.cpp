@@ -18,6 +18,7 @@
 #include "mozilla/dom/BackgroundSessionStorageServiceParent.h"
 #include "mozilla/dom/ClientManagerActors.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/CookieStoreParent.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/EndpointForReportParent.h"
 #include "mozilla/dom/FetchParent.h"
@@ -268,32 +269,6 @@ BackgroundParentImpl::RecvPBackgroundSDBConnectionConstructor(
 
   if (!mozilla::dom::RecvPBackgroundSDBConnectionConstructor(
           aActor, aPersistenceType, aPrincipalInfo)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-  return IPC_OK();
-}
-
-already_AddRefed<BackgroundParentImpl::PBackgroundLSDatabaseParent>
-BackgroundParentImpl::AllocPBackgroundLSDatabaseParent(
-    const PrincipalInfo& aPrincipalInfo, const uint32_t& aPrivateBrowsingId,
-    const uint64_t& aDatastoreId) {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-
-  return mozilla::dom::AllocPBackgroundLSDatabaseParent(
-      aPrincipalInfo, aPrivateBrowsingId, aDatastoreId);
-}
-
-mozilla::ipc::IPCResult
-BackgroundParentImpl::RecvPBackgroundLSDatabaseConstructor(
-    PBackgroundLSDatabaseParent* aActor, const PrincipalInfo& aPrincipalInfo,
-    const uint32_t& aPrivateBrowsingId, const uint64_t& aDatastoreId) {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  if (!mozilla::dom::RecvPBackgroundLSDatabaseConstructor(
-          aActor, aPrincipalInfo, aPrivateBrowsingId, aDatastoreId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -821,6 +796,27 @@ bool BackgroundParentImpl::DeallocPBroadcastChannelParent(
   return true;
 }
 
+mozilla::dom::PCookieStoreParent*
+BackgroundParentImpl::AllocPCookieStoreParent() {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  RefPtr<mozilla::dom::CookieStoreParent> actor =
+      new mozilla::dom::CookieStoreParent();
+  return actor.forget().take();
+}
+
+bool BackgroundParentImpl::DeallocPCookieStoreParent(
+    PCookieStoreParent* aActor) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
+
+  RefPtr<mozilla::dom::CookieStoreParent> actor =
+      dont_AddRef(static_cast<mozilla::dom::CookieStoreParent*>(aActor));
+  return true;
+}
+
 mozilla::dom::PServiceWorkerManagerParent*
 BackgroundParentImpl::AllocPServiceWorkerManagerParent() {
   AssertIsInMainProcess();
@@ -1202,15 +1198,16 @@ BackgroundParentImpl::RecvPServiceWorkerContainerConstructor(
 
 already_AddRefed<PServiceWorkerRegistrationParent>
 BackgroundParentImpl::AllocPServiceWorkerRegistrationParent(
-    const IPCServiceWorkerRegistrationDescriptor&) {
+    const IPCServiceWorkerRegistrationDescriptor&, const IPCClientInfo&) {
   return MakeAndAddRef<mozilla::dom::ServiceWorkerRegistrationParent>();
 }
 
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvPServiceWorkerRegistrationConstructor(
     PServiceWorkerRegistrationParent* aActor,
-    const IPCServiceWorkerRegistrationDescriptor& aDescriptor) {
-  dom::InitServiceWorkerRegistrationParent(aActor, aDescriptor);
+    const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
+    const IPCClientInfo& aForClient) {
+  dom::InitServiceWorkerRegistrationParent(aActor, aDescriptor, aForClient);
   return IPC_OK();
 }
 

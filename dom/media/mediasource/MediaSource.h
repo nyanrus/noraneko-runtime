@@ -81,9 +81,13 @@ class MediaSource final : public DOMEventTargetHelper,
 
   static bool IsTypeSupported(const GlobalObject&, const nsAString& aType);
   // Throws on aRv if not supported.
+  // TODO : origin check should be removed after enabling HEVC by default in bug
+  // 1928536.
   static void IsTypeSupported(const nsAString& aType,
                               DecoderDoctorDiagnostics* aDiagnostics,
-                              ErrorResult& aRv);
+                              ErrorResult& aRv,
+                              Maybe<bool> aShouldResistFingerprinting,
+                              Maybe<nsCString> aOrigin = Nothing());
 
   IMPL_EVENT_HANDLER(sourceopen);
   IMPL_EVENT_HANDLER(sourceended);
@@ -139,7 +143,7 @@ class MediaSource final : public DOMEventTargetHelper,
   void DispatchSimpleEvent(const char* aName);
   void QueueAsyncSimpleEvent(const char* aName);
 
-  void DurationChange(const media::TimeUnit& aNewDuration, ErrorResult& aRv);
+  void DurationChangeOnEndOfStream();
   void DurationChange(double aNewDuration, ErrorResult& aRv);
 
   // SetDuration with no checks.

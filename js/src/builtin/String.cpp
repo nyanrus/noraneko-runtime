@@ -34,6 +34,7 @@
 #  include "builtin/intl/FormatBuffer.h"
 #endif
 #include "builtin/RegExp.h"
+#include "gc/GC.h"
 #include "jit/InlinableNatives.h"
 #include "js/Conversions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -619,70 +620,51 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   if (str->isRope()) {
     JSRope* rope = &str->asRope();
 
-    /* Substring is totally in leftChild of rope. */
+    if (rope->length() == len) {
+      // Substring is the full rope.
+      MOZ_ASSERT(begin == 0);
+      return rope;
+    }
+
     if (begin + len <= rope->leftChild()->length()) {
+      // Substring is fully contained within the rope's left child.
       return NewDependentString(cx, rope->leftChild(), begin, len);
     }
 
-    /* Substring is totally in rightChild of rope. */
     if (begin >= rope->leftChild()->length()) {
+      // Substring is fully contained within the rope's right child.
       begin -= rope->leftChild()->length();
       return NewDependentString(cx, rope->rightChild(), begin, len);
     }
 
-    /*
-     * Requested substring is partly in the left and partly in right child.
-     * Create a rope of substrings for both childs.
-     */
+    // The substring spans both children. Avoid flattening the rope if the
+    // children are both linear and the substring fits in an inline string.
+    //
+    // Note: we could handle longer substrings by allocating a new rope here,
+    // but this can result in a lot more rope flattening later on. It's safer to
+    // flatten the rope in this case. See bug 1922926.
+
     MOZ_ASSERT(begin < rope->leftChild()->length() &&
                begin + len > rope->leftChild()->length());
 
-    size_t lhsLength = rope->leftChild()->length() - begin;
-    size_t rhsLength = begin + len - rope->leftChild()->length();
+    bool fitsInline = rope->hasLatin1Chars()
+                          ? JSInlineString::lengthFits<Latin1Char>(len)
+                          : JSInlineString::lengthFits<char16_t>(len);
+    if (fitsInline && rope->leftChild()->isLinear() &&
+        rope->rightChild()->isLinear()) {
+      Rooted<JSLinearString*> left(cx, &rope->leftChild()->asLinear());
+      Rooted<JSLinearString*> right(cx, &rope->rightChild()->asLinear());
 
-    Rooted<JSLinearString*> left(cx, rope->leftChild()->ensureLinear(cx));
-    if (!left) {
-      return nullptr;
-    }
+      size_t lhsLength = left->length() - begin;
+      size_t rhsLength = len - lhsLength;
 
-    Rooted<JSLinearString*> right(cx, rope->rightChild()->ensureLinear(cx));
-    if (!right) {
-      return nullptr;
-    }
-
-    if (rope->hasLatin1Chars()) {
-      if (JSInlineString::lengthFits<Latin1Char>(len)) {
+      if (rope->hasLatin1Chars()) {
         return SubstringInlineString<Latin1Char>(cx, left, right, begin,
                                                  lhsLength, rhsLength);
       }
-    } else {
-      if (JSInlineString::lengthFits<char16_t>(len)) {
-        return SubstringInlineString<char16_t>(cx, left, right, begin,
-                                               lhsLength, rhsLength);
-      }
+      return SubstringInlineString<char16_t>(cx, left, right, begin, lhsLength,
+                                             rhsLength);
     }
-
-    left = NewDependentString(cx, left, begin, lhsLength);
-    if (!left) {
-      return nullptr;
-    }
-
-    right = NewDependentString(cx, right, 0, rhsLength);
-    if (!right) {
-      return nullptr;
-    }
-
-    // The dependent string of a two-byte string can be a Latin-1 string, so
-    // check again if the result fits into an inline string.
-    if (left->hasLatin1Chars() && right->hasLatin1Chars()) {
-      if (JSInlineString::lengthFits<Latin1Char>(len)) {
-        MOZ_ASSERT(str->hasTwoByteChars(), "Latin-1 ropes are handled above");
-        return SubstringInlineString<Latin1Char>(cx, left, right, 0, lhsLength,
-                                                 rhsLength);
-      }
-    }
-
-    return JSRope::new_<CanGC>(cx, left, right, len);
   }
 
   return NewDependentString(cx, str, begin, len);
@@ -3676,7 +3658,13 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Step 3 (reordered).
-  RootedValueVector splits(cx);
+  Rooted<ArrayObject*> substrings(cx, NewDenseEmptyArray(cx));
+  if (!substrings) {
+    return nullptr;
+  }
+
+  // Switch to allocating in the tenured heap if we fill the nursery.
+  AutoSelectGCHeap gcHeap(cx);
 
   // Step 8 (reordered).
   size_t lastEndIndex = 0;
@@ -3722,16 +3710,17 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
 
     // Step 14.c.ii.1.
     size_t subLength = size_t(endIndex - sepLength - lastEndIndex);
-    JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength);
+    JSString* sub =
+        NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
 
     // Steps 14.c.ii.2-4.
-    if (!sub || !splits.append(StringValue(sub))) {
+    if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
       return nullptr;
     }
 
     // Step 14.c.ii.5.
-    if (splits.length() == limit) {
-      return NewDenseCopiedArray(cx, splits.length(), splits.begin());
+    if (substrings->length() == limit) {
+      return substrings;
     }
 
     // Step 14.c.ii.6.
@@ -3742,16 +3731,16 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Step 15.
-  JSString* sub =
-      NewDependentString(cx, str, lastEndIndex, strLength - lastEndIndex);
+  size_t subLength = strLength - lastEndIndex;
+  JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
 
   // Steps 16-17.
-  if (!sub || !splits.append(StringValue(sub))) {
+  if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
     return nullptr;
   }
 
   // Step 18.
-  return NewDenseCopiedArray(cx, splits.length(), splits.begin());
+  return substrings;
 }
 
 // Fast-path for splitting a string into a character array via split("").

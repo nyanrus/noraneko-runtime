@@ -225,6 +225,8 @@ skip-if = ["verify"]
 
 ["test_file_put_get_values.html"]
 
+["test_file_repeated_add_delete.html"]
+
 ["test_file_replace.html"]
 
 ["test_file_resurrection_delete.html"]
@@ -236,6 +238,8 @@ skip-if = ["os == 'android'"]
 ["test_file_sharing.html"]
 
 ["test_file_transaction_abort.html"]
+
+["test_file_filelist.html"]
 
 ["test_getAll.html"]
 

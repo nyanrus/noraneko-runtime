@@ -14,6 +14,10 @@ ChromeUtils.defineESModuleGetters(
 );
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
+const { createValueGrip } = require("devtools/server/actors/object/utils");
+const {
+  ObjectActorPool,
+} = require("resource://devtools/server/actors/object/ObjectActorPool.js");
 const {
   tracerSpec,
   TRACER_LOG_METHODS,
@@ -81,6 +85,14 @@ class TracerActor extends Actor {
   // When the tracer is stopped, save the result of the Listener Class.
   // This is used by the profiler log method and the getProfile method.
   #stopResult = null;
+
+  // A Pool for all JS values emitted by the Tracer Actor.
+  // This helps instantiate a unique Object Actor per JS Object communicated to the client.
+  // This also helps share the same Object Actor instances when evaluating JS via
+  // the console actor.
+  // This pool is created lazily, only once we start a new trace.
+  // We also clear the pool before starting the trace.
+  #tracerPool = null;
 
   destroy() {
     this.stopTracing();
@@ -152,27 +164,35 @@ class TracerActor extends Actor {
       return;
     }
 
+    // Flush any previous recorded data only when we start a new tracer
+    // as we may still analyse trace data after stopping the trace.
+    // The pool will then be re-created on demand from createValueGrip.
+    if (this.#tracerPool) {
+      this.#tracerPool.destroy();
+      this.#tracerPool = null;
+    }
+
     this.logMethod = options.logMethod || TRACER_LOG_METHODS.STDOUT;
 
     let ListenerClass = null;
+    // Currently only the profiler output is supported with the native tracer.
+    let useNativeTracing = false;
     switch (this.logMethod) {
       case TRACER_LOG_METHODS.STDOUT:
         ListenerClass = StdoutTracingListener;
-        // Currently only the profiler output is supported with the native tracer.
-        options.useNativeTracing = false;
         break;
       case TRACER_LOG_METHODS.CONSOLE:
       case TRACER_LOG_METHODS.DEBUGGER_SIDEBAR:
         // Console and debugger sidebar are both using JSTRACE_STATE/JSTRACE_TRACE resources
         // to receive tracing data.
         ListenerClass = ResourcesTracingListener;
-        options.useNativeTracing = false;
         break;
       case TRACER_LOG_METHODS.PROFILER:
         ListenerClass = ProfilerTracingListener;
         // Recording function returns is mandatory when recording profiler output.
         // Otherwise frames are not closed and mixed up in the profiler frontend.
         options.traceFunctionReturn = true;
+        useNativeTracing = true;
         break;
     }
     this.tracingListener = new ListenerClass({
@@ -185,7 +205,7 @@ class TracerActor extends Actor {
     this.traceValues = !!options.traceValues;
     try {
       lazy.JSTracer.startTracing({
-        global: this.targetActor.window || this.targetActor.workerGlobal,
+        global: this.targetActor.targetGlobal,
         prefix: options.prefix || "",
         // Enable receiving the `currentDOMEvent` being passed to `onTracingFrame`
         traceDOMEvents: true,
@@ -198,7 +218,7 @@ class TracerActor extends Actor {
         // Notify about frame exit / function call returning
         traceFunctionReturn: !!options.traceFunctionReturn,
         // Use the native tracing implementation
-        useNativeTracing: !!options.useNativeTracing,
+        useNativeTracing,
         // Ignore frames beyond the given depth
         maxDepth: options.maxDepth,
         // Stop the tracing after a number of top level frames
@@ -219,9 +239,7 @@ class TracerActor extends Actor {
     // Remove before stopping to prevent receiving the stop notification
     lazy.JSTracer.removeTracingListener(this.tracingListener);
     // Save the result of the stop request for the profiler and the getProfile RDP method
-    this.#stopResult = this.tracingListener.stop(
-      lazy.JSTracer.maybeGetNativeTrace()
-    );
+    this.#stopResult = this.tracingListener.stop();
     this.tracingListener = null;
 
     lazy.JSTracer.stopTracing();
@@ -241,6 +259,18 @@ class TracerActor extends Actor {
       return profile;
     }
     return null;
+  }
+
+  createValueGrip(value) {
+    if (!this.#tracerPool) {
+      this.#tracerPool = new ObjectActorPool(
+        this.targetActor.threadActor,
+        "tracer",
+        true
+      );
+      this.manage(this.#tracerPool);
+    }
+    return createValueGrip(this, value, this.#tracerPool);
   }
 }
 exports.TracerActor = TracerActor;

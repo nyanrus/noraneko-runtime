@@ -5,34 +5,106 @@
 #ifndef mozilla_dom_ViewTransition_h
 #define mozilla_dom_ViewTransition_h
 
+#include "nsRect.h"
 #include "nsWrapperCache.h"
+#include "nsTHashMap.h"
 
-namespace mozilla::dom {
+class nsIGlobalObject;
+class nsITimer;
 
-class Promise;
+namespace mozilla {
+
+class ErrorResult;
+
+namespace dom {
+
 class Document;
+class Promise;
 class ViewTransitionUpdateCallback;
+
+enum class SkipTransitionReason : uint8_t {
+  JS,
+  DocumentHidden,
+  ClobberedActiveTransition,
+  Timeout,
+  UpdateCallbackRejected,
+  DuplicateTransitionNameCapturingOldState,
+  DuplicateTransitionNameCapturingNewState,
+  Resize,
+};
+
+// https://drafts.csswg.org/css-view-transitions-1/#viewtransition-phase
+enum class ViewTransitionPhase : uint8_t {
+  PendingCapture = 0,
+  UpdateCallbackCalled,
+  Animating,
+  Done,
+};
 
 class ViewTransition final : public nsISupports, public nsWrapperCache {
  public:
+  using Phase = ViewTransitionPhase;
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ViewTransition)
 
   ViewTransition(Document&, ViewTransitionUpdateCallback*);
 
-  Promise* UpdateCallbackDone();
-  Promise* Ready();
-  Promise* Finished();
-  void SkipTransition();
+  Promise* GetUpdateCallbackDone(ErrorResult&);
+  Promise* GetReady(ErrorResult&);
+  Promise* GetFinished(ErrorResult&);
 
-  nsISupports* GetParentObject() const;
+  void SkipTransition(SkipTransitionReason = SkipTransitionReason::JS);
+  void PerformPendingOperations();
+
+  nsIGlobalObject* GetParentObject() const;
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
+  struct CapturedElement;
+
  private:
+  enum class CallIfDone : bool { No, Yes };
+  MOZ_CAN_RUN_SCRIPT void CallUpdateCallbackIgnoringErrors(CallIfDone);
+  MOZ_CAN_RUN_SCRIPT void CallUpdateCallback(ErrorResult&);
+  void Activate();
+
+  void ClearActiveTransition();
+  void Timeout();
+  void Setup();
+  [[nodiscard]] Maybe<SkipTransitionReason> CaptureOldState();
+  [[nodiscard]] Maybe<SkipTransitionReason> CaptureNewState();
+  void ClearNamedElements();
+  void HandleFrame();
+  void SkipTransition(SkipTransitionReason, JS::Handle<JS::Value>);
+  void ClearTimeoutTimer();
+
+  nsRect SnapshotContainingBlockRect() const;
+
   ~ViewTransition();
+
+  // Stored for the whole lifetime of the object (until CC).
   RefPtr<Document> mDocument;
+  RefPtr<ViewTransitionUpdateCallback> mUpdateCallback;
+
+  // https://drafts.csswg.org/css-view-transitions/#viewtransition-named-elements
+  using NamedElements = nsTHashMap<RefPtr<nsAtom>, UniquePtr<CapturedElement>>;
+  NamedElements mNamedElements;
+
+  // https://drafts.csswg.org/css-view-transitions/#viewtransition-initial-snapshot-containing-block-size
+  nsSize mInitialSnapshotContainingBlockSize;
+
+  // Allocated lazily, but same object once allocated (again until CC).
+  RefPtr<Promise> mUpdateCallbackDonePromise;
+  RefPtr<Promise> mReadyPromise;
+  RefPtr<Promise> mFinishedPromise;
+
+  static void TimeoutCallback(nsITimer*, void*);
+  RefPtr<nsITimer> mTimeoutTimer;
+
+  Phase mPhase = Phase::PendingCapture;
 };
 
-}  // namespace mozilla::dom
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

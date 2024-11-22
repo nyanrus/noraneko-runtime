@@ -31,6 +31,7 @@
 #include "mozilla/dom/CallbackDebuggerNotification.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientState.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Console.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
@@ -549,13 +550,14 @@ class PropagateStorageAccessPermissionGrantedRunnable final
 };
 
 class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
-  const char* mMessage;
-  const nsTArray<nsString> mParams;
-
  public:
   // aWorkerPrivate is the worker thread we're on (or the main thread, if null)
-  static void Report(WorkerPrivate* aWorkerPrivate, const char* aMessage,
-                     const nsTArray<nsString>& aParams) {
+  static void Report(WorkerPrivate* aWorkerPrivate, uint32_t aErrorFlags,
+                     const nsCString& aCategory,
+                     nsContentUtils::PropertiesFile aFile,
+                     const nsCString& aMessageName,
+                     const nsTArray<nsString>& aParams,
+                     const mozilla::SourceLocation& aLocation) {
     if (aWorkerPrivate) {
       aWorkerPrivate->AssertIsOnWorkerThread();
     } else {
@@ -565,24 +567,32 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
     // Now fire a runnable to do the same on the parent's thread if we can.
     if (aWorkerPrivate) {
       RefPtr<ReportErrorToConsoleRunnable> runnable =
-          new ReportErrorToConsoleRunnable(aWorkerPrivate, aMessage, aParams);
+          new ReportErrorToConsoleRunnable(aWorkerPrivate, aErrorFlags,
+                                           aCategory, aFile, aMessageName,
+                                           aParams, aLocation);
       runnable->Dispatch(aWorkerPrivate);
       return;
     }
 
     // Log a warning to the console.
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                                    nullptr, nsContentUtils::eDOM_PROPERTIES,
-                                    aMessage, aParams);
+    nsContentUtils::ReportToConsole(aErrorFlags, aCategory, nullptr, aFile,
+                                    aMessageName.get(), aParams, aLocation);
   }
 
  private:
   ReportErrorToConsoleRunnable(WorkerPrivate* aWorkerPrivate,
-                               const char* aMessage,
-                               const nsTArray<nsString>& aParams)
+                               uint32_t aErrorFlags, const nsCString& aCategory,
+                               nsContentUtils::PropertiesFile aFile,
+                               const nsCString& aMessageName,
+                               const nsTArray<nsString>& aParams,
+                               const mozilla::SourceLocation& aLocation)
       : WorkerParentThreadRunnable("ReportErrorToConsoleRunnable"),
-        mMessage(aMessage),
-        mParams(aParams.Clone()) {}
+        mErrorFlags(aErrorFlags),
+        mCategory(aCategory),
+        mFile(aFile),
+        mMessageName(aMessageName),
+        mParams(aParams.Clone()),
+        mLocation(aLocation) {}
 
   virtual void PostDispatch(WorkerPrivate* aWorkerPrivate,
                             bool aDispatchResult) override {
@@ -596,9 +606,17 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
                          WorkerPrivate* aWorkerPrivate) override {
     WorkerPrivate* parent = aWorkerPrivate->GetParent();
     MOZ_ASSERT_IF(!parent, NS_IsMainThread());
-    Report(parent, mMessage, mParams);
+    Report(parent, mErrorFlags, mCategory, mFile, mMessageName, mParams,
+           mLocation);
     return true;
   }
+
+  const uint32_t mErrorFlags;
+  const nsCString mCategory;
+  const nsContentUtils::PropertiesFile mFile;
+  const nsCString mMessageName;
+  const nsTArray<nsString> mParams;
+  const mozilla::SourceLocation mLocation;
 };
 
 class RunExpiredTimoutsRunnable final : public WorkerThreadRunnable,
@@ -659,16 +677,18 @@ class DebuggerImmediateRunnable final : public WorkerThreadRunnable {
     // Silence bad assertions.
   }
 
+  // Make as MOZ_CAN_RUN_SCRIPT_BOUNDARY for calling mHandler->Call();
+  // Since WorkerRunnable::WorkerRun has not to be MOZ_CAN_RUN_SCRIPT, but
+  // DebuggerImmediateRunnable is a special case that must to call the function
+  // defined in the debugger script.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual bool WorkerRun(JSContext* aCx,
                          WorkerPrivate* aWorkerPrivate) override {
-    JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
-    JS::Rooted<JS::Value> callable(
-        aCx, JS::ObjectOrNullValue(mHandler->CallableOrNull()));
-    JS::HandleValueArray args = JS::HandleValueArray::empty();
     JS::Rooted<JS::Value> rval(aCx);
+    IgnoredErrorResult rv;
+    MOZ_KnownLive(mHandler)->Call({}, &rval, rv);
 
-    // WorkerRunnable::Run will report the exception if it happens.
-    return JS_CallFunctionValue(aCx, global, callable, args, &rval);
+    return !rv.Failed();
   }
 };
 
@@ -2647,13 +2667,9 @@ WorkerPrivate::WorkerPrivate(
   // this tree of worker threads.
   mMainThreadEventTargetForMessaging =
       ThrottledEventQueue::Create(target, "Worker queue for messaging");
-  if (StaticPrefs::dom_worker_use_medium_high_event_queue()) {
-    mMainThreadEventTarget = ThrottledEventQueue::Create(
-        GetMainThreadSerialEventTarget(), "Worker queue",
-        nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
-  } else {
-    mMainThreadEventTarget = mMainThreadEventTargetForMessaging;
-  }
+  mMainThreadEventTarget = ThrottledEventQueue::Create(
+      GetMainThreadSerialEventTarget(), "Worker queue",
+      nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
   mMainThreadDebuggeeEventTarget =
       ThrottledEventQueue::Create(target, "Worker debuggee queue");
   if (IsParentWindowPaused() || IsFrozen()) {
@@ -2677,7 +2693,8 @@ WorkerPrivate::~WorkerPrivate() {
 WorkerPrivate::AgentClusterIdAndCoop
 WorkerPrivate::ComputeAgentClusterIdAndCoop(WorkerPrivate* aParent,
                                             WorkerKind aWorkerKind,
-                                            WorkerLoadInfo* aLoadInfo) {
+                                            WorkerLoadInfo* aLoadInfo,
+                                            bool aIsChromeWorker) {
   nsILoadInfo::CrossOriginOpenerPolicy agentClusterCoop =
       nsILoadInfo::OPENER_POLICY_UNSAFE_NONE;
 
@@ -2707,6 +2724,15 @@ WorkerPrivate::ComputeAgentClusterIdAndCoop(WorkerPrivate* aParent,
     return {agentClusterId, bc->Top()->GetOpenerPolicy()};
   }
 
+  // Allow chrome workers within the "inference" content process access to
+  // SharedArrayBuffer by enabling COOP/COEP for their agent cluster group.
+  // This is useful for accelerating WASM-based inference engines.
+  if (aIsChromeWorker && XRE_IsContentProcess() &&
+      dom::ContentChild::GetSingleton()->GetRemoteType() ==
+          INFERENCE_REMOTE_TYPE) {
+    agentClusterCoop =
+        nsILoadInfo::OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP;
+  }
   // If the window object was failed to be set into the WorkerLoadInfo, we
   // make the worker into another agent cluster group instead of failures.
   return {nsID::GenerateUUID(), agentClusterCoop};
@@ -2778,8 +2804,8 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
     return nullptr;
   }
 
-  AgentClusterIdAndCoop idAndCoop =
-      ComputeAgentClusterIdAndCoop(parent, aWorkerKind, aLoadInfo);
+  AgentClusterIdAndCoop idAndCoop = ComputeAgentClusterIdAndCoop(
+      parent, aWorkerKind, aLoadInfo, aIsChromeWorker);
 
   RefPtr<WorkerPrivate> worker = new WorkerPrivate(
       parent, aScriptURL, aIsChromeWorker, aWorkerKind, aRequestCredentials,
@@ -3143,7 +3169,7 @@ nsresult WorkerPrivate::GetLoadInfo(
       // We're being created outside of a window. Need to figure out the script
       // that is creating us in order for us to use relative URIs later on.
       JS::AutoFilename fileName;
-      if (JS::DescribeScriptedCaller(aCx, &fileName)) {
+      if (JS::DescribeScriptedCaller(&fileName, aCx)) {
         // In most cases, fileName is URI. In a few other cases
         // (e.g. xpcshell), fileName is a file path. Ideally, we would
         // prefer testing whether fileName parses as an URI and fallback
@@ -3152,13 +3178,9 @@ nsresult WorkerPrivate::GetLoadInfo(
         // URIs (e.g. C:/Windows/Tmp is interpreted as scheme "C",
         // hostname "Windows", path "Tmp"), which defeats this algorithm.
         // Therefore, we adopt the opposite convention.
-        nsCOMPtr<nsIFile> scriptFile =
-            do_CreateInstance("@mozilla.org/file/local;1", &rv);
-        if (NS_FAILED(rv)) {
-          return rv;
-        }
-
-        rv = scriptFile->InitWithPath(NS_ConvertUTF8toUTF16(fileName.get()));
+        nsCOMPtr<nsIFile> scriptFile;
+        rv = NS_NewNativeLocalFile(nsDependentCString(fileName.get()),
+                                   getter_AddRefs(scriptFile));
         if (NS_SUCCEEDED(rv)) {
           rv = NS_NewFileURI(getter_AddRefs(loadInfo.mBaseURI), scriptFile);
         }
@@ -3728,11 +3750,18 @@ UniquePtr<ClientSource> WorkerPrivate::CreateClientSource() {
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(!data->mScope, "Client should be created before the global");
 
-  auto clientSource = ClientManager::CreateSource(
-      GetClientType(), mWorkerHybridEventTarget,
-      StoragePrincipalHelper::ShouldUsePartitionPrincipalForServiceWorker(this)
-          ? GetPartitionedPrincipalInfo()
-          : GetPrincipalInfo());
+  UniquePtr<ClientSource> clientSource;
+  if (IsServiceWorker()) {
+    clientSource = ClientManager::CreateSourceFromInfo(
+        GetSourceInfo(), mWorkerHybridEventTarget);
+  } else {
+    clientSource = ClientManager::CreateSource(
+        GetClientType(), mWorkerHybridEventTarget,
+        StoragePrincipalHelper::ShouldUsePartitionPrincipalForServiceWorker(
+            this)
+            ? GetPartitionedPrincipalInfo()
+            : GetPrincipalInfo());
+  }
   MOZ_DIAGNOSTIC_ASSERT(clientSource);
 
   clientSource->SetAgentClusterId(mAgentClusterId);
@@ -5393,20 +5422,18 @@ void WorkerPrivate::ReportError(JSContext* aCx,
 }
 
 // static
-void WorkerPrivate::ReportErrorToConsole(const char* aMessage) {
-  nsTArray<nsString> emptyParams;
-  WorkerPrivate::ReportErrorToConsole(aMessage, emptyParams);
-}
-
-// static
-void WorkerPrivate::ReportErrorToConsole(const char* aMessage,
-                                         const nsTArray<nsString>& aParams) {
+void WorkerPrivate::ReportErrorToConsole(
+    uint32_t aErrorFlags, const nsCString& aCategory,
+    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
+    const nsTArray<nsString>& aParams,
+    const mozilla::SourceLocation& aLocation) {
   WorkerPrivate* wp = nullptr;
   if (!NS_IsMainThread()) {
     wp = GetCurrentThreadWorkerPrivate();
   }
 
-  ReportErrorToConsoleRunnable::Report(wp, aMessage, aParams);
+  ReportErrorToConsoleRunnable::Report(wp, aErrorFlags, aCategory, aFile,
+                                       aMessageName, aParams, aLocation);
 }
 
 int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
@@ -5415,8 +5442,18 @@ int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(aHandler);
 
-  if (StaticPrefs::dom_workers_throttling_enabled()) {
+  if (StaticPrefs::dom_workers_throttling_enabled() && XRE_IsContentProcess()) {
     // todo(aiunusov): change the logic of setTimeout accordingly
+
+    WorkerGlobalScope* globalScope = GlobalScope();
+    auto* timeoutManager = globalScope->GetTimeoutManager();
+    int32_t timerId = -1;
+    nsresult rv = timeoutManager->SetTimeout(aHandler, aTimeout, aIsInterval,
+                                             aReason, &timerId);
+    if (NS_FAILED(rv)) {
+      aRv.Throw(NS_ERROR_FAILURE);
+    }
+    return timerId;
   }
 
   // Reasons that doesn't support cancellation will get -1 as their ids.
@@ -5499,6 +5536,12 @@ int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
 void WorkerPrivate::ClearTimeout(int32_t aId, Timeout::Reason aReason) {
   MOZ_ASSERT(aReason == Timeout::Reason::eTimeoutOrInterval,
              "This timeout reason doesn't support cancellation.");
+  if (StaticPrefs::dom_workers_throttling_enabled() && XRE_IsContentProcess()) {
+    WorkerGlobalScope* globalScope = GlobalScope();
+    auto* timeoutManager = globalScope->GetTimeoutManager();
+    timeoutManager->ClearTimeout(aId, aReason);
+    return;
+  }
 
   auto data = mWorkerThreadAccessible.Access();
 

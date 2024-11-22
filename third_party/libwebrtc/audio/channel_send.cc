@@ -22,6 +22,7 @@
 #include "api/crypto/frame_encryptor_interface.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "audio/channel_send_frame_transformer_delegate.h"
 #include "audio/utility/audio_frame_operations.h"
 #include "call/rtp_transport_controller_send_interface.h"
@@ -79,6 +80,47 @@ class RtcpCounterObserver : public RtcpPacketTypeCounterObserver {
   Mutex mutex_;
   const uint32_t ssrc_;
   RtcpPacketTypeCounter packet_counter_;
+};
+
+class AudioBitrateAccountant {
+ public:
+  void RegisterPacketOverhead(int packet_byte_overhead) {
+    packet_overhead_ = DataSize::Bytes(packet_byte_overhead);
+  }
+
+  void Reset() {
+    rate_last_frame_ = DataRate::BitsPerSec(0);
+    next_frame_duration_ = TimeDelta::Millis(0);
+    report_rate_ = absl::nullopt;
+  }
+
+  // A new frame is formed when bytesize is nonzero.
+  void UpdateBpsEstimate(DataSize payload_size, TimeDelta frame_duration) {
+    next_frame_duration_ += frame_duration;
+    // Do not have a full frame yet.
+    if (payload_size.bytes() == 0)
+      return;
+
+    // We report the larger of the rates computed using the last frame, and
+    // second last frame. Under DTX, frame sizes sometimes alternate, it is
+    // preferable to report the upper envelop.
+    DataRate rate_cur_frame =
+        (payload_size + packet_overhead_) / next_frame_duration_;
+
+    report_rate_ =
+        (rate_cur_frame > rate_last_frame_) ? rate_cur_frame : rate_last_frame_;
+
+    rate_last_frame_ = rate_cur_frame;
+    next_frame_duration_ = TimeDelta::Millis(0);
+  }
+
+  absl::optional<DataRate> GetUsedRate() const { return report_rate_; }
+
+ private:
+  TimeDelta next_frame_duration_ = TimeDelta::Millis(0);
+  DataSize packet_overhead_ = DataSize::Bytes(72);
+  DataRate rate_last_frame_ = DataRate::BitsPerSec(0);
+  absl::optional<DataRate> report_rate_;
 };
 
 class ChannelSend : public ChannelSendInterface,
@@ -176,6 +218,17 @@ class ChannelSend : public ChannelSendInterface,
   // ReportBlockDataObserver.
   void OnReportBlockDataUpdated(ReportBlockData report_block) override;
 
+  // Reports actual bitrate used (vs allocated).
+  absl::optional<DataRate> GetUsedRate() const override {
+    MutexLock lock(&bitrate_accountant_mutex_);
+    return bitrate_accountant_.GetUsedRate();
+  }
+
+  void RegisterPacketOverhead(int packet_byte_overhead) override {
+    MutexLock lock(&bitrate_accountant_mutex_);
+    bitrate_accountant_.RegisterPacketOverhead(packet_byte_overhead);
+  }
+
  private:
   // From AudioPacketizationCallback in the ACM
   int32_t SendData(AudioFrameType frameType,
@@ -266,6 +319,10 @@ class ChannelSend : public ChannelSendInterface,
   RTC_NO_UNIQUE_ADDRESS SequenceChecker encoder_queue_checker_;
 
   SdpAudioFormat encoder_format_;
+
+  mutable Mutex bitrate_accountant_mutex_;
+  AudioBitrateAccountant bitrate_accountant_
+      RTC_GUARDED_BY(bitrate_accountant_mutex_);
 };
 
 const int kTelephoneEventAttenuationdB = 10;
@@ -832,10 +889,15 @@ void ChannelSend::ProcessAndEncodeAudio(
         // encoding is done and payload is ready for packetization and
         // transmission. Otherwise, it will return without invoking the
         // callback.
-        if (audio_coding_->Add10MsData(*audio_frame) < 0) {
+        int32_t encoded_bytes = audio_coding_->Add10MsData(*audio_frame);
+        MutexLock lock(&bitrate_accountant_mutex_);
+        if (encoded_bytes < 0) {
           RTC_DLOG(LS_ERROR) << "ACM::Add10MsData() failed.";
+          bitrate_accountant_.Reset();
           return;
         }
+        bitrate_accountant_.UpdateBpsEstimate(DataSize::Bytes(encoded_bytes),
+                                              TimeDelta::Millis(10));
       });
 }
 

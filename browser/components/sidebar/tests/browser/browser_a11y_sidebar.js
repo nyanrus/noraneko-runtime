@@ -82,6 +82,7 @@ add_task(async function test_menu_items_labeled() {
     "All buttons are shown."
   );
 
+  SidebarController.toggleExpanded(false);
   await sidebar.updateComplete;
   for (const button of allButtons) {
     const view = button.getAttribute("view");
@@ -89,7 +90,7 @@ add_task(async function test_menu_items_labeled() {
     ok(!button.hasVisibleLabel, `Collapsed ${view} button has no label.`);
   }
 
-  SidebarController.sidebarMain.expanded = true;
+  SidebarController.toggleExpanded(true);
   await sidebar.updateComplete;
   for (const button of allButtons) {
     const view = button.getAttribute("view");
@@ -97,5 +98,51 @@ add_task(async function test_menu_items_labeled() {
       button.label || button.hasVisibleLabel,
       `Expanded ${view} button has a label.`
     );
+  }
+});
+
+add_task(async function test_keyboard_navigation_vertical_tabs() {
+  const { document } = win;
+  SpecialPowers.pushPrefEnv({
+    set: [["sidebar.verticalTabs", true]],
+  });
+  const sidebar = document.querySelector("sidebar-main");
+  const toolButtons = await TestUtils.waitForCondition(
+    () => sidebar.toolButtons,
+    "Tool buttons are shown."
+  );
+  const newTabButton = sidebar.querySelector("#tabs-newtab-button");
+
+  win.gBrowser.tabs[0].focus();
+  ok(isActiveElement(win.gBrowser.tabs[0]), "First tab is focused.");
+
+  info("Tab to new tab button.");
+  EventUtils.synthesizeKey("KEY_Tab", {}, win);
+  ok(isActiveElement(newTabButton), "New tab button is focused.");
+
+  info("Press Enter key.");
+  EventUtils.synthesizeKey("KEY_Enter", {}, win);
+  await TestUtils.waitForCondition(
+    () => win.gBrowser.tabs.length === 2,
+    "Two tabs are open."
+  );
+
+  // URL bar will be focused after opening a new tab,
+  // so we need to move it back down to the new tab button
+  newTabButton.focus();
+  ok(isActiveElement(newTabButton), "New tab button is focused again.");
+
+  info("Tab to get to tools.");
+  EventUtils.synthesizeKey("KEY_Tab", {}, win);
+  ok(isActiveElement(toolButtons[0]), "First tool button is focused.");
+
+  info("Shift+Tab back to new tab button.");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, win);
+  ok(isActiveElement(newTabButton), "New tab button is focused.");
+
+  await SpecialPowers.popPrefEnv();
+  // clean up extra tabs
+  while (win.gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(win.gBrowser.tabs.at(-1));
   }
 });

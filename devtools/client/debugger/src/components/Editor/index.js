@@ -211,8 +211,9 @@ class Editor extends PureComponent {
     editor._initShortcuts = () => {};
 
     const node = ReactDOM.findDOMNode(this);
+    const mountEl = node.querySelector(".editor-mount");
     if (node instanceof HTMLElement) {
-      editor.appendToLocalElement(node.querySelector(".editor-mount"));
+      editor.appendToLocalElement(mountEl);
     }
 
     if (!features.codemirrorNext) {
@@ -273,6 +274,12 @@ class Editor extends PureComponent {
       });
     }
     this.setState({ editor });
+    // Used for tests
+    Object.defineProperty(window, "codeMirrorSourceEditorTestInstance", {
+      get() {
+        return editor;
+      },
+    });
     return editor;
   }
 
@@ -498,8 +505,7 @@ class Editor extends PureComponent {
       }
     }
   };
-  // Note: The line is optional, if not passed (as is likely for codemirror 6)
-  // it fallsback to lineAtHeight.
+  // Note: The line is optional, if not passed it fallsback to lineAtHeight.
   openMenu(event, line, ch) {
     event.stopPropagation();
     event.preventDefault();
@@ -524,7 +530,9 @@ class Editor extends PureComponent {
 
     const target = event.target;
     const { id: sourceId } = selectedSource;
-    line = line ?? lineAtHeight(editor, sourceId, event);
+    if (!features.codemirrorNext) {
+      line = line ?? lineAtHeight(editor, sourceId, event);
+    }
 
     if (typeof line != "number") {
       return;
@@ -876,7 +884,7 @@ class Editor extends PureComponent {
         React.Fragment,
         null,
         React.createElement(Breakpoints, { editor }),
-        isPaused &&
+        (isPaused || isTraceSelected) &&
           selectedSource.isOriginal &&
           !selectedSource.isPrettyPrinted &&
           !mapScopesEnabled
@@ -901,7 +909,6 @@ class Editor extends PureComponent {
             mapScopesEnabled)
           ? React.createElement(InlinePreviews, {
               editor,
-              selectedSource,
             })
           : null,
         highlightedLineRange
@@ -929,7 +936,7 @@ class Editor extends PureComponent {
       React.createElement(Breakpoints, {
         editor,
       }),
-      isPaused &&
+      (isPaused || isTraceSelected) &&
         selectedSource.isOriginal &&
         !selectedSource.isPrettyPrinted &&
         !mapScopesEnabled
@@ -969,7 +976,6 @@ class Editor extends PureComponent {
           (selectedSource.isOriginal && mapScopesEnabled))
         ? React.createElement(InlinePreviews, {
             editor,
-            selectedSource,
           })
         : null
     );

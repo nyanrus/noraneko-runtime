@@ -219,7 +219,7 @@ add_task(async function test_domain_preference_forgetAboutSite() {
   });
 
   // Call ForgetAboutSite for the domain.
-  await ForgetAboutSite.removeDataFromDomain(TEST_DOMAIN_B);
+  await ForgetAboutSite.removeDataFromBaseDomain(TEST_DOMAIN_B);
 
   info("Ensure the domain preference is cleared.");
   await openPageAndVerify({
@@ -267,10 +267,11 @@ add_task(async function test_domain_preference_clearDataService() {
     expected: "OptIn",
   });
 
-  info("Call ClearDataService.deleteDataFromBaseDomain for the domain.");
+  info("Call ClearDataService.deleteDataFromSite for the domain.");
   await new Promise(aResolve => {
-    Services.clearData.deleteDataFromBaseDomain(
+    Services.clearData.deleteDataFromSite(
       TEST_DOMAIN_B,
+      {},
       true /* user request */,
       Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION,
       aResolve

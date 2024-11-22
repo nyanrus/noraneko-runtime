@@ -14,12 +14,14 @@
 #include "MediaElementEventRunners.h"
 #include "MediaPlaybackDelayPolicy.h"
 #include "MediaPromiseDefs.h"
+#include "MediaTimer.h"
 #include "TelemetryProbesReporter.h"
 #include "nsCycleCollectionParticipant.h"
 #include "Visibility.h"
 #include "mozilla/CORSMode.h"
 #include "DecoderTraits.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/AwakeTimeStamp.h"
 #include "mozilla/StateWatching.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/DecoderDoctorNotificationBinding.h"
@@ -92,6 +94,7 @@ namespace mozilla::dom {
 // Number of milliseconds between timeupdate events as defined by spec
 #define TIMEUPDATE_MS 250
 
+class HTMLVideoElement;
 class MediaError;
 class MediaSource;
 class PlayPromise;
@@ -151,6 +154,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   explicit HTMLMediaElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   void Init();
+
+  virtual HTMLVideoElement* AsHTMLVideoElement() { return nullptr; };
 
   // `eMandatory`: `timeupdate` occurs according to the spec requirement.
   // Eg.
@@ -793,8 +798,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void DispatchAsyncTestingEvent(const nsAString& aName) override;
 
-  AbstractThread* AbstractMainThread() const final;
-
   // Log the usage of a {visible / invisible} video element as
   // the source of {drawImage(), createPattern(), createImageBitmap() and
   // captureStream()} APIs. This function can be used to collect telemetries for
@@ -878,6 +881,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void CreateAudioWakeLockIfNeeded();
   void ReleaseAudioWakeLockIfExists();
+  void ReleaseAudioWakeLockInternal();
   RefPtr<WakeLock> mWakeLock;
 
   /**
@@ -1234,7 +1238,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   /**
    * Dispatches an error event to a child source element.
    */
-  void DispatchAsyncSourceError(nsIContent* aSourceElement);
+  void DispatchAsyncSourceError(nsIContent* aSourceElement,
+                                const nsACString& aErrorDetails);
 
   /**
    * Resets the media element for an error condition as per aErrorCode.
@@ -1934,6 +1939,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // It's used to record telemetry probe for WMFCDM playback.
   bool mIsUsingWMFCDM = false;
 #endif
+
+  Maybe<DelayedScheduler<AwakeTimeStamp>> mAudioWakelockReleaseScheduler;
 };
 
 // Check if the context is chrome or has the debugger or tabs permission

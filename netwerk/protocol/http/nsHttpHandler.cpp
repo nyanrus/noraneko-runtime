@@ -69,6 +69,7 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/AntiTrackingRedirectHeuristic.h"
@@ -230,18 +231,22 @@ static nsCString DocumentAcceptHeader() {
   // https://fetch.spec.whatwg.org/#document-accept-header-value
   // The value specified by the fetch standard is
   // `text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8`
-  // but we also insert all of the image formats before */*
   nsCString mimeTypes("text/html,application/xhtml+xml,application/xml;q=0.9,");
 
-  if (mozilla::StaticPrefs::image_avif_enabled()) {
-    mimeTypes.Append("image/avif,");
+  // we also insert all of the image formats before */* when the pref is set
+  if (mozilla::StaticPrefs::network_http_accept_include_images()) {
+    if (mozilla::StaticPrefs::image_avif_enabled()) {
+      mimeTypes.Append("image/avif,");
+    }
+
+    if (mozilla::StaticPrefs::image_jxl_enabled()) {
+      mimeTypes.Append("image/jxl,");
+    }
+
+    mimeTypes.Append("image/webp,image/png,image/svg+xml,");
   }
 
-  if (mozilla::StaticPrefs::image_jxl_enabled()) {
-    mimeTypes.Append("image/jxl,");
-  }
-
-  mimeTypes.Append("image/webp,image/png,image/svg+xml,*/*;q=0.8");
+  mimeTypes.Append("*/*;q=0.8");
 
   return mimeTypes;
 }
@@ -347,16 +352,22 @@ nsresult nsHttpHandler::Init() {
 
   InitUserAgentComponents();
 
-  // This perference is only used in parent process.
+  // This preference is only used in parent process.
   if (!IsNeckoChild()) {
     mActiveTabPriority =
         Preferences::GetBool(HTTP_PREF("active_tab_priority"), true);
-    std::bitset<3> usageOfHTTPSRRPrefs;
-    usageOfHTTPSRRPrefs[0] = StaticPrefs::network_dns_upgrade_with_https_rr();
-    usageOfHTTPSRRPrefs[1] = StaticPrefs::network_dns_use_https_rr_as_altsvc();
-    usageOfHTTPSRRPrefs[2] = StaticPrefs::network_dns_echconfig_enabled();
-    Telemetry::ScalarSet(Telemetry::ScalarID::NETWORKING_HTTPS_RR_PREFS_USAGE,
-                         static_cast<uint32_t>(usageOfHTTPSRRPrefs.to_ulong()));
+    if (XRE_IsParentProcess()) {
+      std::bitset<3> usageOfHTTPSRRPrefs;
+      usageOfHTTPSRRPrefs[0] = StaticPrefs::network_dns_upgrade_with_https_rr();
+      usageOfHTTPSRRPrefs[1] =
+          StaticPrefs::network_dns_use_https_rr_as_altsvc();
+      usageOfHTTPSRRPrefs[2] = StaticPrefs::network_dns_echconfig_enabled();
+      glean::networking::https_rr_prefs_usage.Set(
+          static_cast<uint32_t>(usageOfHTTPSRRPrefs.to_ulong()));
+      glean::networking::http3_enabled.Set(
+          StaticPrefs::network_http_http3_enable());
+    }
+
     mActivityDistributor = components::HttpActivityDistributor::Service();
 
     auto initQLogDir = [&]() {
@@ -405,9 +416,6 @@ nsresult nsHttpHandler::Init() {
   Preferences::RegisterPrefixCallbacks(nsHttpHandler::PrefsChanged,
                                        gCallbackPrefs, this);
   PrefsChanged(nullptr);
-
-  Telemetry::ScalarSet(Telemetry::ScalarID::NETWORKING_HTTP3_ENABLED,
-                       StaticPrefs::network_http_http3_enable());
 
   mCompatFirefox.AssignLiteral("Firefox/" MOZILLA_UAVERSION);
 
@@ -493,6 +501,8 @@ nsresult nsHttpHandler::Init() {
     obsService->AddObserver(this, "browser-delayed-startup-finished", true);
     obsService->AddObserver(this, "network:reset-http3-excluded-list", true);
     obsService->AddObserver(this, "network:socket-process-crashed", true);
+    obsService->AddObserver(this, "network:reset_third_party_roots_check",
+                            true);
 
     if (!IsNeckoChild()) {
       obsService->AddObserver(this, "net:current-browser-id", true);
@@ -807,7 +817,7 @@ uint8_t nsHttpHandler::UrgencyFromCoSFlags(uint32_t cos,
     // background tasks can be deprioritzed to the lowest priority
     urgency = 6;
   } else if (cos & nsIClassOfService::Tail) {
-    urgency = 6;
+    urgency = mozilla::StaticPrefs::network_http_tailing_urgency();
   } else {
     // all others get a lower priority than the main html document
     urgency = 4;
@@ -1042,35 +1052,10 @@ void nsHttpHandler::InitUserAgentComponents() {
 
 #elif defined(XP_MACOSX)
   mOscpu.AssignLiteral("Intel Mac OS X 10.15");
-#elif defined(XP_UNIX)
-  if (mozilla::StaticPrefs::network_http_useragent_freezeCpu()) {
-#  ifdef ANDROID
-    mOscpu.AssignLiteral("Linux armv81");
-#  else
-    mOscpu.AssignLiteral("Linux x86_64");
-#  endif
-  } else {
-    struct utsname name {};
-    int ret = uname(&name);
-    if (ret >= 0) {
-      nsAutoCString buf;
-      buf = (char*)name.sysname;
-      buf += ' ';
-
-#  ifdef AIX
-      // AIX uname returns machine specific info in the uname.machine
-      // field and does not return the cpu type like other platforms.
-      // We use the AIX version and release numbers instead.
-      buf += (char*)name.version;
-      buf += '.';
-      buf += (char*)name.release;
-#  else
-      buf += (char*)name.machine;
-#  endif
-
-      mOscpu.Assign(buf);
-    }
-  }
+#elif defined(ANDROID)
+  mOscpu.AssignLiteral("Linux armv81");
+#else
+  mOscpu.AssignLiteral("Linux x86_64");
 #endif
 
   mUserAgentIsDirty = true;
@@ -1641,20 +1626,20 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
                                    &mTailBlockingEnabled);
   }
   if (PREF_CHANGED(HTTP_PREF("tailing.delay-quantum"))) {
-    Unused << Preferences::GetInt(HTTP_PREF("tailing.delay-quantum"), &val);
+    val = StaticPrefs::network_http_tailing_delay_quantum();
     mTailDelayQuantum = (uint32_t)clamped(val, 0, 60000);
   }
   if (PREF_CHANGED(HTTP_PREF("tailing.delay-quantum-after-domcontentloaded"))) {
-    Unused << Preferences::GetInt(
-        HTTP_PREF("tailing.delay-quantum-after-domcontentloaded"), &val);
+    val = StaticPrefs::
+        network_http_tailing_delay_quantum_after_domcontentloaded();
     mTailDelayQuantumAfterDCL = (uint32_t)clamped(val, 0, 60000);
   }
   if (PREF_CHANGED(HTTP_PREF("tailing.delay-max"))) {
-    Unused << Preferences::GetInt(HTTP_PREF("tailing.delay-max"), &val);
+    val = StaticPrefs::network_http_tailing_delay_max();
     mTailDelayMax = (uint32_t)clamped(val, 0, 60000);
   }
   if (PREF_CHANGED(HTTP_PREF("tailing.total-max"))) {
-    Unused << Preferences::GetInt(HTTP_PREF("tailing.total-max"), &val);
+    val = StaticPrefs::network_http_tailing_total_max();
     mTailTotalMax = (uint32_t)clamped(val, 0, 60000);
   }
 
@@ -1899,8 +1884,8 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
     nsCOMPtr<nsIFile> qlogDir;
     if (Preferences::GetBool(HTTP_PREF("http3.enable_qlog")) &&
         !mHttp3QlogDir.IsEmpty() &&
-        NS_SUCCEEDED(NS_NewNativeLocalFile(mHttp3QlogDir, false,
-                                           getter_AddRefs(qlogDir)))) {
+        NS_SUCCEEDED(
+            NS_NewNativeLocalFile(mHttp3QlogDir, getter_AddRefs(qlogDir)))) {
       // Here we do main thread IO, but since this only happens
       // when enabling a developer feature it's not a problem for users.
       rv = qlogDir->Create(nsIFile::DIRECTORY_TYPE, 0755);
@@ -2429,7 +2414,9 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
     }
   }
 
-  return SpeculativeConnect(ci, aCallbacks);
+  // When ech is enabled, always do speculative connect with HTTPS RR.
+  return MaybeSpeculativeConnectWithHTTPSRR(ci, aCallbacks, 0,
+                                            EchConfigEnabled());
 }
 
 NS_IMETHODIMP
@@ -2727,8 +2714,8 @@ bool nsHttpHandler::IsHttp3VersionSupported(const nsACString& version) {
       version.EqualsLiteral("h3")) {
     return false;
   }
-  for (uint32_t i = 0; i < kHttp3VersionCount; i++) {
-    if (version.Equals(kHttp3Versions[i])) {
+  for (const auto& Http3Version : kHttp3Versions) {
+    if (version.Equals(Http3Version)) {
       return true;
     }
   }
@@ -2748,8 +2735,8 @@ bool nsHttpHandler::IsHttp3SupportedByServer(
     return false;
   }
 
-  for (uint32_t i = 0; i < kHttp3VersionCount; i++) {
-    nsAutoCString value(kHttp3Versions[i]);
+  for (const auto& Http3Version : kHttp3Versions) {
+    nsAutoCString value(Http3Version);
     value.Append("="_ns);
     if (strstr(altSvc.get(), value.get())) {
       return true;

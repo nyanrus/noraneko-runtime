@@ -210,9 +210,10 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(gfxContext* aRenderingContext,
 
   // Increment width with cols * letter-spacing.
   {
-    const StyleLength& letterSpacing = StyleText()->mLetterSpacing;
-    if (!letterSpacing.IsZero()) {
-      intrinsicSize.ISize(aWM) += cols * letterSpacing.ToAppUnits();
+    const auto& letterSpacing = StyleText()->mLetterSpacing;
+    if (!letterSpacing.IsDefinitelyZero()) {
+      intrinsicSize.ISize(aWM) +=
+          cols * letterSpacing.Resolve(fontMet->EmHeight());
     }
   }
 
@@ -249,8 +250,8 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(gfxContext* aRenderingContext,
   // Add the inline size of the button if our char size is explicit, so as to
   // make sure to make enough space for it.
   if (maybeCols.isSome() && mButton && mButton->GetPrimaryFrame()) {
-    intrinsicSize.ISize(aWM) +=
-        mButton->GetPrimaryFrame()->GetMinISize(aRenderingContext);
+    const IntrinsicSizeInput input(aRenderingContext, Nothing(), Nothing());
+    intrinsicSize.ISize(aWM) += mButton->GetPrimaryFrame()->GetMinISize(input);
   }
 
   return intrinsicSize;
@@ -559,12 +560,12 @@ void nsTextControlFrame::AppendAnonymousContentTo(
   aElements.AppendElement(mRootNode);
 }
 
-nscoord nsTextControlFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsTextControlFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                            IntrinsicISizeType aType) {
   // Our min inline size is just our preferred inline-size if we have auto
   // inline size.
   WritingMode wm = GetWritingMode();
-  return CalcIntrinsicSize(aContext, wm).ISize(wm);
+  return CalcIntrinsicSize(aInput.mContext, wm).ISize(wm);
 }
 
 Maybe<nscoord> nsTextControlFrame::ComputeBaseline(
@@ -822,19 +823,18 @@ nsresult nsTextControlFrame::SetSelectionInternal(
 
 void nsTextControlFrame::ScrollSelectionIntoViewAsync(
     ScrollAncestors aScrollAncestors) {
-  nsISelectionController* selCon = GetSelectionController();
+  nsCOMPtr<nsISelectionController> selCon = GetSelectionController();
   if (!selCon) {
     return;
   }
 
-  int16_t flags = aScrollAncestors == ScrollAncestors::Yes
-                      ? 0
-                      : nsISelectionController::SCROLL_FIRST_ANCESTOR_ONLY;
-
   // Scroll the selection into view (see bug 231389).
+  const auto flags = aScrollAncestors == ScrollAncestors::Yes
+                         ? ScrollFlags::None
+                         : ScrollFlags::ScrollFirstAncestorOnly;
   selCon->ScrollSelectionIntoView(
-      nsISelectionController::SELECTION_NORMAL,
-      nsISelectionController::SELECTION_FOCUS_REGION, flags);
+      SelectionType::eNormal, nsISelectionController::SELECTION_FOCUS_REGION,
+      ScrollAxis(), ScrollAxis(), flags);
 }
 
 nsresult nsTextControlFrame::SelectAll() {

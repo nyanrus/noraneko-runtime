@@ -32,12 +32,14 @@
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/browser/NimbusFeatures.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Performance.h"
@@ -245,7 +247,7 @@ HttpBaseChannel::HttpBaseChannel()
       mCachedOpaqueResponseBlockingPref(
           StaticPrefs::browser_opaqueResponseBlocking()),
       mChannelBlockedByOpaqueResponse(false),
-      mDummyChannelForImageCache(false),
+      mDummyChannelForCachedResource(false),
       mHasContentDecompressed(false),
       mRenderBlocking(false) {
   StoreApplyConversion(true);
@@ -656,7 +658,7 @@ HttpBaseChannel::GetContentType(nsACString& aContentType) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetContentType(const nsACString& aContentType) {
-  if (mListener || LoadWasOpened() || mDummyChannelForImageCache) {
+  if (mListener || LoadWasOpened() || mDummyChannelForCachedResource) {
     if (!mResponseHead) return NS_ERROR_NOT_AVAILABLE;
 
     nsAutoCString contentTypeBuf, charsetBuf;
@@ -808,7 +810,7 @@ HttpBaseChannel::GetContentLength(int64_t* aContentLength) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetContentLength(int64_t value) {
-  if (!mDummyChannelForImageCache) {
+  if (!mDummyChannelForCachedResource) {
     MOZ_ASSERT_UNREACHABLE("HttpBaseChannel::SetContentLength");
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -904,7 +906,7 @@ HttpBaseChannel::SetUploadStream(nsIInputStream* stream,
   // if stream is null, ExplicitSetUploadStream returns error.
   // So we need special case for GET method.
   StoreUploadStreamHasHeaders(false);
-  mRequestHead.SetMethod("GET"_ns);  // revert to GET request
+  SetRequestMethod("GET"_ns);  // revert to GET request
   mUploadStream = nullptr;
   return NS_OK;
 }
@@ -1859,6 +1861,8 @@ NS_IMETHODIMP
 HttpBaseChannel::SetRequestMethod(const nsACString& aMethod) {
   ENSURE_CALLED_BEFORE_CONNECT();
 
+  mLoadInfo->SetIsGETRequest(aMethod.Equals("GET"));
+
   const nsCString& flatMethod = PromiseFlatCString(aMethod);
 
   // Method names are restricted to valid HTTP tokens.
@@ -2280,7 +2284,11 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   // This would break the nsIStreamListener contract.
   NS_ENSURE_FALSE(LoadOnStartRequestCalled(), NS_ERROR_NOT_AVAILABLE);
 
-  mAPIRedirectToURI = targetURI;
+  // The first parameter is the URI we would like to redirect to
+  // The second parameter should default to false if normal redirect
+  mAPIRedirectTo =
+      Some(mozilla::MakeCompactPair(nsCOMPtr<nsIURI>(targetURI), false));
+
   // Only Web Extensions are allowed to redirect a channel to a data:
   // URI. To avoid any bypasses after the channel was flagged by
   // the WebRequst API, we are dropping the flag here.
@@ -2291,6 +2299,15 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   if (!mResponseHead) {
     mResponseHead.reset(new nsHttpResponseHead());
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::TransparentRedirectTo(nsIURI* targetURI) {
+  LOG(("HttpBaseChannel::TransparentRedirectTo [this=%p]", this));
+  RedirectTo(targetURI);
+  MOZ_ASSERT(mAPIRedirectTo, "How did this happen?");
+  mAPIRedirectTo->second() = true;
   return NS_OK;
 }
 
@@ -2496,15 +2513,6 @@ HttpBaseChannel::GetResponseVersion(uint32_t* major, uint32_t* minor) {
   }
 
   return NS_OK;
-}
-
-void HttpBaseChannel::NotifySetCookie(const nsACString& aCookie) {
-  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-  if (obs) {
-    obs->NotifyObservers(static_cast<nsIChannel*>(this),
-                         "http-on-response-set-cookie",
-                         NS_ConvertASCIItoUTF16(aCookie).get());
-  }
 }
 
 bool HttpBaseChannel::IsBrowsingContextDiscarded() const {
@@ -2945,6 +2953,17 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
     return NS_OK;
   }
 
+  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
+  bool isModule =
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD;
+
+  if (isModule && nsContentUtils::IsJsonMimeType(typeString)) {
+    AccumulateCategorical(
+        Telemetry::LABELS_SCRIPT_BLOCK_INCORRECT_MIME_3::javaScript);
+    return NS_OK;
+  }
+
   switch (aLoadInfo->InternalContentPolicyType()) {
     case nsIContentPolicy::TYPE_SCRIPT:
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
@@ -3081,7 +3100,6 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   }
 
   // We restrict importScripts() in worker code to JavaScript MIME types.
-  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
   if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS ||
       internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE) {
     ReportMimeTypeMismatch(aChannel, "BlockImportScriptsWithWrongMimeType",
@@ -3102,8 +3120,7 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   }
 
   // ES6 modules require a strict MIME type check.
-  if (internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
-      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD) {
+  if (isModule) {
     ReportMimeTypeMismatch(aChannel, "BlockModuleWithWrongMimeType", aURI,
                            contentType, Report::Error);
     return NS_ERROR_CORRUPTED_CONTENT;
@@ -3139,10 +3156,21 @@ void WarnWrongMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   nsAutoCString contentType;
   aResponseHead->ContentType(contentType);
   NS_ConvertUTF8toUTF16 typeString(contentType);
-  if (!nsContentUtils::IsJavascriptMIMEType(typeString)) {
-    ReportMimeTypeMismatch(aChannel, "WarnScriptWithWrongMimeType", aURI,
-                           contentType, Report::Warning);
+
+  if (nsContentUtils::IsJavascriptMIMEType(typeString)) {
+    return;
   }
+
+  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
+  bool isModule =
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD;
+  if (isModule && nsContentUtils::IsJsonMimeType(typeString)) {
+    return;
+  }
+
+  ReportMimeTypeMismatch(aChannel, "WarnScriptWithWrongMimeType", aURI,
+                         contentType, Report::Warning);
 }
 
 nsresult HttpBaseChannel::ValidateMIMEType() {
@@ -3346,10 +3374,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
     mListener = new OpaqueResponseFilter(mListener);
   }
 
-  Telemetry::ScalarAdd(
-      Telemetry::ScalarID::
-          OPAQUE_RESPONSE_BLOCKING_CROSS_ORIGIN_OPAQUE_RESPONSE_COUNT,
-      1);
+  glean::opaque_response_blocking::cross_origin_opaque_response_count.Add(1);
 
   PROFILER_MARKER_TEXT("ORB safelist check", NETWORK, {}, "Before sniff"_ns);
 
@@ -3562,11 +3587,7 @@ HttpBaseChannel::SetCookie(const nsACString& aCookieHeader) {
   nsICookieService* cs = gHttpHandler->GetCookieService();
   NS_ENSURE_TRUE(cs, NS_ERROR_FAILURE);
 
-  nsresult rv = cs->SetCookieStringFromHttp(mURI, aCookieHeader, this);
-  if (NS_SUCCEEDED(rv)) {
-    NotifySetCookie(aCookieHeader);
-  }
-  return rv;
+  return cs->SetCookieStringFromHttp(mURI, aCookieHeader, this);
 }
 
 NS_IMETHODIMP
@@ -3926,8 +3947,11 @@ HttpBaseChannel::SetTlsFlags(uint32_t aTlsFlags) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetApiRedirectToURI(nsIURI** aResult) {
+  if (!mAPIRedirectTo) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
   NS_ENSURE_ARG_POINTER(aResult);
-  *aResult = do_AddRef(mAPIRedirectToURI).take();
+  *aResult = do_AddRef(mAPIRedirectTo->first()).take();
   return NS_OK;
 }
 
@@ -5010,7 +5034,8 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
 
   ReplacementReason redirectType =
-      (redirectFlags & nsIChannelEventSink::REDIRECT_INTERNAL)
+      redirectFlags & (nsIChannelEventSink::REDIRECT_INTERNAL |
+                       nsIChannelEventSink::REDIRECT_TRANSPARENT)
           ? ReplacementReason::InternalRedirect
           : ReplacementReason::Redirect;
   ReplacementChannelConfig config = CloneReplacementChannelConfig(
@@ -6160,7 +6185,7 @@ nsresult HttpBaseChannel::CheckRedirectLimit(nsIURI* aNewURI,
           mURI, aNewURI, mLoadInfo,
           {nsHTTPSOnlyUtils::UpgradeDowngradeEndlessLoopOptions::
                EnforceForHTTPSFirstMode})) {
-    nsHTTPSOnlyUtils::AddHTTPSFirstExceptionForSession(mURI, mLoadInfo);
+    nsHTTPSOnlyUtils::AddHTTPSFirstException(mURI, mLoadInfo);
   }
 
   return NS_OK;
@@ -6435,11 +6460,25 @@ bool HttpBaseChannel::Http3Allowed() const {
          LoadAllowHttp3();
 }
 
-void HttpBaseChannel::SetDummyChannelForImageCache() {
-  mDummyChannelForImageCache = true;
+UniquePtr<nsHttpResponseHead>
+HttpBaseChannel::MaybeCloneResponseHeadForCachedResource() {
+  if (!mResponseHead) {
+    return nullptr;
+  }
+
+  return MakeUnique<nsHttpResponseHead>(*mResponseHead);
+}
+
+void HttpBaseChannel::SetDummyChannelForCachedResource(
+    const nsHttpResponseHead* aMaybeResponseHead /* = nullptr */) {
+  mDummyChannelForCachedResource = true;
   MOZ_ASSERT(!mResponseHead,
-             "SetDummyChannelForImageCache should only be called once");
-  mResponseHead = MakeUnique<nsHttpResponseHead>();
+             "SetDummyChannelForCachedResource should only be called once");
+  if (aMaybeResponseHead) {
+    mResponseHead = MakeUnique<nsHttpResponseHead>(*aMaybeResponseHead);
+  } else {
+    mResponseHead = MakeUnique<nsHttpResponseHead>();
+  }
 }
 
 void HttpBaseChannel::SetEarlyHints(
@@ -6691,6 +6730,23 @@ HttpBaseChannel::GetRenderBlocking(bool* aRenderBlocking) {
 NS_IMETHODIMP HttpBaseChannel::GetLastTransportStatus(
     nsresult* aLastTransportStatus) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+void HttpBaseChannel::SetFetchPriorityDOM(
+    mozilla::dom::FetchPriority aPriority) {
+  switch (aPriority) {
+    case mozilla::dom::FetchPriority::Auto:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_AUTO);
+      return;
+    case mozilla::dom::FetchPriority::High:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_HIGH);
+      return;
+    case mozilla::dom::FetchPriority::Low:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_LOW);
+      return;
+    default:
+      MOZ_ASSERT_UNREACHABLE();
+  }
 }
 
 }  // namespace net

@@ -108,15 +108,10 @@ class WasmStructObject;
 
 namespace wasm {
 
+class SuspenderContext;
 class SuspenderObject;
 
 static const uint32_t SuspenderObjectDataSlot = 0;
-
-enum SuspenderArgPosition {
-  None = -1,
-  First = 0,
-  Last = 1,
-};
 
 enum SuspenderState {
   Initial,
@@ -149,6 +144,9 @@ class SuspenderObjectData
 
   SuspenderState state_;
 
+  // Identify context that is holding suspended stack, otherwise nullptr.
+  SuspenderContext* suspendedBy_;
+
 #if defined(_WIN32)
   // The storage of main stack limits during stack switching.
   // See updateTibFields and restoreTibFields below.
@@ -161,6 +159,12 @@ class SuspenderObjectData
 
   inline SuspenderState state() const { return state_; }
   void setState(SuspenderState state) { state_ = state; }
+
+  inline bool traceable() const { return suspendedBy_ != nullptr; }
+  inline SuspenderContext* suspendedBy() const { return suspendedBy_; }
+  void setSuspendedBy(SuspenderContext* suspendedBy) {
+    suspendedBy_ = suspendedBy;
+  }
 
   inline void* stackMemory() const { return stackMemory_; }
   inline void* mainFP() const { return mainFP_; }
@@ -211,25 +215,19 @@ class SuspenderObjectData
 
 #ifdef ENABLE_WASM_JSPI
 
-bool ParseSuspendingPromisingString(JSContext* cx, JS::HandleValue val,
-                                    SuspenderArgPosition& result);
-
-bool CallImportOnMainThread(JSContext* cx, Instance* instance,
-                            int32_t funcImportIndex, int32_t argc,
-                            uint64_t* argv);
+using CallOnMainStackFn = bool (*)(void* data);
+bool CallOnMainStack(JSContext* cx, CallOnMainStackFn fn, void* data);
 
 JSFunction* WasmSuspendingFunctionCreate(JSContext* cx, HandleObject func,
                                          wasm::ValTypeVector&& params,
-                                         wasm::ValTypeVector&& results,
-                                         SuspenderArgPosition argPosition);
+                                         wasm::ValTypeVector&& results);
 
 JSFunction* WasmSuspendingFunctionCreate(JSContext* cx, HandleObject func,
                                          const FuncType& type);
 
 JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func,
                                         wasm::ValTypeVector&& params,
-                                        wasm::ValTypeVector&& results,
-                                        SuspenderArgPosition argPosition);
+                                        wasm::ValTypeVector&& results);
 
 SuspenderObject* CurrentSuspender(Instance* instance, int reserved);
 
@@ -237,8 +235,6 @@ SuspenderObject* CreateSuspender(Instance* instance, int reserved);
 
 PromiseObject* CreatePromisingPromise(Instance* instance,
                                       SuspenderObject* suspender);
-
-SuspenderObject* CheckSuspender(Instance* instance, JSObject* maybeSuspender);
 
 JSObject* GetSuspendingPromiseResult(Instance* instance,
                                      SuspenderObject* suspender);

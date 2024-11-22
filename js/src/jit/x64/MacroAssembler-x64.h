@@ -77,6 +77,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                            X86Encoding::XMMRegisterID srcId,
                            X86Encoding::XMMRegisterID destId));
 
+ protected:
+  void flexibleDivMod64(Register rhs, Register lhsOutput, bool isUnsigned,
+                        bool isDiv);
+
  public:
   using MacroAssemblerX86Shared::load32;
   using MacroAssemblerX86Shared::store16;
@@ -746,19 +750,22 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   }
 
   void testNullSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testNull(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testObjectSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testObject(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testUndefinedSet(Condition cond, const ValueOperand& value,
                         Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testUndefined(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void boxDouble(FloatRegister src, const ValueOperand& dest, FloatRegister) {

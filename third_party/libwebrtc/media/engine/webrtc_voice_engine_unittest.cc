@@ -717,6 +717,7 @@ class WebRtcVoiceEngineTestFake : public ::testing::TestWithParam<bool> {
     stats.concealment_events = 12;
     stats.jitter_buffer_delay_seconds = 34;
     stats.jitter_buffer_emitted_count = 77;
+    stats.total_processing_delay_seconds = 0.123;
     stats.expand_rate = 5.67f;
     stats.speech_expand_rate = 8.90f;
     stats.secondary_decoded_rate = 1.23f;
@@ -765,6 +766,8 @@ class WebRtcVoiceEngineTestFake : public ::testing::TestWithParam<bool> {
               stats.jitter_buffer_delay_seconds);
     EXPECT_EQ(info.jitter_buffer_emitted_count,
               stats.jitter_buffer_emitted_count);
+    EXPECT_EQ(info.total_processing_delay_seconds,
+              stats.total_processing_delay_seconds);
     EXPECT_EQ(info.expand_rate, stats.expand_rate);
     EXPECT_EQ(info.speech_expand_rate, stats.speech_expand_rate);
     EXPECT_EQ(info.secondary_decoded_rate, stats.secondary_decoded_rate);
@@ -847,12 +850,12 @@ class WebRtcVoiceEngineTestFake : public ::testing::TestWithParam<bool> {
   rtc::scoped_refptr<webrtc::test::MockAudioDeviceModule> adm_;
   rtc::scoped_refptr<StrictMock<webrtc::test::MockAudioProcessing>> apm_;
   cricket::FakeCall call_;
+  FakeAudioSource fake_source_;
   std::unique_ptr<cricket::WebRtcVoiceEngine> engine_;
   std::unique_ptr<cricket::VoiceMediaSendChannelInterface> send_channel_;
   std::unique_ptr<cricket::VoiceMediaReceiveChannelInterface> receive_channel_;
   cricket::AudioSenderParameter send_parameters_;
   cricket::AudioReceiverParameters recv_parameters_;
-  FakeAudioSource fake_source_;
   webrtc::AudioProcessing::Config apm_config_;
 };
 
@@ -3880,7 +3883,7 @@ TEST(WebRtcVoiceEngineTest, SetRtpSendParametersMaxBitrate) {
         webrtc::test::MockAudioDeviceModule::CreateNice();
     call_config.audio_state = webrtc::AudioState::Create(config);
   }
-  std::unique_ptr<Call> call = Call::Create(call_config);
+  std::unique_ptr<Call> call = Call::Create(std::move(call_config));
   cricket::WebRtcVoiceSendChannel channel(
       &engine, cricket::MediaConfig(), cricket::AudioOptions(),
       webrtc::CryptoOptions(), call.get(), webrtc::AudioCodecPairId::Create());

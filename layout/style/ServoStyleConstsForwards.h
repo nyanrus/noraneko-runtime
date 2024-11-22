@@ -46,14 +46,15 @@ class imgRequestProxy;
 struct nsCSSValueSharedList;
 
 class gfxFontFeatureValueSet;
-struct gfxFontFeature;
 struct GeckoFontMetrics;
 namespace mozilla {
 namespace gfx {
 struct FontVariation;
+struct FontFeature;
 }  // namespace gfx
 }  // namespace mozilla
-typedef mozilla::gfx::FontVariation gfxFontVariation;
+using gfxFontVariation = mozilla::gfx::FontVariation;
+using gfxFontFeature = mozilla::gfx::FontFeature;
 
 enum nsCSSUnit : uint32_t;
 enum nsChangeHint : uint32_t;
@@ -123,10 +124,6 @@ class Document;
 class ImageTracker;
 
 }  // namespace dom
-
-namespace ipc {
-class ByteBuf;
-}  // namespace ipc
 
 // Replacement for a Rust Box<T> for a non-dynamically-sized-type.
 //

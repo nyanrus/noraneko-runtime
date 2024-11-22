@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertNativeAppOpens
@@ -15,6 +16,7 @@ import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getHTMLControlsFormAsset
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
@@ -34,8 +36,9 @@ class WebControlsTest : TestSetup() {
 
     @get:Rule
     val activityTestRule = HomeActivityTestRule(
-        isJumpBackInCFREnabled = false,
-        isTCPCFREnabled = false,
+        isNavigationBarCFREnabled = false,
+        shouldUseBottomToolbar = true,
+        isOpenInAppBannerEnabled = false,
     )
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2316067
@@ -130,12 +133,14 @@ class WebControlsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(itemContainingText("Email link"))
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
             assertNativeAppOpens(Constants.PackageName.GMAIL_APP, emailLink)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/834205
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyTelephoneLinkTest() {
         val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
@@ -143,6 +148,7 @@ class WebControlsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(itemContainingText("Telephone link"))
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
             assertNativeAppOpens(Constants.PackageName.PHONE_APP, phoneLink)
         }

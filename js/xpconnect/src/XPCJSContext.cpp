@@ -586,7 +586,6 @@ AutoScriptActivity::~AutoScriptActivity() {
 }
 
 static const double sChromeSlowScriptTelemetryCutoff(10.0);
-static bool sTelemetryEventEnabled(false);
 
 // static
 bool XPCJSContext::InterruptCallback(JSContext* cx) {
@@ -600,7 +599,7 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
     JS::AutoFilename scriptFilename;
     // Computing the line number can be very expensive (see bug 1330231 for
     // example), so don't request it here.
-    if (JS::DescribeScriptedCaller(cx, &scriptFilename)) {
+    if (JS::DescribeScriptedCaller(&scriptFilename, cx)) {
       if (const char* file = scriptFilename.get()) {
         filename.Assign(file, strlen(file));
       }
@@ -794,9 +793,6 @@ void xpc::SetPrefableCompileOptions(JS::PrefableCompileOptions& options) {
 #ifdef NIGHTLY_BUILD
       .setImportAttributes(
           StaticPrefs::javascript_options_experimental_import_attributes())
-      .setImportAttributesAssertSyntax(
-          StaticPrefs::
-              javascript_options_experimental_import_attributes_assert_syntax())
 #endif
       .setAsmJS(StaticPrefs::javascript_options_asmjs())
       .setThrowOnAsmJSValidationFailure(
@@ -987,11 +983,9 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
       StaticPrefs::
           javascript_options_experimental_regexp_duplicate_named_groups());
 
-#ifdef NIGHTLY_BUILD
   JS_SetGlobalJitCompilerOption(
       cx, JSJITCOMPILER_REGEXP_MODIFIERS,
       StaticPrefs::javascript_options_experimental_regexp_modifiers());
-#endif
 
   // Set options not shared with workers.
   contextOptions
@@ -1338,7 +1332,7 @@ nsresult XPCJSContext::Initialize() {
       cx, kStackQuota, kStackQuota - kSystemCodeBuffer,
       kStackQuota - kSystemCodeBuffer - kTrustedScriptBuffer);
 
-  PROFILER_SET_JS_CONTEXT(cx);
+  PROFILER_SET_JS_CONTEXT(this);
 
   JS_AddInterruptCallback(cx, InterruptCallback);
 
@@ -1449,22 +1443,16 @@ void XPCJSContext::AfterProcessTask(uint32_t aNewRecursionDepth) {
       }
     }
     if (hangDuration > limit) {
-      if (!sTelemetryEventEnabled) {
-        sTelemetryEventEnabled = true;
-        Telemetry::SetEventRecordingEnabled("slow_script_warning"_ns, true);
-      }
-
-      auto uriType = mExecutedChromeScript ? "browser"_ns : "content"_ns;
       // Use AppendFloat to avoid printf-type APIs using locale-specific
       // decimal separators, when we definitely want a `.`.
       nsCString durationStr;
       durationStr.AppendFloat(hangDuration);
-      auto extra = Some<nsTArray<Telemetry::EventExtraEntry>>(
-          {Telemetry::EventExtraEntry{"hang_duration"_ns, durationStr},
-           Telemetry::EventExtraEntry{"uri_type"_ns, uriType}});
-      Telemetry::RecordEvent(
-          Telemetry::EventID::Slow_script_warning_Shown_Browser, Nothing(),
-          extra);
+
+      glean::slow_script_warning::ShownBrowserExtra extra = {
+          .hangDuration = Some(durationStr),
+          .uriType = Some(mExecutedChromeScript ? "browser"_ns : "content"_ns),
+      };
+      glean::slow_script_warning::shown_browser.Record(Some(extra));
     }
   }
 

@@ -39,7 +39,7 @@ export let RemotePageAccessManager = {
         "Browser:ResetEnterpriseRootsPref",
         "DisplayOfflineSupportPage",
       ],
-      RPMRecordTelemetryEvent: ["*"],
+      RPMRecordGleanEvent: ["*"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
       RPMGetFormatURLPref: ["app.support.baseURL"],
@@ -49,6 +49,7 @@ export let RemotePageAccessManager = {
         "security.enterprise_roots.auto-enabled",
         "security.certerror.hideAddException",
         "network.trr.display_fallback_warning",
+        "security.certerrors.felt-privacy-v1",
       ],
       RPMGetIntPref: [
         "security.dialog_enable_delay",
@@ -89,10 +90,7 @@ export let RemotePageAccessManager = {
         "OpenTRRPreferences",
       ],
       RPMCheckAlternateHostAvailable: ["*"],
-      RPMRecordTelemetryEvent: [
-        "security.doh.neterror",
-        "security.ui.tlserror",
-      ],
+      RPMRecordGleanEvent: ["securityDohNeterror", "securityUiTlserror"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
       RPMGetFormatURLPref: [
@@ -105,6 +103,7 @@ export let RemotePageAccessManager = {
         "security.xfocsp.errorReporting.enabled",
         "security.xfocsp.hideOpenInNewWindow",
         "network.trr.display_fallback_warning",
+        "security.certerrors.felt-privacy-v1",
       ],
       RPMSetPref: [
         "security.xfocsp.errorReporting.automatic",
@@ -172,6 +171,35 @@ export let RemotePageAccessManager = {
       RPMIsWindowPrivate: ["*"],
       RPMGetBoolPref: ["browser.privatebrowsing.felt-privacy-v1"],
     },
+    "about:deleteprofile": {
+      RPMSendQuery: ["Profiles:GetDeleteProfileContent"],
+      RPMSendAsyncMessage: ["Profiles:CancelDelete", "Profiles:DeleteProfile"],
+    },
+    "about:editprofile": {
+      RPMSendQuery: [
+        "Profiles:GetEditProfileContent",
+        "Profiles:UpdateProfileTheme",
+      ],
+      RPMSendAsyncMessage: [
+        "Profiles:UpdateProfileName",
+        "Profiles:UpdateProfileAvatar",
+        "Profiles:OpenDeletePage",
+      ],
+    },
+    "about:newprofile": {
+      RPMSendQuery: [
+        "Profiles:GetNewProfileContent",
+        "Profiles:UpdateProfileTheme",
+      ],
+      RPMSendAsyncMessage: [
+        "Profiles:UpdateProfileName",
+        "Profiles:UpdateProfileAvatar",
+        "Profiles:DeleteNewProfile",
+        "Profiles:CloseNewProfileTab",
+      ],
+      RPMGetBoolPref: ["browser.profiles.profile-name.updated"],
+      RPMGetFormatURLPref: ["app.support.baseURL"],
+    },
     "about:protections": {
       RPMSendAsyncMessage: [
         "OpenContentBlockingPreferences",
@@ -237,7 +265,7 @@ export let RemotePageAccessManager = {
         "browser.contentblocking.report.fingerprinter.url",
         "browser.contentblocking.report.cryptominer.url",
       ],
-      RPMRecordTelemetryEvent: ["*"],
+      RPMRecordGleanEvent: ["securityUiProtections"],
     },
     "about:shoppingsidebar": {
       RPMSetPref: [

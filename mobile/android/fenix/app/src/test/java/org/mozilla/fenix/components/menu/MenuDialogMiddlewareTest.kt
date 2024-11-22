@@ -190,7 +190,38 @@ class MenuDialogMiddlewareTest {
 
         assertEquals(1, store.state.extensionMenuState.recommendedAddons.size)
         assertEquals(addon, store.state.extensionMenuState.recommendedAddons.first())
+        assertTrue(store.state.extensionMenuState.showExtensionsOnboarding)
     }
+
+    @Test
+    fun `GIVEN at least one addon is installed WHEN init action is dispatched THEN initial extension state is updated`() =
+        runTestOnMain {
+            val addon = Addon(id = "ext1")
+            val addonTwo = Addon(
+                id = "ext2",
+                installedState = Addon.InstalledState(
+                    id = "id",
+                    version = "1.0",
+                    optionsPageUrl = "",
+                ),
+            )
+            val addonThree = Addon(id = "ext3")
+            whenever(addonManager.getAddons()).thenReturn(listOf(addon, addonTwo, addonThree))
+
+            val store = createStore()
+
+            assertEquals(0, store.state.extensionMenuState.recommendedAddons.size)
+
+            // Wait for InitAction and middleware
+            store.waitUntilIdle()
+
+            // Wait for UpdateExtensionState and middleware
+            store.waitUntilIdle()
+
+            assertTrue(store.state.extensionMenuState.recommendedAddons.isEmpty())
+            assertFalse(store.state.extensionMenuState.showExtensionsOnboarding)
+            assertTrue(store.state.extensionMenuState.shouldShowManageExtensionsMenuItem)
+        }
 
     @Test
     fun `WHEN add bookmark action is dispatched for a selected tab THEN bookmark is added`() = runTestOnMain {
@@ -667,6 +698,8 @@ class MenuDialogMiddlewareTest {
     fun `GIVEN selected tab has external app WHEN open in app action is dispatched THEN the site is opened in app`() = runTestOnMain {
         val url = "https://www.mozilla.org"
         val title = "Mozilla"
+        var dismissWasCalled = false
+
         val browserMenuState = BrowserMenuState(
             selectedTab = createTab(
                 url = url,
@@ -677,6 +710,7 @@ class MenuDialogMiddlewareTest {
             menuState = MenuState(
                 browserMenuState = browserMenuState,
             ),
+            onDismiss = { dismissWasCalled = true },
         )
 
         val getRedirect: AppLinksUseCases.GetAppLinkRedirect = mock()
@@ -696,12 +730,15 @@ class MenuDialogMiddlewareTest {
         store.waitUntilIdle()
 
         verify(openAppLinkRedirect).invoke(appIntent = intent)
+        assertTrue(dismissWasCalled)
     }
 
     @Test
     fun `GIVEN selected tab does not have external app WHEN open in app action is dispatched THEN the site is not opened in app`() = runTestOnMain {
         val url = "https://www.mozilla.org"
         val title = "Mozilla"
+        var dismissWasCalled = false
+
         val browserMenuState = BrowserMenuState(
             selectedTab = createTab(
                 url = url,
@@ -712,6 +749,7 @@ class MenuDialogMiddlewareTest {
             menuState = MenuState(
                 browserMenuState = browserMenuState,
             ),
+            onDismiss = { dismissWasCalled = true },
         )
 
         val getRedirect: AppLinksUseCases.GetAppLinkRedirect = mock()
@@ -728,6 +766,7 @@ class MenuDialogMiddlewareTest {
         store.waitUntilIdle()
 
         verify(openAppLinkRedirect, never()).invoke(appIntent = intent)
+        assertFalse(dismissWasCalled)
     }
 
     @Test
@@ -744,6 +783,8 @@ class MenuDialogMiddlewareTest {
             onSuccess = any(),
             onError = any(),
         )
+
+        assertEquals(store.state.extensionMenuState.addonInstallationInProgress, addon)
     }
 
     @Test
@@ -1050,35 +1091,6 @@ class MenuDialogMiddlewareTest {
             enable = eq(false),
             tabId = eq(selectedTab.id),
         )
-        assertTrue(dismissWasCalled)
-    }
-
-    @Test
-    fun `GIVEN menu is accessed from the home screen WHEN request desktop mode action is dispatched THEN set the next tab to be opened in desktop mode`() = runTestOnMain {
-        var dismissWasCalled = false
-        val store = createStore(
-            onDismiss = { dismissWasCalled = true },
-        )
-
-        store.dispatch(MenuAction.RequestDesktopSite)
-        store.waitUntilIdle()
-
-        assertTrue(settings.openNextTabInDesktopMode)
-        assertTrue(dismissWasCalled)
-    }
-
-    @Test
-    fun `GIVEN menu is accessed from the home screen and desktop mode is enabled WHEN request mobile mode action is dispatched THEN set the next tab to be opened in mobile mode`() = runTestOnMain {
-        var dismissWasCalled = false
-        val store = createStore(
-            menuState = MenuState(isDesktopMode = true),
-            onDismiss = { dismissWasCalled = true },
-        )
-
-        store.dispatch(MenuAction.RequestMobileSite)
-        store.waitUntilIdle()
-
-        assertFalse(settings.openNextTabInDesktopMode)
         assertTrue(dismissWasCalled)
     }
 

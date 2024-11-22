@@ -39,8 +39,9 @@ nsMathMLmunderoverFrame::~nsMathMLmunderoverFrame() = default;
 nsresult nsMathMLmunderoverFrame::AttributeChanged(int32_t aNameSpaceID,
                                                    nsAtom* aAttribute,
                                                    int32_t aModType) {
-  if (nsGkAtoms::accent_ == aAttribute ||
-      nsGkAtoms::accentunder_ == aAttribute) {
+  if (aNameSpaceID == kNameSpaceID_None &&
+      (nsGkAtoms::accent_ == aAttribute ||
+       nsGkAtoms::accentunder_ == aAttribute)) {
     // When we have automatic data to update within ourselves, we ask our
     // parent to re-layout its children
     return ReLayoutChildren(GetParent());
@@ -223,9 +224,9 @@ XXX The winner is the outermost setting in conflicting settings like these:
     // if we have an accentunder attribute, it overrides what the underscript
     // said
     if (mContent->AsElement()->GetAttr(nsGkAtoms::accentunder_, value)) {
-      if (value.EqualsLiteral("true")) {
+      if (value.LowerCaseEqualsLiteral("true")) {
         mEmbellishData.flags |= NS_MATHML_EMBELLISH_ACCENTUNDER;
-      } else if (value.EqualsLiteral("false")) {
+      } else if (value.LowerCaseEqualsLiteral("false")) {
         mEmbellishData.flags &= ~NS_MATHML_EMBELLISH_ACCENTUNDER;
       }
     }
@@ -244,9 +245,9 @@ XXX The winner is the outermost setting in conflicting settings like these:
 
     // if we have an accent attribute, it overrides what the overscript said
     if (mContent->AsElement()->GetAttr(nsGkAtoms::accent_, value)) {
-      if (value.EqualsLiteral("true")) {
+      if (value.LowerCaseEqualsLiteral("true")) {
         mEmbellishData.flags |= NS_MATHML_EMBELLISH_ACCENTOVER;
-      } else if (value.EqualsLiteral("false")) {
+      } else if (value.LowerCaseEqualsLiteral("false")) {
         mEmbellishData.flags &= ~NS_MATHML_EMBELLISH_ACCENTOVER;
       }
     }
@@ -684,6 +685,14 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
   aDesiredSize.Width() = mBoundingMetrics.width;
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
 
+  // Apply width/height to math content box.
+  auto sizes = GetWidthAndHeightForPlaceAdjustment(aFlags);
+  auto shiftX = ApplyAdjustmentForWidthAndHeight(aFlags, sizes, aDesiredSize,
+                                                 mBoundingMetrics);
+  dxOver += shiftX;
+  dxBase += shiftX;
+  dxUnder += shiftX;
+
   // Add padding+border.
   auto borderPadding = GetBorderPaddingForPlace(aFlags);
   InflateReflowAndBoundingMetrics(borderPadding, aDesiredSize,
@@ -717,4 +726,11 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
     }
   }
   return NS_OK;
+}
+
+bool nsMathMLmunderoverFrame::IsMathContentBoxHorizontallyCentered() const {
+  bool subsupDisplay =
+      NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
+      StyleFont()->mMathStyle == StyleMathStyle::Compact;
+  return !subsupDisplay;
 }

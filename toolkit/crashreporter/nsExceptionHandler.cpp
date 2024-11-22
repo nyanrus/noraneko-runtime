@@ -266,26 +266,12 @@ static CrashGenerationServer* crashServer;  // chrome process has this
 static std::terminate_handler oldTerminateHandler = nullptr;
 
 #if defined(XP_WIN) || defined(XP_MACOSX)
-// If crash reporting is disabled, we hand out this "null" pipe to the
-// child process and don't attempt to connect to a parent server.
-static const char kNullNotifyPipe[] = "-";
 static char* childCrashNotifyPipe;
 
 #elif defined(XP_LINUX)
 static int serverSocketFd = -1;
 static int clientSocketFd = -1;
 
-// On Linux these file descriptors are created in the parent process and
-// remapped in the child ones. See PosixProcessLauncher::DoSetup() for more
-// details.
-static FileHandle gMagicChildCrashReportFd =
-#  if defined(MOZ_WIDGET_ANDROID)
-    // On android the fd is set at the time of child creation.
-    kInvalidFileHandle
-#  else
-    4
-#  endif  // defined(MOZ_WIDGET_ANDROID)
-    ;
 #endif
 
 // |dumpMapLock| must protect all access to |pidToMinidump|.
@@ -389,19 +375,11 @@ static struct ReservedResources {
   // MinidumpWriteDump allocations.
   static const SIZE_T kReserveSize = 0x5000000;  // 80 MB
   void* mVirtualMemory;
-#elif defined(XP_LINUX)
-  // Breakpad in-process minidump generator uses at least two file descriptors,
-  // one for the minidump file and one to parse resources (files under /proc,
-  // modules, etc...). We reserve another couple to play it safe.
-  static const size_t kReservedFDs = 4;
-  std::array<int, kReservedFDs> mFileDescriptors;
 #endif
 
   ReservedResources()
 #if defined(XP_WIN) && !defined(HAVE_64BIT_BUILD)
       : mVirtualMemory(nullptr)
-#elif defined(XP_LINUX)
-      : mFileDescriptors{-1, -1, -1, -1}
 #endif
   {
   }
@@ -416,12 +394,6 @@ static void ReserveResources() {
   MOZ_ASSERT(gReservedResources.mVirtualMemory == nullptr);
   gReservedResources.mVirtualMemory = VirtualAlloc(
       nullptr, ReservedResources::kReserveSize, MEM_RESERVE, PAGE_NOACCESS);
-#elif defined(XP_LINUX)
-  for (size_t i = 0; i < ReservedResources::kReservedFDs; i++) {
-    MOZ_ASSERT(gReservedResources.mFileDescriptors[i] < 0);
-    gReservedResources.mFileDescriptors[i] =
-        static_cast<int>(syscall(__NR_memfd_create, "mozreserved", 0));
-  }
 #endif
 }
 
@@ -430,13 +402,6 @@ static void ReleaseResources() {
   if (gReservedResources.mVirtualMemory) {
     VirtualFree(gReservedResources.mVirtualMemory, 0, MEM_RELEASE);
     gReservedResources.mVirtualMemory = nullptr;
-  }
-#elif defined(XP_LINUX)
-  for (size_t i = 0; i < ReservedResources::kReservedFDs; i++) {
-    if (gReservedResources.mFileDescriptors[i] > 0) {
-      close(gReservedResources.mFileDescriptors[i]);
-      gReservedResources.mFileDescriptors[i] = -1;
-    }
   }
 #endif  // defined(XP_WIN)
 }
@@ -451,7 +416,7 @@ static inline void my_u64tostring(uint64_t aValue, char* aBuffer,
 
 #ifdef XP_WIN
 static void CreateFileFromPath(const xpstring& path, nsIFile** file) {
-  NS_NewLocalFile(nsDependentString(path.c_str()), false, file);
+  NS_NewLocalFile(nsDependentString(path.c_str()), file);
 }
 
 static std::optional<xpstring> CreatePathFromFile(nsIFile* file) {
@@ -464,7 +429,7 @@ static std::optional<xpstring> CreatePathFromFile(nsIFile* file) {
 }
 #else
 static void CreateFileFromPath(const xpstring& path, nsIFile** file) {
-  NS_NewNativeLocalFile(nsDependentCString(path.c_str()), false, file);
+  NS_NewNativeLocalFile(nsDependentCString(path.c_str()), file);
 }
 
 MAYBE_UNUSED static std::optional<xpstring> CreatePathFromFile(nsIFile* file) {
@@ -2869,8 +2834,7 @@ static void SetCrashEventsDir(nsIFile* aDir) {
 
   const char* env = PR_GetEnv("CRASHES_EVENTS_DIR");
   if (env && *env) {
-    NS_NewNativeLocalFile(nsDependentCString(env), false,
-                          getter_AddRefs(eventsDir));
+    NS_NewNativeLocalFile(nsDependentCString(env), getter_AddRefs(eventsDir));
     EnsureDirectoryExists(eventsDir);
   }
 
@@ -2888,6 +2852,13 @@ static void SetCrashEventsDir(nsIFile* aDir) {
 }
 
 void SetProfileDirectory(nsIFile* aDir) {
+  // Record the profile directory for use by the crash reporter client.
+  {
+    nsAutoString path;
+    aDir->GetPath(path);
+    RecordAnnotationNSString(Annotation::ProfileDirectory, path);
+  }
+
   nsCOMPtr<nsIFile> dir;
   aDir->Clone(getter_AddRefs(dir));
 
@@ -3521,38 +3492,22 @@ static void OOPDeinit() {
 #endif
 }
 
-#if defined(XP_WIN) || defined(XP_MACOSX)
 // Parent-side API for children
-const char* GetChildNotificationPipe() {
-  if (!GetEnabled()) return kNullNotifyPipe;
-
-  MOZ_ASSERT(OOPInitialized());
-
-  return childCrashNotifyPipe;
-}
-#endif
-
-#if defined(XP_LINUX)
-
-// Parent-side API for children
-bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd) {
+CrashPipeType GetChildNotificationPipe() {
   if (!GetEnabled()) {
-    *childCrashFd = -1;
-    *childCrashRemapFd = -1;
-    return true;
+    return nullptr;
   }
 
   MOZ_ASSERT(OOPInitialized());
 
-  *childCrashFd = clientSocketFd;
-  *childCrashRemapFd = gMagicChildCrashReportFd;
-
-  return true;
+#if defined(XP_WIN) || defined(XP_MACOSX)
+  return childCrashNotifyPipe;
+#elif defined(XP_LINUX)
+  return DuplicateFileHandle(clientSocketFd);
+#endif
 }
 
-#endif  // defined(XP_LINUX)
-
-bool SetRemoteExceptionHandler(const char* aCrashPipe) {
+bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe) {
   MOZ_ASSERT(!gExceptionHandler, "crash client already init'd");
   RegisterRuntimeExceptionModule();
   InitializeAppNotes();
@@ -3588,7 +3543,7 @@ bool SetRemoteExceptionHandler(const char* aCrashPipe) {
       path, ChildFilter, ChildMinidumpCallback,
       nullptr,  // no callback context
       true,     // install signal handlers
-      gMagicChildCrashReportFd);
+      aCrashPipe.release());
 #elif defined(XP_MACOSX)
   gExceptionHandler = new google_breakpad::ExceptionHandler(
       "", ChildFilter, ChildMinidumpCallback,
@@ -3919,11 +3874,5 @@ bool UnsetRemoteExceptionHandler(bool wasSet) {
 
   return true;
 }
-
-#if defined(MOZ_WIDGET_ANDROID)
-void SetNotificationPipeForChild(int childCrashFd) {
-  gMagicChildCrashReportFd = childCrashFd;
-}
-#endif
 
 }  // namespace CrashReporter

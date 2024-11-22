@@ -4,7 +4,6 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
@@ -54,14 +53,6 @@ const RESPONSE_HISTOGRAM_VALUES = {
   no_suggestion: 4,
 };
 
-const WEATHER_KEYWORD = "weather";
-
-const WEATHER_RS_DATA = {
-  keywords: [WEATHER_KEYWORD],
-  min_keyword_length: 3,
-  score: "0.29",
-};
-
 const WEATHER_SUGGESTION = {
   title: "Weather for San Francisco",
   url: "https://example.com/weather",
@@ -83,10 +74,6 @@ const WEATHER_SUGGESTION = {
     low: { c: 13.9, f: 57.0 },
   },
 };
-
-// We set the weather suggestion fetch interval to an absurdly large value so it
-// absolutely will not fire during tests.
-const WEATHER_FETCH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const GEOLOCATION_DATA = {
   provider: "geolocation",
@@ -175,24 +162,6 @@ class _MerinoTestUtils {
    */
   get GEOLOCATION() {
     return { ...GEOLOCATION_DATA.custom_details.geolocation };
-  }
-
-  /**
-   * @returns {string}
-   *   The weather keyword in `WEATHER_RS_DATA`. Can be used as a search string
-   *   to match the weather suggestion.
-   */
-  get WEATHER_KEYWORD() {
-    return WEATHER_KEYWORD;
-  }
-
-  /**
-   * @returns {object}
-   *   Default remote settings data that sets up `WEATHER_KEYWORD` as the
-   *   keyword for the weather suggestion.
-   */
-  get WEATHER_RS_DATA() {
-    return { ...WEATHER_RS_DATA };
   }
 
   /**
@@ -353,23 +322,16 @@ class _MerinoTestUtils {
     this.info("MockMerinoServer initializing weather, server now started");
     this.server.response.body.suggestions = [WEATHER_SUGGESTION];
 
-    lazy.QuickSuggest.weather._test_fetchIntervalMs = WEATHER_FETCH_INTERVAL_MS;
-
     // Enabling weather will trigger a fetch. Queue another fetch and await it
     // so no fetches are ongoing when this function returns.
     this.info("MockMerinoServer initializing weather, setting prefs");
     lazy.UrlbarPrefs.set("weather.featureGate", true);
     lazy.UrlbarPrefs.set("suggest.weather", true);
-    this.info(
-      "MockMerinoServer initializing weather, done setting prefs, starting fetch"
-    );
-    await lazy.QuickSuggest.weather._test_fetch();
-    this.info("MockMerinoServer initializing weather, done awaiting fetch");
+    this.info("MockMerinoServer initializing weather, done setting prefs");
 
     this.registerCleanupFunction?.(async () => {
       lazy.UrlbarPrefs.clear("weather.featureGate");
       lazy.UrlbarPrefs.clear("suggest.weather");
-      lazy.QuickSuggest.weather._test_fetchIntervalMs = -1;
     });
   }
 
@@ -471,6 +433,22 @@ class MockMerinoServer {
   }
   set response(value) {
     this.#response = value;
+    this.#requestHandler = null;
+  }
+
+  /**
+   * If you need more control over responses than is allowed by setting
+   * `server.response`, you can use this to register a callback that will be
+   * called on each request. To unregister the callback, pass null or set
+   * `server.response`.
+   *
+   * @param {Function | null} callback
+   *   This function will be called on each request and passed the
+   *   `nsIHttpRequest`. It should return a response object as described by the
+   *   `server.response` jsdoc.
+   */
+  set requestHandler(callback) {
+    this.#requestHandler = callback;
   }
 
   /**
@@ -717,7 +695,7 @@ class MockMerinoServer {
     // Now set up and finish the response.
     httpResponse.processAsync();
 
-    let { response } = this;
+    let response = this.#requestHandler?.(httpRequest) || this.response;
 
     let finishResponse = () => {
       let status = response.status || 200;
@@ -796,6 +774,7 @@ class MockMerinoServer {
   #url = null;
   #baseURL = null;
   #response = null;
+  #requestHandler = null;
   #requests = [];
   #nextRequestDeferred = null;
   #nextDelayedResponseID = 0;
