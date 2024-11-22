@@ -110,6 +110,7 @@ jobs:
 
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
+          git apply --ignore-space-change  --reject --ignore-whitespace .github/patches/dev/*.patch
         fi
 
         ./mach --no-interactive bootstrap --application-choice browser
