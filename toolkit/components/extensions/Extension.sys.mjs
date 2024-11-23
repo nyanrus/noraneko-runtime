@@ -2384,7 +2384,7 @@ export class ExtensionData {
 
       // Privileged extensions may request access to "about:"-URLs, such as
       // about:reader.
-      let match = /^([a-z\-*]+):\/\/([^/]*)\/|^about:/.exec(permission);
+      let match = /^([a-z*]+):\/\/([^/]*)\/|^about:/.exec(permission);
       if (!match) {
         throw new Error(`Unparseable host permission ${permission}`);
       }

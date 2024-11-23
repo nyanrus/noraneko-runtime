@@ -334,16 +334,7 @@ export class ContileIntegration {
   constructor(topSitesFeed) {
     this._topSitesFeed = topSitesFeed;
     this._lastPeriodicUpdate = 0;
-    this._sites = [
-      {
-        id: 0,
-        name: "CubeSoft",
-        url: "https://www.cube-soft.jp",
-        image_url:
-          "https://raw.githubusercontent.com/cube-soft/cube.assets/master/cubesoft/logo/256px.png",
-        image_size: 200,
-      },
-    ];
+    this._sites = [];
     // The Share-of-Voice object managed by Shepherd and sent via Contile.
     this._sov = null;
     this.cache = this.PersistentCache(CACHE_KEY, true);
@@ -501,7 +492,6 @@ export class ContileIntegration {
 
   // eslint-disable-next-line max-statements
   async _fetchSites() {
-    return false;
     if (
       !lazy.NimbusFeatures.newtab.getVariable(
         NIMBUS_VARIABLE_CONTILE_ENABLED
