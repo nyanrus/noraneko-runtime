@@ -1,7 +1,7 @@
 ac_add_options --with-app-name=noraneko
 ac_add_options --with-app-basename=Noraneko
 ac_add_options --disable-maintenance-service
-ac_add_options --disable-updater
+# ac_add_options --disable-updater
 # this implies disable geckodriver, and puppeteer seems using the geckodriver impl.
 # so you should not disable test
 # ac_add_options --disable-tests
