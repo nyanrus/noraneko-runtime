@@ -13,7 +13,7 @@ on:
       debug:
         type: boolean
         default: true
-      package-full:
+      package-moz-artifact:
         type: boolean
         default: false
       code-coverage:
@@ -164,8 +164,8 @@ jobs:
         compression-level: 9
         path: ~/output
 
-    - name: Publish Package full🎁
-      if: inputs.package-full
+    - name: Publish Package Mozilla Artifact🎁
+      if: inputs.package-moz-artifact
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-moz-artifact
@@ -173,6 +173,6 @@ jobs:
     - name: Publish dist/host for MAR
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-dist-host
+        name: noraneko-dist-host
         path: obj-x86_64-pc-windows-msvc/dist/host/
     # Publish END
