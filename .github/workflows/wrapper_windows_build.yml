@@ -15,20 +15,20 @@ on:
       debug:
         type: boolean
         required: true
-      package-full:
+      package-moz-artifact:
         type: boolean
         required: true
       code-coverage:
         type: boolean
         required: true
 
-run-name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-full) == 'true' && ' Full' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
+run-name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-moz-artifact) == 'true' && ' Moz-Artifact' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
 jobs:
   run-main:
     name: win-x64
     uses: ./.github/workflows/windows_build.yml
     with:
       debug: ${{inputs.debug}}
-      package-full: ${{inputs.package-full}}
+      package-full: ${{inputs.package-moz-artifact}}
       release: ${{inputs.release}}
       code-coverage: ${{inputs.code-coverage}}
