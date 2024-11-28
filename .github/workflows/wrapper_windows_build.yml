@@ -29,6 +29,6 @@ jobs:
     uses: ./.github/workflows/windows_build.yml
     with:
       debug: ${{inputs.debug}}
-      package-full: ${{inputs.package-moz-artifact}}
+      package-moz-artifact: ${{inputs.package-moz-artifact}}
       release: ${{inputs.release}}
       code-coverage: ${{inputs.code-coverage}}
