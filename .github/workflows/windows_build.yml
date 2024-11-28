@@ -170,4 +170,9 @@ jobs:
       with:
         name: noraneko-win-amd64-moz-artifact
         path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
+    - name: Publish dist/host for MAR
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-win-amd64-dist-host
+        path: obj-x86_64-pc-windows-msvc/dist/host/
     # Publish END
