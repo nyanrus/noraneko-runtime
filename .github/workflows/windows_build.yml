@@ -42,7 +42,7 @@ jobs:
 
     - name: setup Rust 🦀
       run: |
-        rustup default nightly
+        # rustup default nightly
         rustup target add x86_64-pc-windows-msvc
 
         #? https://github.com/mozilla/sccache#known-caveats
