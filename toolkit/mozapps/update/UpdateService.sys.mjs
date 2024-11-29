@@ -16,6 +16,21 @@ import {
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
+/**
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * (add version2 for updating source without rebuilding binary)
+ * * START
+ */
+import { NoranekoConstants } from "resource://noraneko/modules/NoranekoConstants.sys.mjs"
+/**
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * END
+ */
+
+// #region defines
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -299,6 +314,10 @@ var gBITSInUseByAnotherUser = false;
 let gOnlyDownloadUpdatesThisSession = false;
 // This will be the backing for `nsIApplicationUpdateService.currentState`
 var gUpdateState = Ci.nsIApplicationUpdateService.STATE_IDLE;
+
+// #endregion defines
+
+// #region utilities
 
 /**
  * Simple container and constructor for a Promise and its resolve function.
@@ -1900,14 +1919,138 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
 }
 
 /**
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * (add version2 for updating source without rebuilding binary)
+ * * START
+ */
+
+/**
+ * @typedef {[number, number, number]} NRVersion2
+ */
+
+/**
+ * check version2 for compare
+ * @param {string} A
+ * @returns {NRVersion2 | null}
+ */
+function parseVersion2(A) {
+  try {
+    let semverA = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(A).slice(1).map((p)=>parseInt(p,10));
+    return semverA;
+  } catch {}
+  return null;
+}
+
+/**
+ * compare version2 that is added for noraneko
+ * - 0 A=B
+ * - 1 A<B
+ * - -1 A>B
+ * - null A.length !== 3 || B.length !== 3
+ * @param {NRVersion2} A
+ * @param {NRVersion2} B
+ * @param {"<" | "==" | ">" | "<=" | ">="} mode
+ */
+function compareVersion2(A, B, mode) {
+
+  /**
+   * @type {"A==B" | "no_value" | "A>B" | "A<B"}
+   */
+  let lastStatus = "A==B";
+  if (!A || !B) {
+    lastStatus = "no_value"
+  } else {
+    [...Array(3)].forEach((_,index)=>{
+      if (lastStatus == "A==B") {
+        if (A[index] == B[index]) {
+          lastStatus = "A==B";
+        } else if (A[index] > B[index]) {
+          lastStatus = "A>B";
+        } else if (A[index] < B[index]) {
+          lastStatus = "A<B";
+        }
+      }
+    });
+  }
+
+  console.debug("noraneko debug: lastStatus : "+lastStatus)
+
+  switch (mode) {
+    case "==":
+      return lastStatus === "A==B";
+    case "<":
+      return lastStatus === "A<B";
+    case "<=":
+      return lastStatus === "A==B" || lastStatus === "A<B";
+    case ">":
+      return lastStatus === "A>B";
+    case ">=":
+      return lastStatus === "A==B" || lastStatus === "A>B";
+  }
+}
+
+/**
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * END
+ */
+
+/**
  * This returns true if the passed update is the same version or older than the
  * version and build ID values passed. Otherwise it returns false.
+ *
+ * *#####*
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * (add version2 for updating source without rebuilding binary)
+ * * START
+ * *#####*
+ * @param {nsIUpdate} update
+ * @param {NRVersion2 | null} version2
+ * *#####*
+ * * NORANEKO PATCH - 0.1.0
+ * * [UPDATER]
+ * * END
+ * *#####*
  */
-function updateIsAtLeastAsOldAs(update, version, buildID) {
+function updateIsAtLeastAsOldAs(update, version, buildID
+  /**
+  * * NORANEKO PATCH - 0.1.0
+  * * [UPDATER]
+  * * (add version2 for updating source without rebuilding binary)
+  * * START
+  */
+  , version2 = null
+  /**
+   * * NORANEKO PATCH - 0.1.0
+   * * [UPDATER]
+   * * END
+   */
+) {
   if (!update || !update.appVersion || !update.buildID) {
     return false;
   }
   let versionComparison = Services.vc.compare(update.appVersion, version);
+  /**
+   * * NORANEKO PATCH - 0.1.0
+   * * [UPDATER]
+   * * (add version2 for updating source without rebuilding binary)
+   * * START
+   */
+  let update_appVersion2 = parseVersion2(update.appVersion2)
+  let self_version2 = parseVersion2(version2);
+
+  if (update_appVersion2 && self_version2) {
+    if (versionComparison == 0 && compareVersion2(update_appVersion2, self_version2, ">")) {
+      return false;
+    }
+  }
+  /**
+   * * NORANEKO PATCH - 0.1.0
+   * * [UPDATER]
+   * * END
+   */
   return (
     versionComparison < 0 ||
     (versionComparison == 0 && update.buildID == buildID)
@@ -1917,12 +2060,25 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
 /**
  * This returns true if the passed update is the same version or older than
  * currently installed Firefox version.
+ * @param {nsIUpdate} update
  */
 function updateIsAtLeastAsOldAsCurrentVersion(update) {
   return updateIsAtLeastAsOldAs(
     update,
     Services.appinfo.version,
     Services.appinfo.appBuildID
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * (add version2 for updating source without rebuilding binary)
+     * * START
+     */
+    , NoranekoConstants.version2
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * END
+     */
   );
 }
 
@@ -1943,6 +2099,18 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
     update,
     lazy.UM.internal.readyUpdate.appVersion,
     lazy.UM.internal.readyUpdate.buildID
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * (add version2 for updating source without rebuilding binary)
+     * * START
+     */
+    , lazy.UM.internal.readyUpdate.appVersion2
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * END
+     */
   );
 }
 
@@ -2048,6 +2216,10 @@ function pollForStagingEnd() {
 
   lazy.setTimeout(pollingFn, pollingIntervalMs);
 }
+
+// #endregion utilities
+
+// #region UpdatePatch
 
 class UpdatePatch {
   // nsIUpdatePatch attribute names used to prevent nsIWritablePropertyBag from
@@ -2249,6 +2421,10 @@ class UpdatePatch {
   ]);
 }
 
+// #endregion UpdatePatch
+
+// #region Update
+
 class Update {
   // nsIUpdate attribute names used to prevent nsIWritablePropertyBag from over
   // writing nsIUpdate attributes.
@@ -2271,6 +2447,18 @@ class Update {
     "type",
     "unsupported",
     "platformVersion",
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * (add version2 for updating source without rebuilding binary)
+     * * START
+     */
+    "appVersion2",
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * END
+     */
   ];
 
   /**
@@ -2368,6 +2556,18 @@ class Update {
           case "statusText":
           case "type":
           case "platformVersion":
+          /**
+           * * NORANEKO PATCH - 0.1.0
+           * * [UPDATER]
+           * * (add version2 for updating source without rebuilding binary)
+           * * START
+           */
+          case "appVersion2":
+          /**
+           * * NORANEKO PATCH - 0.1.0
+           * * [UPDATER]
+           * * END
+           */
             this[attr.name] = attr.value;
             break;
           default:
@@ -2512,6 +2712,20 @@ class Update {
     if (this.elevationFailure) {
       update.setAttribute("elevationFailure", this.elevationFailure);
     }
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * (add version2 for updating source without rebuilding binary)
+     * * START
+     */
+    if (this.appVersion2) {
+      update.setAttribute("appVersion2",this.appVersion2);
+    }
+    /**
+     * * NORANEKO PATCH - 0.1.0
+     * * [UPDATER]
+     * * END
+     */
 
     for (let [name, value] of Object.entries(this._properties)) {
       if (value.present && !this._attrNames.includes(name)) {
@@ -2620,6 +2834,10 @@ class Update {
     Ci.nsIWritablePropertyBag,
   ]);
 }
+
+// #endregion Update
+
+// #region UpdateService
 
 export class UpdateService {
   #initPromise;
@@ -3616,11 +3834,13 @@ export class UpdateService {
     return true;
   }
 
+
+
   /**
    * Determine the update from the specified updates that should be offered.
    * If both valid major and minor updates are available the minor update will
    * be offered.
-   * @param   updates
+   * @param {nsIUpdate[]} updates
    *          An array of available nsIUpdate items
    * @return  The nsIUpdate to offer.
    */
@@ -3640,6 +3860,8 @@ export class UpdateService {
     var minorUpdate = null;
     var vc = Services.vc;
     let lastCheckCode = AUSTLMY.CHK_NO_COMPAT_UPDATE_FOUND;
+
+
 
     for (const update of updates) {
       // Ignore updates for older versions of the application and updates for
@@ -3673,6 +3895,8 @@ export class UpdateService {
         continue;
       }
 
+
+
       switch (update.type) {
         case "major":
           if (!majorUpdate || majorUpdate.unsupported) {
@@ -3680,6 +3904,18 @@ export class UpdateService {
           } else if (
             !update.unsupported &&
             vc.compare(majorUpdate.appVersion, update.appVersion) <= 0
+            /**
+             * * NORANEKO PATCH - 0.1.0
+             * * [UPDATER]
+             * * (add version2 for updating source without rebuilding binary)
+             * * START
+             */
+            && vc.compare(majorUpdate.appVersion, update.appVersion) == 0 ? compareVersion2(parseVersion2(majorUpdate.appVersion2),parseVersion2(update.appVersion2), "<=") : true
+            /**
+             * * NORANEKO PATCH - 0.1.0
+             * * [UPDATER]
+             * * END
+             */
           ) {
             majorUpdate = update;
           }
@@ -3690,6 +3926,18 @@ export class UpdateService {
           } else if (
             !update.unsupported &&
             vc.compare(minorUpdate.appVersion, update.appVersion) <= 0
+            /**
+             * * NORANEKO PATCH - 0.1.0
+             * * [UPDATER]
+             * * (add version2 for updating source without rebuilding binary)
+             * * START
+             */
+            && vc.compare(majorUpdate.appVersion, update.appVersion) == 0 ? compareVersion2(parseVersion2(majorUpdate.appVersion2),parseVersion2(update.appVersion2), "<=") : true
+            /**
+             * * NORANEKO PATCH - 0.1.0
+             * * [UPDATER]
+             * * END
+             */
           ) {
             minorUpdate = update;
           }
@@ -4460,6 +4708,10 @@ export class UpdateService {
   ]);
 }
 
+// #endregion UpdateService
+
+// #region UpdateManager
+
 export class UpdateManager {
   /**
    * The nsIUpdate object for the update that has been downloaded.
@@ -5178,6 +5430,10 @@ export class UpdateManager {
   QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateManager]);
 }
 
+// #endregion UpdateManager
+
+// #region CheckerService
+
 /**
  * CheckerService
  * Provides an interface for checking for new updates. When more checks are
@@ -5755,6 +6011,10 @@ export class CheckerService {
   classID = Components.ID("{898CDC9B-E43F-422F-9CC4-2F6291B415A3}");
   QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateChecker]);
 }
+
+// #endregion CheckerService
+
+// #region Downloader
 
 class Downloader {
   /**
@@ -7138,6 +7398,10 @@ class Downloader {
   ]);
 }
 
+// #endregion Downloader
+
+// #region RestartOnLastWindowClosed
+
 // On macOS, all browser windows can be closed without Firefox exiting. If it
 // is left in this state for a while and an update is pending, we should restart
 // Firefox on our own to apply the update. This class will do that
@@ -7403,3 +7667,5 @@ class RestartOnLastWindowClosed {
 // we hold the reference to the RestartOnLastWindowClosed instance somewhere.
 // eslint-disable-next-line no-unused-vars
 let restartOnLastWindowClosed = new RestartOnLastWindowClosed();
+
+// #endregion RestartOnLastWindowClosed
