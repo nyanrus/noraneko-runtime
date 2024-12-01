@@ -22,5 +22,5 @@ Thank you for reading. Have a nice day!
 
 ## LICENSE
 
-Mozilla Public License 2.0 (MPL2.0) for norakeo sources.  
-[LICENSE of Firefox sources (Most of these are MPL2.0)](./MOZ_LICENSE)
+[Mozilla Public License 2.0 (MPL2.0)](./.github/LICENSE) for noraneko sources.  
+[LICENSE of Firefox sources](./LICENSE)
