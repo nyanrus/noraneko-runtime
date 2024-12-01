@@ -29,7 +29,7 @@ import { NoranekoConstants } from "resource://noraneko/modules/NoranekoConstants
  * * END
  */
 
-// #region defines
+// MARK: defines
 
 const lazy = {};
 
@@ -315,9 +315,9 @@ let gOnlyDownloadUpdatesThisSession = false;
 // This will be the backing for `nsIApplicationUpdateService.currentState`
 var gUpdateState = Ci.nsIApplicationUpdateService.STATE_IDLE;
 
-// #endregion defines
 
-// #region utilities
+
+// MARK: utilities
 
 /**
  * Simple container and constructor for a Promise and its resolve function.
@@ -2220,9 +2220,9 @@ function pollForStagingEnd() {
   lazy.setTimeout(pollingFn, pollingIntervalMs);
 }
 
-// #endregion utilities
 
-// #region UpdatePatch
+
+// MARK: UpdatePatch
 
 class UpdatePatch {
   // nsIUpdatePatch attribute names used to prevent nsIWritablePropertyBag from
@@ -2424,9 +2424,9 @@ class UpdatePatch {
   ]);
 }
 
-// #endregion UpdatePatch
 
-// #region Update
+
+// MARK: Update
 
 class Update {
   // nsIUpdate attribute names used to prevent nsIWritablePropertyBag from over
@@ -2838,9 +2838,9 @@ class Update {
   ]);
 }
 
-// #endregion Update
 
-// #region UpdateService
+
+// MARK: UpdateService
 
 export class UpdateService {
   #initPromise;
@@ -4711,9 +4711,9 @@ export class UpdateService {
   ]);
 }
 
-// #endregion UpdateService
 
-// #region UpdateManager
+
+// MARK: UpdateManager
 
 export class UpdateManager {
   /**
@@ -5433,9 +5433,9 @@ export class UpdateManager {
   QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateManager]);
 }
 
-// #endregion UpdateManager
 
-// #region CheckerService
+
+// MARK: CheckerService
 
 /**
  * CheckerService
@@ -6015,9 +6015,9 @@ export class CheckerService {
   QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateChecker]);
 }
 
-// #endregion CheckerService
 
-// #region Downloader
+
+// MARK: Downloader
 
 class Downloader {
   /**
@@ -7401,9 +7401,9 @@ class Downloader {
   ]);
 }
 
-// #endregion Downloader
 
-// #region RestartOnLastWindowClosed
+
+// MARK: RestartOnLastWindowClosed
 
 // On macOS, all browser windows can be closed without Firefox exiting. If it
 // is left in this state for a while and an update is pending, we should restart
@@ -7671,4 +7671,4 @@ class RestartOnLastWindowClosed {
 // eslint-disable-next-line no-unused-vars
 let restartOnLastWindowClosed = new RestartOnLastWindowClosed();
 
-// #endregion RestartOnLastWindowClosed
+
