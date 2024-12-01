@@ -35,6 +35,9 @@ option(
 
 @depends("--enable-unverified-updates", "--enable-compile-environment")
 def disable_unverified_updates(unverified_updates, compile_environment):
+    if unverified_updates:
+        if not compile_environment:
+            die("--enable-unverified-updates requires --enable-compile-environment")
     return not unverified_updates
 
 
