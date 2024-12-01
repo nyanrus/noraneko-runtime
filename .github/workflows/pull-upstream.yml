@@ -19,6 +19,8 @@ jobs:
         run: |
           git clone -b release --single-branch https://github.com/mozilla/gecko-dev --depth 1 upstream_release
           rm -rf ./upstream_release/.git ./upstream_release/.github
+          mv ./upstream_release/README.txt ./upstream_release/MOZ_README.txt
+          mv ./upstream_release/LICENSE ./upstream_release/MOZ_LICENSE
       - name: copy upstream to this_repo
         run: |
           rsync -aq --progress upstream_release/ temp_release
@@ -26,15 +28,16 @@ jobs:
           cp -r ./nyanrus_release/.github temp_release
           cp ./nyanrus_release/.gitmodules temp_release
           cp -r ./nyanrus_release/noraneko temp_release
+          cp ./nyanrus_release/README.md temp_release
       - id: apply-git-patches
         name: apply git patches
         continue-on-error: true
         run: |
           cd temp_release
           git apply --ignore-space-change  --reject --ignore-whitespace .github/patches/upstream/*.patch
-          cp -f .github/workflows/setup.ico other-licenses/7zstub/firefox/setup.ico
-          cp -f .github/workflows/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
-          cp -f .github/workflows/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
+          cp -f .github/assets/installer/setup.ico other-licenses/7zstub/firefox/setup.ico
+          cp -f .github/assets/installer/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
+          cp -f .github/assets/installer/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
       - name: detect patch error
         if: ${{ steps.apply-git-patches.outcome == 'failure' }}
         run: |
