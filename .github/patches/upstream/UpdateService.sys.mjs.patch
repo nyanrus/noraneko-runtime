@@ -1,3 +1,6 @@
+diff --git a/.github/patches/upstream/UpdateService.sys.mjs.patch b/.github/patches/upstream/UpdateService.sys.mjs.patch
+new file mode 100644
+index 0000000000..e69de29bb2
 diff --git a/noraneko b/noraneko
 --- a/noraneko
 +++ b/noraneko
@@ -5,7 +8,7 @@ diff --git a/noraneko b/noraneko
 -Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349
 +Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349-dirty
 diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
-index 7ec86b4f5f..3bb68e5ec1 100644
+index 7ec86b4f5f..9abe0932dc 100644
 --- a/toolkit/mozapps/update/UpdateService.sys.mjs
 +++ b/toolkit/mozapps/update/UpdateService.sys.mjs
 @@ -16,6 +16,21 @@ import {
@@ -25,7 +28,7 @@ index 7ec86b4f5f..3bb68e5ec1 100644
 + * * END
 + */
 +
-+// #region defines
++// MARK: defines
 +
  const lazy = {};
  
@@ -34,9 +37,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
  // This will be the backing for `nsIApplicationUpdateService.currentState`
  var gUpdateState = Ci.nsIApplicationUpdateService.STATE_IDLE;
  
-+// #endregion defines
 +
-+// #region utilities
++
++// MARK: utilities
 +
  /**
   * Simple container and constructor for a Promise and its resolve function.
@@ -234,9 +237,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    lazy.setTimeout(pollingFn, pollingIntervalMs);
  }
  
-+// #endregion utilities
 +
-+// #region UpdatePatch
++
++// MARK: UpdatePatch
 +
  class UpdatePatch {
    // nsIUpdatePatch attribute names used to prevent nsIWritablePropertyBag from
@@ -245,9 +248,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    ]);
  }
  
-+// #endregion UpdatePatch
 +
-+// #region Update
++
++// MARK: Update
 +
  class Update {
    // nsIUpdate attribute names used to prevent nsIWritablePropertyBag from over
@@ -315,9 +318,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    ]);
  }
  
-+// #endregion Update
 +
-+// #region UpdateService
++
++// MARK: UpdateService
 +
  export class UpdateService {
    #initPromise;
@@ -397,9 +400,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    ]);
  }
  
-+// #endregion UpdateService
 +
-+// #region UpdateManager
++
++// MARK: UpdateManager
 +
  export class UpdateManager {
    /**
@@ -408,9 +411,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateManager]);
  }
  
-+// #endregion UpdateManager
 +
-+// #region CheckerService
++
++// MARK: CheckerService
 +
  /**
   * CheckerService
@@ -419,9 +422,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateChecker]);
  }
  
-+// #endregion CheckerService
 +
-+// #region Downloader
++
++// MARK: Downloader
 +
  class Downloader {
    /**
@@ -430,9 +433,9 @@ index 7ec86b4f5f..3bb68e5ec1 100644
    ]);
  }
  
-+// #endregion Downloader
 +
-+// #region RestartOnLastWindowClosed
++
++// MARK: RestartOnLastWindowClosed
 +
  // On macOS, all browser windows can be closed without Firefox exiting. If it
  // is left in this state for a while and an update is pending, we should restart
@@ -442,4 +445,4 @@ index 7ec86b4f5f..3bb68e5ec1 100644
  // eslint-disable-next-line no-unused-vars
  let restartOnLastWindowClosed = new RestartOnLastWindowClosed();
 +
-+// #endregion RestartOnLastWindowClosed
++
