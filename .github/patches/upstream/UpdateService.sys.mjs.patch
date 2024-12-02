@@ -176,7 +176,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +    if (versionComparison == 0 && compareVersion2(update_appVersion2, self_version2, ">")) {
 +      return false;
 +    }
-+    if (versionComparion == 0 && compareVersion2(update_appVersion2,self_version2,"<")) {
++    if (versionComparison == 0 && compareVersion2(update_appVersion2,self_version2,"<")) {
 +      return true;
 +    }
 +  }

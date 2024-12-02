@@ -2045,7 +2045,7 @@ function updateIsAtLeastAsOldAs(update, version, buildID
     if (versionComparison == 0 && compareVersion2(update_appVersion2, self_version2, ">")) {
       return false;
     }
-    if (versionComparion == 0 && compareVersion2(update_appVersion2,self_version2,"<")) {
+    if (versionComparison == 0 && compareVersion2(update_appVersion2,self_version2,"<")) {
       return true;
     }
   }
