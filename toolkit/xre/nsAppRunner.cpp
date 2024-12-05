@@ -3395,21 +3395,6 @@ int32_t CompareCompatVersions(const nsACString& aOldCompatVersion,
                          PromiseFlatCString(newMajorVersion).get());
 }
 
-/*
-* NORANEKO PATCH
-* [updater]
-* START
-*/
-nsresult NRReadString(nsIFile* aFile, nsCString& str) {
-  MOZ_TRY_VAR(str, URLPreloader::ReadFile(aFile));
-  return NS_OK;
-}
-/*
-* NORANEKO PATCH
-* [updater]
-* END
-*/
-
 /**
  * Checks the compatibility.ini file to see if we have updated our application
  * or otherwise invalidated our caches. If the application has been updated,
@@ -3460,24 +3445,27 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * START
   */
   {
+    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) {
+        MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
+        return NS_OK;
+    };
     nsCOMPtr<nsIFile> buildid2_profile;
     aProfileDir->Clone(getter_AddRefs(buildid2_profile));
     if (!buildid2_profile) return false;
     buildid2_profile->AppendNative("buildid2"_ns);
 
     nsCString buildid2_profile_string;
-    rv = NRReadString(buildid2_profile,&buildid2_profile_string);
+    rv = _NRReadString(buildid2_profile,buildid2_appDir_string);
     if (NS_FAILED(rv)) {
-      return false;
+        return false;
     }
-
-    nsCOMPtr<nsIFile> buildid2_appDir;
+      
     aAppDir->Clone(getter_AddRefs(buildid2_appDir));
     if (!buildid2_appDir) return false;
     buildid2_appDir->AppendNative("buildid2"_ns);
 
     nsCString buildid2_appDir_string;
-    rv = NRReadString(buildid2_appDir,&buildid2_appDir_string);
+    rv = _NRReadString(buildid2_appDir,buildid2_appDir_string);
     if (NS_FAILED(rv)) {
       return false;
     }
