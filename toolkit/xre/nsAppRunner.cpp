@@ -266,6 +266,19 @@
 #  include "DBusService.h"
 #endif
 
+/*
+* NORANEKO PATCH
+* [updater]
+* START
+*/
+#include "mozilla/Try.h"
+#include "mozilla/URLPreloader.h"
+/*
+* NORANEKO PATCH
+* [updater]
+* END
+*/
+
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char* ProgramName);
 
@@ -3425,6 +3438,38 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     ExtractCompatVersionInfo(aLastVersion, gLastAppVersion, gLastAppBuildID);
     return false;
   }
+
+  /*
+  * NORANEKO PATCH
+  * [updater]
+  * START
+  */
+  {
+    nsCOMPtr<nsIFile> buildid2_profile;
+    aProfileDir->Clone(getter_AddRefs(buildid2_profile));
+    if (!buildid2_profile) return false;
+    buildid2_profile->AppendNative("buildid2"_ns);
+
+    nsCString buildid2_profile_string;
+    MOZ_TRY_VAR(buildid2_profile_string, URLPreloader::ReadFile(buildid2_profile));
+
+    nsCOMPtr<nsIFile> buildid2_appDir;
+    aAppDir->Clone(getter_AddRefs(buildid2_appDir));
+    if (!buildid2_appDir) return false;
+    buildid2_appDir->AppendNative("buildid2"_ns);
+
+    nsCString buildid2_appDir_string;
+    MOZ_TRY_VAR(buildid2_appDir_string, URLPreloader::ReadFile(buildid2_appDir));
+
+    if (!buildid2_profile_string.Equals(buildid2_appDir_string)) {
+      return false;
+    }
+  }
+  /*
+  * NORANEKO PATCH
+  * [updater]
+  * END
+  */
 
   // If we get here, the version matched, but there may still be other
   // differences between us and the build that the profile last ran under.
