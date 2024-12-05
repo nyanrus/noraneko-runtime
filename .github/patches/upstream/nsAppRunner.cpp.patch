@@ -2,7 +2,7 @@ diff --git a/.github/patches/upstream/nsAppRunner.cpp.patch b/.github/patches/up
 new file mode 100644
 index 0000000000..e69de29bb2
 diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
-index b088f4abae..ee24af1e9b 100644
+index b088f4abae..c0110b29c7 100644
 --- a/toolkit/xre/nsAppRunner.cpp
 +++ b/toolkit/xre/nsAppRunner.cpp
 @@ -266,6 +266,19 @@
@@ -47,7 +47,7 @@ index b088f4abae..ee24af1e9b 100644
  /**
   * Checks the compatibility.ini file to see if we have updated our application
   * or otherwise invalidated our caches. If the application has been updated,
-@@ -3426,6 +3454,44 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
+@@ -3426,6 +3454,45 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
      return false;
    }
  
@@ -63,7 +63,8 @@ index b088f4abae..ee24af1e9b 100644
 +    buildid2_profile->AppendNative("buildid2"_ns);
 +
 +    nsCString buildid2_profile_string;
-+    rv = NRReadString(&buildid2_profile,&buildid2_profile_string);
++    rv = NRReadString(.
++    buildid2_profile,&buildid2_profile_string);
 +    if (NS_FAILED(rv)) {
 +      return false;
 +    }
@@ -74,7 +75,7 @@ index b088f4abae..ee24af1e9b 100644
 +    buildid2_appDir->AppendNative("buildid2"_ns);
 +
 +    nsCString buildid2_appDir_string;
-+    rv = NRReadString(&buildid2_appDir,&buildid2_appDir_string);
++    rv = NRReadString(buildid2_appDir,&buildid2_appDir_string);
 +    if (NS_FAILED(rv)) {
 +      return false;
 +    }

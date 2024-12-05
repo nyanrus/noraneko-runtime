@@ -3466,7 +3466,8 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     buildid2_profile->AppendNative("buildid2"_ns);
 
     nsCString buildid2_profile_string;
-    rv = NRReadString(&buildid2_profile,&buildid2_profile_string);
+    rv = NRReadString(.
+    buildid2_profile,&buildid2_profile_string);
     if (NS_FAILED(rv)) {
       return false;
     }
@@ -3477,7 +3478,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     buildid2_appDir->AppendNative("buildid2"_ns);
 
     nsCString buildid2_appDir_string;
-    rv = NRReadString(&buildid2_appDir,&buildid2_appDir_string);
+    rv = NRReadString(buildid2_appDir,&buildid2_appDir_string);
     if (NS_FAILED(rv)) {
       return false;
     }
