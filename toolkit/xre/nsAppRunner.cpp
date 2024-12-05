@@ -3445,7 +3445,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * START
   */
   {
-    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) {
+    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) -> nsresult {
         MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
         return NS_OK;
     };
@@ -3459,7 +3459,8 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     if (NS_FAILED(rv)) {
         return false;
     }
-      
+    
+    nsCOMPtr<nsIFile> buildid2_appDir;
     aAppDir->Clone(getter_AddRefs(buildid2_appDir));
     if (!buildid2_appDir) return false;
     buildid2_appDir->AppendNative("buildid2"_ns);
