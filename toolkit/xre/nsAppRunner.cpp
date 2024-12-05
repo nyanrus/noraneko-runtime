@@ -3400,9 +3400,9 @@ int32_t CompareCompatVersions(const nsACString& aOldCompatVersion,
 * [updater]
 * START
 */
-nsresult NRReadString(nsIFile* aFile, nsCString* str) {
+nsresult NRReadString(nsIFile* aFile, nsCString& str) {
   MOZ_TRY_VAR(str, URLPreloader::ReadFile(aFile));
-  return NS_OK
+  return NS_OK;
 }
 /*
 * NORANEKO PATCH
@@ -3466,8 +3466,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     buildid2_profile->AppendNative("buildid2"_ns);
 
     nsCString buildid2_profile_string;
-    rv = NRReadString(.
-    buildid2_profile,&buildid2_profile_string);
+    rv = NRReadString(buildid2_profile,&buildid2_profile_string);
     if (NS_FAILED(rv)) {
       return false;
     }
