@@ -9,6 +9,7 @@ index b3ab5e8ca5..c0bc9929fc 100644
 +; [Noraneko Files]
 +@RESPATH@/chrome/noraneko.manifest
 +@RESPATH@/chrome/noraneko@JAREXT@
++@RESPATH@/browser/buildid2
 +
  ; [Extensions]
  @RESPATH@/components/extensions-toolkit.manifest
