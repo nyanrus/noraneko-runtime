@@ -440,9 +440,3 @@ index 7ec86b4f5f..9abe0932dc 100644
  // On macOS, all browser windows can be closed without Firefox exiting. If it
  // is left in this state for a while and an update is pending, we should restart
  // Firefox on our own to apply the update. This class will do that
-@@ -7403,3 +7670,5 @@ class RestartOnLastWindowClosed {
- // we hold the reference to the RestartOnLastWindowClosed instance somewhere.
- // eslint-disable-next-line no-unused-vars
- let restartOnLastWindowClosed = new RestartOnLastWindowClosed();
-+
-+
