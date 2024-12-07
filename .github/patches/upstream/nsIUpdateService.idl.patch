@@ -1,9 +1,3 @@
-diff --git a/noraneko b/noraneko
---- a/noraneko
-+++ b/noraneko
-@@ -1 +1 @@
--Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349
-+Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349-dirty
 diff --git a/toolkit/mozapps/update/nsIUpdateService.idl b/toolkit/mozapps/update/nsIUpdateService.idl
 index 984542db48..5837a284a5 100644
 --- a/toolkit/mozapps/update/nsIUpdateService.idl
