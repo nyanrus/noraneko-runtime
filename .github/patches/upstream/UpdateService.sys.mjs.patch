@@ -1,12 +1,3 @@
-diff --git a/.github/patches/upstream/UpdateService.sys.mjs.patch b/.github/patches/upstream/UpdateService.sys.mjs.patch
-new file mode 100644
-index 0000000000..e69de29bb2
-diff --git a/noraneko b/noraneko
---- a/noraneko
-+++ b/noraneko
-@@ -1 +1 @@
--Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349
-+Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349-dirty
 diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
 index 7ec86b4f5f..9abe0932dc 100644
 --- a/toolkit/mozapps/update/UpdateService.sys.mjs
