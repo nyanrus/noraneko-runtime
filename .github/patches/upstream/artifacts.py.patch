@@ -1,9 +1,3 @@
-diff --git a/noraneko b/noraneko
---- a/noraneko
-+++ b/noraneko
-@@ -1 +1 @@
--Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349
-+Subproject commit 40e9c1fabbb5484039cf538ad18e6f6cfd245349-dirty
 diff --git a/python/mozbuild/mozbuild/artifacts.py b/python/mozbuild/mozbuild/artifacts.py
 index 6e46664f20..0a0d893ed0 100644
 --- a/python/mozbuild/mozbuild/artifacts.py
