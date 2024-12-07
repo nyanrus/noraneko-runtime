@@ -1,6 +1,3 @@
-diff --git a/.github/patches/upstream/nsAppRunner.cpp.patch b/.github/patches/upstream/nsAppRunner.cpp.patch
-new file mode 100644
-index 0000000000..e69de29bb2
 diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
 index b088f4abae..c620b56657 100644
 --- a/toolkit/xre/nsAppRunner.cpp
