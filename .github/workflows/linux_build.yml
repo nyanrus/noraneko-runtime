@@ -10,9 +10,6 @@ on:
       debug:
         type: boolean
         default: true
-      package-full:
-        type: boolean
-        default: false
 
 jobs:
   linux-build:
@@ -21,10 +18,10 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: "lts/*"
+        node-version: "latest"
 
-    - uses: actions/checkout@v4
-      name: Clone 🧬
+    - name: Clone 🧬
+      uses: actions/checkout@v4
       with:
         submodules: "recursive"
 
@@ -35,87 +32,63 @@ jobs:
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
-    - name: setup Rust 🦀
-      run: |
-        # Install Rust Nightly Build
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
-        source $HOME/.cargo/env
+    # - name: Setup Rust 🦀
+    #   run: |
+    #     rustup default nightly
+    #     rustup target add x86_64-unknown-linux-gnu
+    #     export CARGO_INCREMENTAL=0
 
-        #? https://github.com/mozilla/sccache#known-caveats
+    - name: Setup Rust 🦀
+      run: |
+        rustup default stable
+        rustup target add x86_64-unknown-linux-gnu
         export CARGO_INCREMENTAL=0
 
     - name: Allocate swap
       run: |
-        echo Before:
+        echo "Before:"
         free -h
         df -h
-        echo
-        echo
 
-        sudo swapoff /mnt/swapfile
-        sudo rm /mnt/swapfile
-        sudo fallocate -l 10G /mnt/swapfile
+        sudo swapoff /mnt/swapfile || true
+        sudo rm /mnt/swapfile || true
+        sudo fallocate -l 20G /mnt/swapfile
         sudo chmod 600 /mnt/swapfile
         sudo mkswap /mnt/swapfile
         sudo swapon /mnt/swapfile
-        sudo apt remove --purge -y '^dotnet-.*' '^llvm-.*' '^php.*' '^mongodb-.*' '^mysql-.*' clang azure-cli google-cloud-sdk firefox powershell rpm zsync
+
         sudo apt autoremove -y
         sudo apt clean
-        sudo rm -rf  ./git
-        sudo rm -rf /home/linuxbrew
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /usr/local/graalvm
-        sudo rm -rf /usr/local/share/powershell
-        sudo rm -rf /usr/local/share/chromium
-        sudo rm -rf /usr/local/lib/node_modules
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo rm -rf /etc/apache2
-        sudo rm -rf /etc/nginx
-        sudo rm -rf /usr/local/share/chromedriver-linux64
-        sudo rm -rf /usr/local/share/chrome_driver
-        sudo rm -rf /usr/local/share/edge_driver
-        sudo rm -rf /usr/local/share/gecko_driver
-        sudo rm -rf /usr/share/java
-        sudo rm -rf /usr/share/miniconda
-        sudo rm -rf /usr/local/share/vcpkg
+        sudo rm -rf ./git /home/linuxbrew /usr/share/dotnet /usr/local/lib/android /usr/local/graalvm
+        sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium /opt/ghc /usr/local/share/boost
+        sudo rm -rf /etc/apache2 /etc/nginx /usr/local/share/chrome_driver /usr/local/share/edge_driver
+        sudo rm -rf /usr/local/share/gecko_driver /usr/share/java /usr/share/miniconda /usr/local/share/vcpkg
 
-
-        echo
-        echo
-        echo After:
+        echo "After:"
         free -h
         df -h
 
     - name: Setup 🪛
       run: |
         cd $GITHUB_WORKSPACE
-
-        # update noraneko to latest
         git submodule update --remote
-
         cp ./.github/workflows/mozconfigs/linux64.mozconfig mozconfig
         cp -r ./noraneko/gecko/branding/* ./browser/branding/
-
         sudo apt install msitools -y
 
-        # SCCACHE START
         echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
         echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
         echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
-        # SCCACHE END
 
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
-          git apply --ignore-space-change  --reject --ignore-whitespace .github/patches/dev/*.patch
+          git apply --ignore-space-change --reject --ignore-whitespace .github/patches/dev/*.patch
         fi
 
         ./mach --no-interactive bootstrap --application-choice browser
       env:
-        GHA_debug: ${{inputs.debug}}
+        GHA_debug: ${{ inputs.debug }}
 
     - name: Mach Configure
       run: |
@@ -125,27 +98,18 @@ jobs:
       run: |
         ./mach build
         ./mach package
-
-    - name: Cleanup Cargo cache 🧹
-      run: |
         rm -rf ~/.cargo
 
     # Publish START
-    - name: create tar archive
+    - name: Extract Package 📦
       run: |
-        cd obj-x86_64-pc-linux-gnu/dist/bin
-        tar -chf ~/nora-linux_x64-bin.tar .
+        cd obj-x86_64-pc-linux-gnu/dist/
+        mkdir ~/output
+        tar xjf noraneko-*.tar.bz2 -C ~/output
 
-    - name: Publish Package🎁
+    - name: Publish Package 🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-linux_x64-amd64-dev
-        path: ~/nora-linux_x64-bin.tar
-
-    - name: Publish Package full🎁
-      if: inputs.package-full
-      uses: actions/upload-artifact@v4
-      with:
-        name: noraneko-linux_x64-amd64-moz-artifact
-        path: obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.bz2
+        name: noraneko-linux-amd64-dev
+        path: ~/output/noraneko/
     # Publish END
