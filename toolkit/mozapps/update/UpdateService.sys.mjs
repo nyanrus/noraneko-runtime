@@ -7670,5 +7670,3 @@ class RestartOnLastWindowClosed {
 // we hold the reference to the RestartOnLastWindowClosed instance somewhere.
 // eslint-disable-next-line no-unused-vars
 let restartOnLastWindowClosed = new RestartOnLastWindowClosed();
-
-
