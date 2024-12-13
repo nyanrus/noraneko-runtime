@@ -58,7 +58,9 @@
       "publishedDate": null,
       "isFirefoxLabsOptIn": false,
       "firefoxLabsTitle": null,
-      "firefoxLabsDescription": null
+      "firefoxLabsDescription": null,
+      "firefoxLabsGroup": null,
+      "requiresRestart": false
     },
     {
       "schemaVersion": "1.12.0",
@@ -132,7 +134,9 @@
       "publishedDate": "2024-09-19T17:57:21.676623Z",
       "isFirefoxLabsOptIn": false,
       "firefoxLabsTitle": null,
-      "firefoxLabsDescription": null
+      "firefoxLabsDescription": null,
+      "firefoxLabsGroup": null,
+      "requiresRestart": false
     }
   ]
 }
