@@ -51,6 +51,7 @@ Your choice: """
 
 APPLICATIONS = OrderedDict(
     [
+        ("Noraneko for Desktop Artifact Mode", "browser_artifact_mode"),
         ("Noraneko for Desktop", "browser"),
     ]
 )
