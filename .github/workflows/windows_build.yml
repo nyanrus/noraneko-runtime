@@ -152,8 +152,7 @@ jobs:
 
         ./mach build
 
-        ls obj-x86_64-pc-windows-msvc/dist
-        # ./mach package
+        ./mach package
         rm -rf ~/.cargo
 
     # Publish START
