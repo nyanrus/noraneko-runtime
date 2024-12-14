@@ -154,16 +154,11 @@ jobs:
         rm -rf ~/.cargo
 
     # Publish START
-    - name: rsync binaries
-      run: |
-        rsync -aqhL --progress obj-x86_64-pc-windows-msvc/dist/bin/ ~/output
-
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-win-amd64-dev
-        compression-level: 9
-        path: ~/output
+        path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
 
     - name: Publish Package Mozilla Artifact🎁
       if: inputs.package-moz-artifact

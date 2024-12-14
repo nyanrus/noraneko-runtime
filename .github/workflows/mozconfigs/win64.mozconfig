@@ -27,3 +27,5 @@ ac_add_options --with-branding=browser/branding/noraneko-unofficial
 export MOZ_PACKAGE_JSSHELL=1
 ac_add_options --enable-unverified-updates
 ac_add_options --enable-update-channel=release
+# Use Flat package for dev
+ac_add_options --enable-chrome-format=flat
