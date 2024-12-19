@@ -19,6 +19,12 @@ on:
       code-coverage:
         type: boolean
         default: false
+      profile-generate-mode:
+        type: boolean
+        default: false
+      pgo_artifact_name:
+        type: string
+        required: false
 
 jobs:
   win-build:
@@ -42,24 +48,31 @@ jobs:
 
     - name: setup Rust 🦀
       run: |
-        # rustup default nightly
-        rustup target add x86_64-pc-windows-msvc
+        # Install Rust if pgo_artifact_name is not empty
+        if [[ -n $GHA_pgo_artifact_name ]]; then
+          rustup toolchain install 1.81.0
+          rustup default 1.81.0
+        fi
 
+        rustup target add x86_64-pc-windows-msvc
+        rustc --version --verbose
         #? https://github.com/mozilla/sccache#known-caveats
         export CARGO_INCREMENTAL=0
+      env:
+        GHA_pgo_artifact_name: ${{inputs.pgo_artifact_name}}
 
     - name: Allocate swap
       run: |
         echo Before:
         free -h
         df -h
-        
+
         echo
         echo
-        
+
         sudo swapoff /mnt/swapfile
         sudo rm /mnt/swapfile
-        sudo fallocate -l 20G /mnt/swapfile
+        sudo fallocate -l 30G /mnt/swapfile
         sudo chmod 600 /mnt/swapfile
         sudo mkswap /mnt/swapfile
         sudo swapon /mnt/swapfile
@@ -87,10 +100,17 @@ jobs:
 
         echo
         echo
-        
+
         echo After:
         free -h
         df -h
+
+    - name: Download PGO Artifact if exists
+      if: inputs.pgo_artifact_name
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{inputs.pgo_artifact_name}}
+        path: ~/artifacts
 
     - name: Setup 🪛
       run: |
@@ -113,7 +133,7 @@ jobs:
         echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'" >> mozconfig
         # SCCACHE END
 
-        
+
         if [[ $GHA_debug == 'true' ]]; then
           echo "ac_add_options --enable-debug" >> mozconfig
           echo "ac_add_options RUSTC_OPT_LEVEL=3" >> mozconfig
@@ -128,10 +148,22 @@ jobs:
           #https://searchfox.org/mozilla-central/rev/abeb2aa5df6f02de3c12c54ff7b0865c34c3fde9/browser/config/mozconfigs/win64/code-coverage#10
           echo "export LIB=\"$(cd ~/.mozbuild/clang/lib/clang/* && cd lib/windows && pwd)\"" >> mozconfig
           echo 'export LDFLAGS="clang_rt.profile-x86_64.lib"' >> mozconfig
-          
+
           echo 'export RUSTFLAGS="-Ccodegen-units=1 -Zprofile -Cpanic=abort -Zpanic_abort_tests -Coverflow-checks=off"' >> mozconfig
           echo 'export RUSTDOCFLAGS="-Cpanic=abort"' >> mozconfig
         fi
+
+        # PGO START
+        if [[ $GHA_profgen == 'true' ]]; then
+          echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
+        elif [[ -n $GHA_pgo_artifact_name ]]; then
+        # https://searchfox.org/mozilla-central/source/build/mozconfig.common#26
+          echo 'export MOZ_LTO=cross' >> mozconfig
+          echo 'ac_add_options --enable-profile-use=cross' >> mozconfig
+          echo 'ac_add_options --with-pgo-profile-path=$(echo ~)/artifacts/merged.profdata' >> mozconfig
+          echo 'ac_add_options --with-pgo-jarlog=$(echo ~)/artifacts/en-US.log' >> mozconfig
+        fi
+        # PGO END
 
         echo "ac_add_options --enable-update-channel=alpha" >> mozconfig
         # echo "ac_add_options --with-version-file-path=noraneko/gecko/config" >> mozconfig
@@ -142,6 +174,8 @@ jobs:
         GHA_debug: ${{inputs.debug}}
         GHA_release: ${{inputs.release}}
         GHA_codecov: ${{inputs.code-coverage}}
+        GHA_profgen: ${{inputs.profile-generate-mode}}
+        GHA_pgo_artifact_name: ${{inputs.pgo_artifact_name}}
 
     - name: Mach Configure
       run: |
@@ -156,6 +190,16 @@ jobs:
         rm -rf ~/.cargo
 
     # Publish START
+    # Remove same name uploaded artifacts
+    - name: Remove same name uploaded artifacts
+      uses: geekyeggo/delete-artifact@v5
+      with:
+        name: |
+          noraneko-win-amd64-dev
+          noraneko-win-amd64-moz-artifact
+          noraneko-win-amd64-profile-generate-mode
+          noraneko-dist-host
+
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
@@ -168,7 +212,16 @@ jobs:
       with:
         name: noraneko-win-amd64-moz-artifact
         path: obj-x86_64-pc-windows-msvc/dist/noraneko-*.zip
+
+    - name: Publish dist/* for generate profile
+      if: inputs.profile-generate-mode
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-win-amd64-profile-generate-mode
+        path: obj-x86_64-pc-windows-msvc/dist/
+
     - name: Publish dist/host for MAR
+      if: inputs.profile-generate-mode == 'false'
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-dist-host

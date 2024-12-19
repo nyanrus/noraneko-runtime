@@ -21,14 +21,42 @@ on:
       code-coverage:
         type: boolean
         required: true
+      profile-generate-mode:
+        type: boolean
+        default: false
+        required: true
 
-run-name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-moz-artifact) == 'true' && ' Moz-Artifact' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
+run-name: ${{toJSON(inputs.profile-generate-mode) == 'true' && '[PGO] ' || ''}}Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-moz-artifact) == 'true' && ' Moz-Artifact' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
 jobs:
-  run-main:
-    name: win-x64
+  part-1:
+    name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-moz-artifact) == 'true' && ' Moz-Artifact' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
     uses: ./.github/workflows/windows_build.yml
+    secrets: inherit
+    with:
+      debug: ${{inputs.debug}}
+      package-moz-artifact: ${{ inputs.profile-generate-mode == 'true' && '' || inputs.package-moz-artifact }}
+      release: ${{inputs.release}}
+      code-coverage: ${{inputs.code-coverage}}
+      profile-generate-mode: ${{inputs.profile-generate-mode}}
+
+  part-2:
+    name: Windows x64 Generate Profile for Guided Optimazation
+    if: inputs.profile-generate-mode
+    needs: part-1
+    uses: ./.github/workflows/windows_pgo.yml
+    secrets: inherit
+    with:
+      browser-artifact-name: noraneko-win-amd64-profile-generate-mode
+
+  part-3:
+    name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}${{toJSON(inputs.release) == 'true' && ' Release' || ''}}${{toJSON(inputs.package-moz-artifact) == 'true' && ' Moz-Artifact' || ''}}${{toJSON(inputs.code-coverage)=='true'&&' codecov'||''}}
+    if: inputs.profile-generate-mode
+    needs: part-2
+    uses: ./.github/workflows/windows_build.yml
+    secrets: inherit
     with:
       debug: ${{inputs.debug}}
       package-moz-artifact: ${{inputs.package-moz-artifact}}
       release: ${{inputs.release}}
       code-coverage: ${{inputs.code-coverage}}
+      pgo_artifact_name: noraneko-win-amd64-profile-generate-output
