@@ -221,7 +221,6 @@ jobs:
         path: obj-x86_64-pc-windows-msvc/dist/
 
     - name: Publish dist/host for MAR
-      if: inputs.profile-generate-mode == 'false'
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-dist-host
