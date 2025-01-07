@@ -339,7 +339,7 @@ void nsCocoaUtils::PrepareForNativeAppModalDialog() {
       "Main menu does not have any items, something is terribly wrong!");
 
   // Create new menu bar for use with modal dialog
-  NSMenu* newMenuBar = [[NSMenu alloc] initWithTitle:@""];
+  NSMenu* newMenuBar = [[GeckoNSMenu alloc] initWithTitle:@""];
 
   // Swap in our app menu. Note that the event target is whatever window is up
   // when the app modal dialog goes up.
@@ -701,10 +701,11 @@ NSEvent* nsCocoaUtils::MakeNewCococaEventFromWidgetEvent(
       {MODIFIER_ALTGRAPH, NSEventModifierFlagOption},
       {MODIFIER_META, NSEventModifierFlagCommand},
       {MODIFIER_CAPSLOCK, NSEventModifierFlagCapsLock},
-      {MODIFIER_NUMLOCK, NSEventModifierFlagNumericPad}};
+      {MODIFIER_NUMLOCK, NSEventModifierFlagNumericPad},
+      {MODIFIER_FN, NSEventModifierFlagFunction}};
 
   NSUInteger modifierFlags = 0;
-  for (uint32_t i = 0; i < ArrayLength(sModifierFlagMap); ++i) {
+  for (uint32_t i = 0; i < std::size(sModifierFlagMap); ++i) {
     if (aKeyEvent.mModifiers & sModifierFlagMap[i][0]) {
       modifierFlags |= sModifierFlagMap[i][1];
     }
@@ -786,9 +787,18 @@ Modifiers nsCocoaUtils::ModifiersForEvent(NSEvent* aNativeEvent) {
     result |= MODIFIER_NUMLOCK;
   }
 
-  // Be aware, NSEventModifierFlagFunction is included when arrow keys, home key
-  // or some other keys are pressed. We cannot check whether 'fn' key is pressed
-  // or not by the flag.
+  // Be aware, NSEventModifierFlagFunction is also set on the native event when
+  // arrow keys, the home key or some other keys are pressed. We cannot check
+  // whether the 'fn' key is pressed or not by the flag alone. We need to check
+  // that the event's keyCode falls outside the range of keys that will also set
+  // the function modifier.
+  if (!!(modifiers & NSEventModifierFlagFunction) &&
+      (aNativeEvent.type == NSKeyDown || aNativeEvent.type == NSKeyUp ||
+       aNativeEvent.type == NSFlagsChanged) &&
+      !(kVK_Return <= aNativeEvent.keyCode &&
+        aNativeEvent.keyCode <= NSModeSwitchFunctionKey)) {
+    result |= MODIFIER_FN;
+  }
 
   return result;
 }
@@ -1065,7 +1075,7 @@ uint32_t nsCocoaUtils::ConvertGeckoNameToMacCharCode(
 
   uint32_t keyCodeNameLength = keyCodeName.Length();
   const char* keyCodeNameStr = keyCodeName.get();
-  for (uint16_t i = 0; i < ArrayLength(gKeyConversions); ++i) {
+  for (uint16_t i = 0; i < std::size(gKeyConversions); ++i) {
     if (keyCodeNameLength == gKeyConversions[i].strLength &&
         nsCRT::strcmp(gKeyConversions[i].str, keyCodeNameStr) == 0) {
       return gKeyConversions[i].charCode;
@@ -1080,7 +1090,7 @@ uint32_t nsCocoaUtils::ConvertGeckoKeyCodeToMacCharCode(uint32_t aKeyCode) {
     return 0;
   }
 
-  for (uint16_t i = 0; i < ArrayLength(gKeyConversions); ++i) {
+  for (uint16_t i = 0; i < std::size(gKeyConversions); ++i) {
     if (gKeyConversions[i].geckoKeyCode == aKeyCode) {
       return gKeyConversions[i].charCode;
     }
