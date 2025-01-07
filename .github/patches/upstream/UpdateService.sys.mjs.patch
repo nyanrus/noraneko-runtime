@@ -1,5 +1,5 @@
 diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
-index 7ec86b4f5f..9abe0932dc 100644
+index 7ec86b4f5f..fc532cc07c 100644
 --- a/toolkit/mozapps/update/UpdateService.sys.mjs
 +++ b/toolkit/mozapps/update/UpdateService.sys.mjs
 @@ -16,6 +16,21 @@ import {
@@ -35,7 +35,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  /**
   * Simple container and constructor for a Promise and its resolve function.
   */
-@@ -1899,15 +1918,142 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
+@@ -1899,15 +1918,150 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
    AUSTLMY.pingStateCode(suffix, stateCode);
  }
  
@@ -144,6 +144,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +  * * START
 +  */
 +  , version2 = null
++  , buildID2 = null
 +  /**
 +   * * NORANEKO PATCH - 0.1.0
 +   * * [UPDATER]
@@ -164,11 +165,18 @@ index 7ec86b4f5f..9abe0932dc 100644
 +  let self_version2 = parseVersion2(version2);
 +
 +  if (update_appVersion2 && self_version2) {
-+    if (versionComparison == 0 && compareVersion2(update_appVersion2, self_version2, ">")) {
-+      return false;
-+    }
-+    if (versionComparison == 0 && compareVersion2(update_appVersion2,self_version2,"<")) {
-+      return true;
++    if (versionComparison == 0) {
++      if (compareVersion2(update_appVersion2, self_version2, ">")) {
++        return false;
++      }
++      if (compareVersion2(update_appVersion2,self_version2,"<")) {
++        return true;
++      }
++      if (update.buildID == buildID) {
++        if (buildID2 != null && update.buildID2 != null && update.buildID2 != buildID2) {
++          return false
++        }
++      }
 +    }
 +  }
 +  /**
@@ -179,7 +187,7 @@ index 7ec86b4f5f..9abe0932dc 100644
    return (
      versionComparison < 0 ||
      (versionComparison == 0 && update.buildID == buildID)
-@@ -1917,12 +2063,25 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
+@@ -1917,12 +2071,26 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
  /**
   * This returns true if the passed update is the same version or older than
   * currently installed Firefox version.
@@ -197,6 +205,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +     * * START
 +     */
 +    , NoranekoConstants.version2
++    , NoranekoConstants.buildID2
 +    /**
 +     * * NORANEKO PATCH - 0.1.0
 +     * * [UPDATER]
@@ -205,7 +214,7 @@ index 7ec86b4f5f..9abe0932dc 100644
    );
  }
  
-@@ -1943,6 +2102,18 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
+@@ -1943,6 +2111,19 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
      update,
      lazy.UM.internal.readyUpdate.appVersion,
      lazy.UM.internal.readyUpdate.buildID
@@ -216,6 +225,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +     * * START
 +     */
 +    , lazy.UM.internal.readyUpdate.appVersion2
++    , lazy.UM.internal.readyUpdate.buildID2
 +    /**
 +     * * NORANEKO PATCH - 0.1.0
 +     * * [UPDATER]
@@ -224,7 +234,7 @@ index 7ec86b4f5f..9abe0932dc 100644
    );
  }
  
-@@ -2049,6 +2220,10 @@ function pollForStagingEnd() {
+@@ -2049,6 +2230,10 @@ function pollForStagingEnd() {
    lazy.setTimeout(pollingFn, pollingIntervalMs);
  }
  
@@ -235,7 +245,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  class UpdatePatch {
    // nsIUpdatePatch attribute names used to prevent nsIWritablePropertyBag from
    // over writing nsIUpdatePatch attributes.
-@@ -2249,6 +2424,10 @@ class UpdatePatch {
+@@ -2249,6 +2434,10 @@ class UpdatePatch {
    ]);
  }
  
@@ -246,7 +256,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  class Update {
    // nsIUpdate attribute names used to prevent nsIWritablePropertyBag from over
    // writing nsIUpdate attributes.
-@@ -2271,6 +2450,18 @@ class Update {
+@@ -2271,6 +2460,19 @@ class Update {
      "type",
      "unsupported",
      "platformVersion",
@@ -257,6 +267,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +     * * START
 +     */
 +    "appVersion2",
++    "buildID2",
 +    /**
 +     * * NORANEKO PATCH - 0.1.0
 +     * * [UPDATER]
@@ -265,7 +276,7 @@ index 7ec86b4f5f..9abe0932dc 100644
    ];
  
    /**
-@@ -2368,6 +2559,18 @@ class Update {
+@@ -2368,6 +2570,19 @@ class Update {
            case "statusText":
            case "type":
            case "platformVersion":
@@ -276,6 +287,7 @@ index 7ec86b4f5f..9abe0932dc 100644
 +           * * START
 +           */
 +          case "appVersion2":
++          case "buildID2":
 +          /**
 +           * * NORANEKO PATCH - 0.1.0
 +           * * [UPDATER]
@@ -284,7 +296,7 @@ index 7ec86b4f5f..9abe0932dc 100644
              this[attr.name] = attr.value;
              break;
            default:
-@@ -2512,6 +2715,20 @@ class Update {
+@@ -2512,6 +2727,23 @@ class Update {
      if (this.elevationFailure) {
        update.setAttribute("elevationFailure", this.elevationFailure);
      }
@@ -297,6 +309,9 @@ index 7ec86b4f5f..9abe0932dc 100644
 +    if (this.appVersion2) {
 +      update.setAttribute("appVersion2",this.appVersion2);
 +    }
++    if (this.buildID2) {
++      update.setAttribute("buildID2",this.buildID2)
++    }
 +    /**
 +     * * NORANEKO PATCH - 0.1.0
 +     * * [UPDATER]
@@ -305,7 +320,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  
      for (let [name, value] of Object.entries(this._properties)) {
        if (value.present && !this._attrNames.includes(name)) {
-@@ -2621,6 +2838,10 @@ class Update {
+@@ -2621,6 +2853,10 @@ class Update {
    ]);
  }
  
@@ -316,7 +331,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  export class UpdateService {
    #initPromise;
  
-@@ -3616,11 +3837,13 @@ export class UpdateService {
+@@ -3616,11 +3852,13 @@ export class UpdateService {
      return true;
    }
  
@@ -331,7 +346,7 @@ index 7ec86b4f5f..9abe0932dc 100644
     *          An array of available nsIUpdate items
     * @return  The nsIUpdate to offer.
     */
-@@ -3641,6 +3864,8 @@ export class UpdateService {
+@@ -3641,6 +3879,8 @@ export class UpdateService {
      var vc = Services.vc;
      let lastCheckCode = AUSTLMY.CHK_NO_COMPAT_UPDATE_FOUND;
  
@@ -340,7 +355,7 @@ index 7ec86b4f5f..9abe0932dc 100644
      for (const update of updates) {
        // Ignore updates for older versions of the application and updates for
        // the same version of the application with the same build ID.
-@@ -3673,6 +3898,8 @@ export class UpdateService {
+@@ -3673,6 +3913,8 @@ export class UpdateService {
          continue;
        }
  
@@ -349,7 +364,7 @@ index 7ec86b4f5f..9abe0932dc 100644
        switch (update.type) {
          case "major":
            if (!majorUpdate || majorUpdate.unsupported) {
-@@ -3680,6 +3907,18 @@ export class UpdateService {
+@@ -3680,6 +3922,18 @@ export class UpdateService {
            } else if (
              !update.unsupported &&
              vc.compare(majorUpdate.appVersion, update.appVersion) <= 0
@@ -368,7 +383,7 @@ index 7ec86b4f5f..9abe0932dc 100644
            ) {
              majorUpdate = update;
            }
-@@ -3690,6 +3929,18 @@ export class UpdateService {
+@@ -3690,6 +3944,18 @@ export class UpdateService {
            } else if (
              !update.unsupported &&
              vc.compare(minorUpdate.appVersion, update.appVersion) <= 0
@@ -387,7 +402,7 @@ index 7ec86b4f5f..9abe0932dc 100644
            ) {
              minorUpdate = update;
            }
-@@ -4460,6 +4711,10 @@ export class UpdateService {
+@@ -4460,6 +4726,10 @@ export class UpdateService {
    ]);
  }
  
@@ -398,7 +413,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  export class UpdateManager {
    /**
     * The nsIUpdate object for the update that has been downloaded.
-@@ -5178,6 +5433,10 @@ export class UpdateManager {
+@@ -5178,6 +5448,10 @@ export class UpdateManager {
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateManager]);
  }
  
@@ -409,7 +424,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  /**
   * CheckerService
   * Provides an interface for checking for new updates. When more checks are
-@@ -5756,6 +6015,10 @@ export class CheckerService {
+@@ -5756,6 +6030,10 @@ export class CheckerService {
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateChecker]);
  }
  
@@ -420,7 +435,7 @@ index 7ec86b4f5f..9abe0932dc 100644
  class Downloader {
    /**
     * The nsIUpdatePatch that we are downloading
-@@ -7138,6 +7401,10 @@ class Downloader {
+@@ -7138,6 +7416,10 @@ class Downloader {
    ]);
  }
  
