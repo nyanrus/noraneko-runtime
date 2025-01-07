@@ -110,7 +110,7 @@ jobs:
     - name: Publish Package Mozilla Artifact🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-win-amd64-moz-artifact
+        name: noraneko-linux-amd64-moz-artifact
         path: obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.bz2
 
     - name: Publish Package 🎁
