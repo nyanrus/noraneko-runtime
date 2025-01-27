@@ -61,6 +61,13 @@ jobs:
             name: ${{ inputs.x86_64_artifact_name }}
             path: ./
 
+        - name: Extract 📦
+          run: |
+            brew install gnu-tar
+            export PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH
+            tar -xf ./floorp-x86_64-apple-darwin-with-pgo.tar.gz
+            tar -xf ./floorp-aarch64-apple-darwin-with-pgo.tar.gz
+
         - uses: actions/setup-python@v5
           with:
             python-version: '3.11'
@@ -70,47 +77,32 @@ jobs:
           run: |
             ./mach --no-interactive bootstrap --application-choice browser
             echo -e "ac_add_options --enable-bootstrap" >> mozconfig
+            ./mach configure
+
+        - name: Extract .app from dmg 📦
+          run: |
+            rm -rf "./obj-x86_64-apple-darwin/dist/floorp/*.app"
+            rm -rf "./obj-aarch64-apple-darwin/dist/floorp/*.app"
+
+            hdiutil attach ./obj-x86_64-apple-darwin/dist/floorp*.mac.dmg
+            cp -r "/Volumes/Floorp/Floorp.app" ./obj-x86_64-apple-darwin/dist/floorp/
+
+            hdiutil detach /Volumes/Floorp/
+
+            hdiutil attach ./obj-aarch64-apple-darwin/dist/floorp*.mac.dmg
+            cp -r "/Volumes/Floorp/Floorp.app" ./obj-aarch64-apple-darwin/dist/floorp/
+
+            hdiutil detach /Volumes/Floorp/
 
         - name: Integration 🗃
           run: |
-            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/noraneko/Noraneko.app" "./obj-aarch64-apple-darwin/dist/noraneko/Noraneko.app"
-
-        - name: create .p12 for codesign 🖊️
-          run: |
-           echo ${{ secrets.APPLE_DEVELOPER_P12_BASE64 }} > certification.txt
-           base64 -d -i certification.txt > ./AppCert.p12
-
-           echo ${{ secrets.APPLE_DEVELOPER_P12_PASSWORD }} > AppCertPassword.passwd
-
-        - name: Sign to .app 🖋️
-          run: |
-            ./mach macos-sign -v -r -c "release" -a ./obj-x86_64-apple-darwin/dist/Noraneko.app \
-                --rcodesign-p12-file ./AppCert.p12 \
-                --rcodesign-p12-password-file ./Noraneko-cert/AppCertPassword.passwd
+            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/floorp/Floorp.app" "./obj-aarch64-apple-darwin/dist/floorp/Floorp.app"
 
         - name: Create DMG 📦
           run: |
-            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/noraneko noraneko-macOS-universal-temp.dmg
-            unzip "./.github/workflows/builds/dmg-noraneko-base.zip"
-            hdiutil attach ./noraneko-macOS-universal-temp.dmg
-            hdiutil attach ./base.dmg
-
-            cp -r "/Volumes/Noraneko/Noraneko.app" /Volumes/noraneko\ Installer/
-            hdiutil detach /Volumes/noraneko\ Installer/
-            hdiutil convert ./base.dmg -format UDZO -imagekey zlib-level=9 -o noraneko-macOS-universal.dmg
-
-        - name: Sign to .dmg 🖋️
-          run: |
-            codesign -s "${{ secrets.APPLE_DEVELOPER_ID }}" noraneko-macOS-universal.dmg
-
-            xcrun notarytool submit "noraneko-macOS-universal.dmg" \
-                --apple-id "${{ secrets.APPLE_DEVELOPER_ACCOUNT_EMAIL }}" \
-                --team-id "${{ secrets.APPLE_DEVELOPER_TEAM_ID }}" \
-                --password "${{ secrets.APPLE_DEVELOPER_ACCOUNT_APP_SPESIFIC_PASSWORD }}" \
-                --wait
-
+            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/floorp floorp-macOS-universal.dmg
             mkdir -p ./output
-            mv ./noraneko-macOS-universal.dmg ./output/noraneko-macOS-universal.dmg
+            mv ./floorp-macOS-universal.dmg ./output/floorp-macOS-universal.dmg
 
         - name: Publish 🎁
           uses: actions/upload-artifact@v4
@@ -119,11 +111,3 @@ jobs:
             if-no-files-found: ignore
             path: |
               ./output/
-
-        - name: Publish
-          uses: actions/upload-artifact@v4
-          with:
-            name: macOS-universal-integrated-signed-package
-            if-no-files-found: ignore
-            path: |
-              ./obj-x86_64-apple-darwin/
