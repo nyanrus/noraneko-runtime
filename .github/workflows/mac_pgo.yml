@@ -46,7 +46,7 @@ jobs:
         id: download-artifacts-mac-enable-profgen
         name: Download artifact 📥
         with:
-          name: floorp-mac-${{ env.ARCH_TYPE }}-build-with-profgen
+          name: noraneko-mac-${{ env.ARCH_TYPE }}-build-with-profgen
           path: ~/downloads/artifacts
 
       - name: force install python3.12
@@ -78,7 +78,7 @@ jobs:
 
       - name: Extract artifact 📂
         run: |
-          mkdir -p ./floorp
+          mkdir -p ./noraneko
           cp ${{ steps.download-artifacts-mac-enable-profgen.outputs.download-path }}/${ARCH_TYPE}-apple-darwin-output.tar.xz ./
           tar xf ${ARCH_TYPE}-apple-darwin-output.tar.xz
 
@@ -88,21 +88,21 @@ jobs:
           export LLVM_PROFDATA=$RUNNER_USERDIR/.mozbuild/clang/bin/llvm-profdata
           export JARLOG_FILE="en-US.log"
           sudo hdiutil attach ./obj-*/dist/*.dmg
-          ls /Volumes/Floorp
+          ls /Volumes/Noraneko
           mkdir temptemp
-          sudo cp -rP /Volumes/Floorp/* ./temptemp
+          sudo cp -rP /Volumes/Noraneko/* ./temptemp
           ls ./temptemp
-          sudo hdiutil unmount /Volumes/Floorp
+          sudo hdiutil unmount /Volumes/Noraneko
 
-          # chmod u+x ./temptemp/Floorp.app/Contents/MacOS/floorp
-          ./mach python build/pgo/profileserver.py --binary ./temptemp/Floorp.app/Contents/MacOS/floorp
+          # chmod u+x ./temptemp/Noraneko.app/Contents/MacOS/noraneko
+          ./mach python build/pgo/profileserver.py --binary ./temptemp/Noraneko.app/Contents/MacOS/noraneko
         env:
           GHA_BUILD_MACHINE: ${{ matrix.runs-on }}
 
       - name: Publish 🎁
         uses: actions/upload-artifact@v4
         with:
-          name: floorp-${{ env.ARCH_TYPE }}-apple-darwin-profdata-and-jarlog
+          name: noraneko-${{ env.ARCH_TYPE }}-apple-darwin-profdata-and-jarlog
           path: |
             merged.profdata
             en-US.log

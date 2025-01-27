@@ -122,7 +122,7 @@ jobs:
       if: inputs.build-with-profdata-and-jarlog
       uses: actions/download-artifact@v4
       with:
-        name: floorp-${{ matrix.arch }}-apple-darwin-profdata-and-jarlog
+        name: noraneko-${{ matrix.arch }}-apple-darwin-profdata-and-jarlog
         path: ~/artifacts
 
     - name: Setup 🪛
@@ -133,7 +133,7 @@ jobs:
 
         cd $GITHUB_WORKSPACE
 
-        # update floorp to latest
+        # update noraneko to latest
         git submodule update --remote
 
         if [[ $GHA_ARCH == 'x86_64' ]];then
@@ -142,8 +142,8 @@ jobs:
           cp ./.github/workflows/mozconfigs/macosx64-aarch64.mozconfig mozconfig
         fi
 
-        # Copy Floorp Branding
-        cp -r ./floorp/gecko/branding/* ./browser/branding/
+        # Copy Noraneko Branding
+        cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
         sudo apt install msitools -y
 
@@ -215,8 +215,8 @@ jobs:
         tar zcvf ${arch}-apple-darwin-output.tar.xz ./obj-${arch}-apple-darwin/dist/*.dmg
           mv ${arch}-apple-darwin-output.tar.xz ~/output/
         else
-          tar -czf floorp-${arch}-apple-darwin-with-pgo.tar.gz ./obj-${arch}-apple-darwin/dist/
-          mv floorp-${arch}-apple-darwin-with-pgo.tar.gz ~/output/
+          tar -czf noraneko-${arch}-apple-darwin-with-pgo.tar.gz ./obj-${arch}-apple-darwin/dist/
+          mv noraneko-${arch}-apple-darwin-with-pgo.tar.gz ~/output/
         fi
       env:
         GHA_profgen: ${{ inputs.profile-generate-mode }}
@@ -226,7 +226,7 @@ jobs:
     - name: Publish Package🎁
       uses: actions/upload-artifact@v4
       with:
-        name: floorp-mac-${{ matrix.arch }}-${{fromJson('["package","build-with-profgen"]')[inputs.profile-generate-mode]}}
+        name: noraneko-mac-${{ matrix.arch }}-${{fromJson('["package","build-with-profgen"]')[inputs.profile-generate-mode]}}
         compression-level: 9
         path: ~/output/
     # Publish END

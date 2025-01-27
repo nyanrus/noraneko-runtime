@@ -20,25 +20,6 @@ on:
       MOZ_BUILD_DATE:
         type: string
         default: ""
-    secrets:
-        APPLE_DEVELOPER_P12_BASE64:
-            description: "macOS CERTIFICATES P12 For App BASE64"
-            required: true
-        APPLE_DEVELOPER_P12_PASSWORD:
-            description: "macOS CERTIFICATES P12 PASSWORD"
-            required: true
-        APPLE_DEVELOPER_ID:
-            description: "macOS AppleDeveloperId"
-            required: true
-        APPLE_DEVELOPER_ACCOUNT_EMAIL:
-            description: "macOS AppleAccountId"
-            required: true
-        APPLE_DEVELOPER_TEAM_ID:
-            description: "macOS AppleTeamId"
-            required: true
-        APPLE_DEVELOPER_ACCOUNT_APP_SPESIFIC_PASSWORD:
-            description: "macOS AppleAccountAppSpecificPassword"
-            required: true
 
 jobs:
   Integration:
@@ -65,8 +46,8 @@ jobs:
           run: |
             brew install gnu-tar
             export PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH
-            tar -xf ./floorp-x86_64-apple-darwin-with-pgo.tar.gz
-            tar -xf ./floorp-aarch64-apple-darwin-with-pgo.tar.gz
+            tar -xf ./noraneko-x86_64-apple-darwin-with-pgo.tar.gz
+            tar -xf ./noraneko-aarch64-apple-darwin-with-pgo.tar.gz
 
         - uses: actions/setup-python@v5
           with:
@@ -81,28 +62,28 @@ jobs:
 
         - name: Extract .app from dmg 📦
           run: |
-            rm -rf "./obj-x86_64-apple-darwin/dist/floorp/*.app"
-            rm -rf "./obj-aarch64-apple-darwin/dist/floorp/*.app"
+            rm -rf "./obj-x86_64-apple-darwin/dist/noraneko/*.app"
+            rm -rf "./obj-aarch64-apple-darwin/dist/noraneko/*.app"
 
-            hdiutil attach ./obj-x86_64-apple-darwin/dist/floorp*.mac.dmg
-            cp -r "/Volumes/Floorp/Floorp.app" ./obj-x86_64-apple-darwin/dist/floorp/
+            hdiutil attach ./obj-x86_64-apple-darwin/dist/noraneko*.mac.dmg
+            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-x86_64-apple-darwin/dist/noraneko/
 
-            hdiutil detach /Volumes/Floorp/
+            hdiutil detach /Volumes/Noraneko/
 
-            hdiutil attach ./obj-aarch64-apple-darwin/dist/floorp*.mac.dmg
-            cp -r "/Volumes/Floorp/Floorp.app" ./obj-aarch64-apple-darwin/dist/floorp/
+            hdiutil attach ./obj-aarch64-apple-darwin/dist/noraneko*.mac.dmg
+            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-aarch64-apple-darwin/dist/noraneko/
 
-            hdiutil detach /Volumes/Floorp/
+            hdiutil detach /Volumes/Noraneko/
 
         - name: Integration 🗃
           run: |
-            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/floorp/Floorp.app" "./obj-aarch64-apple-darwin/dist/floorp/Floorp.app"
+            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/noraneko/Noraneko.app" "./obj-aarch64-apple-darwin/dist/noraneko/Noraneko.app"
 
         - name: Create DMG 📦
           run: |
-            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/floorp floorp-macOS-universal.dmg
+            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/noraneko noraneko-macOS-universal.dmg
             mkdir -p ./output
-            mv ./floorp-macOS-universal.dmg ./output/floorp-macOS-universal.dmg
+            mv ./noraneko-macOS-universal.dmg ./output/noraneko-macOS-universal.dmg
 
         - name: Publish 🎁
           uses: actions/upload-artifact@v4
