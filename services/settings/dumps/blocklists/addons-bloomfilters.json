@@ -3,6 +3,54 @@
     {
       "stash": {
         "blocked": [
+          "{8b9aa0f0-4402-4abc-b85a-8ff2d787184a}:1.2.4"
+        ],
+        "unblocked": [],
+        "softblocked": []
+      },
+      "schema": 1737117377605,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1737376505231,
+      "id": "e89520f5-a773-43ec-bb15-99f479fe84af",
+      "last_modified": 1737376574433
+    },
+    {
+      "stash": {
+        "blocked": [
+          "email@temporary.com:1.3.3"
+        ],
+        "unblocked": [],
+        "softblocked": []
+      },
+      "schema": 1736879778450,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1737117305578,
+      "id": "9b3665bb-ebc9-40a4-aac2-4a7cfe0cf5f5",
+      "last_modified": 1737117377427
+    },
+    {
+      "stash": {
+        "blocked": [
+          "addonY271@paperboynews.app:1.24.1210",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.101:2.0.101",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.104.12:2.0.104.13",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.121:2.0.121",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.123:2.0.123",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.126.1:2.0.126.1",
+          "enhancerforyoutube@maximerf.addons.mozilla.org.pep.2.0.126.1:2.0.126.2"
+        ],
+        "unblocked": [],
+        "softblocked": []
+      },
+      "schema": 1736871466380,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1736879705378,
+      "id": "8e0dcd23-8aca-4d28-a3d1-a9f22b84025b",
+      "last_modified": 1736879778353
+    },
+    {
+      "stash": {
+        "blocked": [
           "{01e71313-2672-4ea3-a848-2b450a06e717}:1.0",
           "{03466d7f-5ab1-426d-a83e-77855f469f8d}:1.0",
           "{03dffc9c-1402-4439-a1eb-4f5336e9c2b5}:1.0",
@@ -187,5 +235,5 @@
       "last_modified": 1734363061859
     }
   ],
-  "timestamp": 1736512576946
+  "timestamp": 1737376574433
 }
