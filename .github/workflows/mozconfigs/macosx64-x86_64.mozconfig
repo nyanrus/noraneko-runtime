@@ -1,6 +1,5 @@
 ac_add_options --with-app-name=noraneko
 ac_add_options --with-app-basename=Noraneko
-ac_add_options --disable-maintenance-service
 ac_add_options --disable-updater
 # this implies disable geckodriver, and puppeteer seems using the geckodriver impl.
 # so you should not disable test
@@ -11,7 +10,6 @@ ac_add_options --enable-rust-simd
 #? https://bugzilla.mozilla.org/show_bug.cgi?id=1617793
 #? https://phabricator.services.mozilla.com/D170170
 ac_add_options --target=x86_64-apple-darwin
-
 #sccache
 #mk_add_options 'export RUSTC_WRAPPER=sccache'
 #mk_add_options 'export CCACHE_CPP2=yes'

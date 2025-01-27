@@ -1,0 +1,94 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Please write our copyright if you use this file.
+# © 2023 Floorp Projects & Contributors
+
+#! SELF HOST DOES NOT SUPPORTED
+#TODO: separate Publish to other workflow
+
+on:
+  workflow_call:
+    inputs:
+      x86_64_artifact_name:
+        type: string
+        default: ""
+      aarch64_artifact_name:
+        type: string
+        default: ""
+      MOZ_BUILD_DATE:
+        type: string
+        default: ""
+
+jobs:
+  Integration:
+    runs-on: macos-latest
+    steps:
+        - name: Clone 📥
+          uses: actions/checkout@v4
+          with:
+            submodules: 'recursive'
+
+        - name: download AArch64 build artifact 📥
+          uses: actions/download-artifact@v4
+          with:
+            name: ${{ inputs.aarch64_artifact_name }}
+            path: ./
+
+        - name: download x86_64 build artifact 📥
+          uses: actions/download-artifact@v4
+          with:
+            name: ${{ inputs.x86_64_artifact_name }}
+            path: ./
+
+        - name: Extract 📦
+          run: |
+            brew install gnu-tar
+            export PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH
+            tar -xf ./noraneko-x86_64-apple-darwin-with-pgo.tar.gz
+            tar -xf ./noraneko-aarch64-apple-darwin-with-pgo.tar.gz
+
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
+
+        - name: Create environment 🌲
+          shell: bash
+          run: |
+            ./mach --no-interactive bootstrap --application-choice browser
+            echo -e "ac_add_options --enable-bootstrap" >> mozconfig
+            ./mach configure
+
+        - name: Extract .app from dmg 📦
+          run: |
+            rm -rf "./obj-x86_64-apple-darwin/dist/noraneko/*.app"
+            rm -rf "./obj-aarch64-apple-darwin/dist/noraneko/*.app"
+
+            hdiutil attach ./obj-x86_64-apple-darwin/dist/noraneko*.mac.dmg
+            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-x86_64-apple-darwin/dist/noraneko/
+
+            hdiutil detach /Volumes/Noraneko/
+
+            hdiutil attach ./obj-aarch64-apple-darwin/dist/noraneko*.mac.dmg
+            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-aarch64-apple-darwin/dist/noraneko/
+
+            hdiutil detach /Volumes/Noraneko/
+
+        - name: Integration 🗃
+          run: |
+            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/noraneko/Noraneko.app" "./obj-aarch64-apple-darwin/dist/noraneko/Noraneko.app"
+
+        - name: Create DMG 📦
+          run: |
+            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/noraneko noraneko-macOS-universal.dmg
+            mkdir -p ./output
+            mv ./noraneko-macOS-universal.dmg ./output/noraneko-macOS-universal.dmg
+
+        - name: Publish 🎁
+          uses: actions/upload-artifact@v4
+          with:
+            name: macOS-universal-integrated-signed-dmg
+            if-no-files-found: ignore
+            path: |
+              ./output/
