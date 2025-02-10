@@ -14,6 +14,9 @@ on:
       aarch64_artifact_name:
         type: string
         default: ""
+      beta:
+        type: boolean
+        default: false
       MOZ_BUILD_DATE:
         type: string
         default: ""
@@ -50,6 +53,19 @@ jobs:
           with:
             python-version: '3.11'
 
+        - name: Check Branding Type
+          shell: bash
+          run: |
+            if [[ $GHA_BETA == 'true' ]]; then
+              export APP_NAME=`echo "Noraneko"`
+              echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+            else
+              export APP_NAME=`echo "Noraneko"`
+              echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+            fi
+          env:
+            GHA_BETA: ${{ inputs.beta }}
+
         - name: Create environment 🌲
           shell: bash
           run: |
@@ -57,35 +73,72 @@ jobs:
             echo -e "ac_add_options --enable-bootstrap" >> mozconfig
             ./mach configure
 
+        - name: Install apple-codesign 🍎
+          run: |
+            cargo install apple-codesign
+
         - name: Extract .app from dmg 📦
           run: |
             rm -rf "./obj-x86_64-apple-darwin/dist/noraneko/*.app"
             rm -rf "./obj-aarch64-apple-darwin/dist/noraneko/*.app"
 
             hdiutil attach ./obj-x86_64-apple-darwin/dist/noraneko*.mac.dmg
-            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-x86_64-apple-darwin/dist/noraneko/
+            cp -r "/Volumes/Noraneko/${{ env.APP_NAME }}.app" ./obj-x86_64-apple-darwin/dist/noraneko/
 
             hdiutil detach /Volumes/Noraneko/
 
             hdiutil attach ./obj-aarch64-apple-darwin/dist/noraneko*.mac.dmg
-            cp -r "/Volumes/Noraneko/Noraneko.app" ./obj-aarch64-apple-darwin/dist/noraneko/
+            cp -r "/Volumes/Noraneko/${{ env.APP_NAME }}.app" ./obj-aarch64-apple-darwin/dist/noraneko/
 
             hdiutil detach /Volumes/Noraneko/
 
         - name: Integration 🗃
           run: |
-            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/noraneko/Noraneko.app" "./obj-aarch64-apple-darwin/dist/noraneko/Noraneko.app"
+            ./mach python "./toolkit/mozapps/installer/unify.py" "./obj-x86_64-apple-darwin/dist/noraneko/${{ env.APP_NAME }}.app" "./obj-aarch64-apple-darwin/dist/noraneko/${{ env.APP_NAME }}.app"
 
         - name: Create DMG 📦
           run: |
-            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/noraneko noraneko-macOS-universal.dmg
-            mkdir -p ./output
-            mv ./noraneko-macOS-universal.dmg ./output/noraneko-macOS-universal.dmg
+            ./mach python -m mozbuild.action.make_dmg ./obj-x86_64-apple-darwin/dist/noraneko noraneko-macOS-universal-moz-artifact.dmg
 
-        - name: Publish 🎁
+            cp ./obj-x86_64-apple-darwin/dist/noraneko*update_framework_artifacts.zip ./noraneko-macOS.update_framework_artifacts.zip
+            cp ./obj-x86_64-apple-darwin/dist/noraneko/Noraneko.app/Contents/Resources/application.ini ./nora-application.ini
+
+        # Publish Start
+        - name: Remove old uploaded artifacts
+          uses: geekyeggo/delete-artifact@v5.1.0
+          with:
+            name: |
+              noraneko-mac-x86_64-package
+              noraneko-mac-aarch64-package
+
+        - name: Publish Package Mozilla Artifact for dev 🎁
           uses: actions/upload-artifact@v4
           with:
-            name: macOS-universal-integrated-signed-dmg
+            name: noraneko-mac-universal-moz-artifact-dev
             if-no-files-found: ignore
             path: |
-              ./output/
+              ./noraneko-macOS-universal-moz-artifact.dmg
+
+        - name: Publish Package Mozilla Artifact for release 🎁
+          uses: actions/upload-artifact@v4
+          with:
+            name: noraneko-mac-universal-moz-artifact-release
+            if-no-files-found: ignore
+            path: |
+              ./noraneko-macOS-universal-moz-artifact.dmg
+              ./noraneko-macOS.update_framework_artifacts.zip
+
+        - name: Publish dist/host for MAR
+          uses: actions/upload-artifact@v4
+          with:
+            name: macOS-universal-dist-host
+            path: obj-x86_64-apple-darwin/dist/host/
+            overwrite: true
+
+        - name: Publish nora-application.ini for MAR
+          uses: actions/upload-artifact@v4
+          with:
+            name: macOS-universal-application-ini
+            path: ./nora-application.ini
+            overwrite: true
+        # Publish End
