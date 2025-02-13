@@ -34,7 +34,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.HistoryMetadataAction
+import mozilla.components.browser.state.action.RecentlyClosedAction
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.concept.engine.prompt.ShareData
@@ -62,9 +64,6 @@ import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.setTextColor
 import org.mozilla.fenix.library.LibraryPageFragment
-import org.mozilla.fenix.library.history.state.HistoryNavigationMiddleware
-import org.mozilla.fenix.library.history.state.HistoryStorageMiddleware
-import org.mozilla.fenix.library.history.state.HistorySyncMiddleware
 import org.mozilla.fenix.library.history.state.HistoryTelemetryMiddleware
 import org.mozilla.fenix.library.history.state.bindings.MenuBinding
 import org.mozilla.fenix.library.history.state.bindings.PendingDeletionBinding
@@ -116,21 +115,8 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
             HistoryFragmentStore(
                 initialState = HistoryFragmentState.initial,
                 middleware = listOf(
-                    HistoryNavigationMiddleware(
-                        onBackPressed = { findNavController().popBackStack() },
-                    ),
                     HistoryTelemetryMiddleware(
                         isInPrivateMode = requireComponents.appStore.state.mode == BrowsingMode.Private,
-                    ),
-                    HistorySyncMiddleware(
-                        accountManager = requireContext().components.backgroundServices.accountManager,
-                        refreshView = { historyView.historyAdapter.refresh() },
-                        scope = lifecycleScope,
-                    ),
-                    HistoryStorageMiddleware(
-                        browserStore = requireContext().components.core.store,
-                        historyStorage = requireContext().components.core.historyStorage,
-                        onTimeFrameDeleted = ::onTimeFrameDeleted,
                     ),
                 ),
             )
@@ -151,6 +137,8 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
             onRecentlyClosedClicked = ::navigateToRecentlyClosed,
             onHistoryItemClicked = ::openItem,
             onDeleteInitiated = ::onDeleteInitiated,
+            accountManager = requireContext().components.backgroundServices.accountManager,
+            scope = lifecycleScope,
         )
 
         return view
@@ -344,7 +332,7 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         }
         R.id.history_delete -> {
             DeleteConfirmationDialogFragment(
-                store = historyStore,
+                onDeleteTimeRange = ::onDeleteTimeRange,
             ).show(childFragmentManager, null)
             true
         }
@@ -482,8 +470,33 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         historyStore.dispatch(HistoryFragmentAction.ExitDeletionMode)
     }
 
+    private fun onDeleteTimeRange(selectedTimeFrame: RemoveTimeFrame?) {
+        historyStore.dispatch(HistoryFragmentAction.DeleteTimeRange(selectedTimeFrame))
+        historyStore.dispatch(HistoryFragmentAction.EnterDeletionMode)
+
+        val browserStore = requireComponents.core.store
+        val historyStorage = requireContext().components.core.historyStorage
+        lifecycleScope.launch {
+            if (selectedTimeFrame == null) {
+                historyStorage.deleteEverything()
+            } else {
+                val longRange = selectedTimeFrame.toLongRange()
+                historyStorage.deleteVisitsBetween(
+                    startTime = longRange.first,
+                    endTime = longRange.last,
+                )
+            }
+            browserStore.dispatch(RecentlyClosedAction.RemoveAllClosedTabAction)
+            browserStore.dispatch(EngineAction.PurgeHistoryAction).join()
+
+            historyStore.dispatch(HistoryFragmentAction.ExitDeletionMode)
+
+            onTimeFrameDeleted()
+        }
+    }
+
     internal class DeleteConfirmationDialogFragment(
-        private val store: HistoryFragmentStore,
+        private val onDeleteTimeRange: (selectedTimeFrame: RemoveTimeFrame?) -> Unit,
     ) : DialogFragment() {
         override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
             AlertDialog.Builder(requireContext()).apply {
@@ -503,7 +516,7 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
                         R.id.everything_button -> null
                         else -> throw IllegalStateException("Unexpected radioButtonId")
                     }
-                    store.dispatch(HistoryFragmentAction.DeleteTimeRange(selectedTimeFrame))
+                    onDeleteTimeRange(selectedTimeFrame)
                     dialog.dismiss()
                 }
 

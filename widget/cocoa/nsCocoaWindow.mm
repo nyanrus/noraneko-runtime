@@ -908,7 +908,7 @@ void nsCocoaWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
     return;
   }
 
-  nsIntRect screenBounds;
+  DesktopIntRect screenRect;
 
   int32_t width, height;
 
@@ -926,22 +926,11 @@ void nsCocoaWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
                              getter_AddRefs(screen));
 
     if (screen) {
-      screen->GetRectDisplayPix(&(screenBounds.x), &(screenBounds.y),
-                                &(screenBounds.width), &(screenBounds.height));
+      screenRect = screen->GetRectDisplayPix();
     }
   }
 
-  if (aPoint.x < screenBounds.x) {
-    aPoint.x = screenBounds.x;
-  } else if (aPoint.x >= screenBounds.x + screenBounds.width - width) {
-    aPoint.x = screenBounds.x + screenBounds.width - width;
-  }
-
-  if (aPoint.y < screenBounds.y) {
-    aPoint.y = screenBounds.y;
-  } else if (aPoint.y >= screenBounds.y + screenBounds.height - height) {
-    aPoint.y = screenBounds.y + screenBounds.height - height;
-  }
+  aPoint = ConstrainPositionToBounds(aPoint, {width, height}, screenRect);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -2156,10 +2145,9 @@ void nsCocoaWindow::SetMenuBar(RefPtr<nsMenuBarX>&& aMenuBar) {
   if (mMenuBar && ((!gSomeMenuBarPainted &&
                     nsMenuUtilsX::GetHiddenWindowMenuBar() == mMenuBar) ||
                    mWindow.isMainWindow)) {
-    // We dispatch this in order to prevent crashes when macOS is actively
+    // We do an async paint in order to prevent crashes when macOS is actively
     // enumerating the menu items in `NSApp.mainMenu`.
-    NS_DispatchToCurrentThread(NS_NewRunnableFunction(
-        "PaintMenuBar", [menuBar = mMenuBar] { menuBar->Paint(); }));
+    mMenuBar->PaintAsync();
   }
 }
 
@@ -2464,18 +2452,7 @@ void nsCocoaWindow::SetDrawsTitle(bool aDrawTitle) {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-nsresult nsCocoaWindow::SetNonClientMargins(
-    const LayoutDeviceIntMargin& margins) {
-  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  SetDrawsInTitlebar(margins.top == 0);
-
-  return NS_OK;
-
-  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-void nsCocoaWindow::SetDrawsInTitlebar(bool aState) {
+void nsCocoaWindow::SetCustomTitlebar(bool aState) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   if (mWindow) {
@@ -2646,7 +2623,9 @@ already_AddRefed<nsIWidget> nsIWidget::CreateChildWindow() {
   NS_ASSERTION(geckoWidget, "Window delegate not returning a gecko widget!");
 
   if (nsMenuBarX* geckoMenuBar = geckoWidget->GetMenuBar()) {
-    geckoMenuBar->Paint();
+    // We do an async paint in order to prevent crashes when macOS is actively
+    // enumerating the menu items in `NSApp.mainMenu`.
+    geckoMenuBar->PaintAsync();
   } else {
     // sometimes we don't have a native application menu early in launching
     if (!sApplicationMenu) {
@@ -2895,9 +2874,9 @@ void nsCocoaWindow::CocoaWindowDidResize() {
   RefPtr<nsMenuBarX> hiddenWindowMenuBar =
       nsMenuUtilsX::GetHiddenWindowMenuBar();
   if (hiddenWindowMenuBar) {
-    // printf("painting hidden window menu bar due to window losing main
-    // status\n");
-    hiddenWindowMenuBar->Paint();
+    // We do an async paint in order to prevent crashes when macOS is actively
+    // enumerating the menu items in `NSApp.mainMenu`.
+    hiddenWindowMenuBar->PaintAsync();
   }
 
   NSWindow* window = [aNotification object];

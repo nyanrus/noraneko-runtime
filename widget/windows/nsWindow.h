@@ -195,7 +195,7 @@ class nsWindow final : public nsBaseWidget {
   void Destroy() override;
   float GetDPI() override;
   double GetDefaultScaleInternal() override;
-  void DidChangeParent(nsIWidget* aOldParent) override;
+  void DidClearParent(nsIWidget* aOldParent) override;
   int32_t LogToPhys(double aValue);
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() override {
     if (mozilla::widget::WinUtils::IsPerMonitorDPIAware()) {
@@ -293,7 +293,7 @@ class nsWindow final : public nsBaseWidget {
   TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   void SetTransparencyMode(TransparencyMode aMode) override;
   TransparencyMode GetTransparencyMode() override;
-  nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
+  void SetCustomTitlebar(bool) override;
   void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
   void UpdateWindowDraggingRegion(
       const LayoutDeviceIntRegion& aRegion) override;
@@ -327,9 +327,6 @@ class nsWindow final : public nsBaseWidget {
   WindowHook& GetWindowHook() { return mWindowHook; }
   nsWindow* GetParentWindow(bool aIncludeOwner);
 
-  /**
-   * Misc.
-   */
   bool WidgetTypeSupportsAcceleration() override;
 
   void ForcePresent();
@@ -618,8 +615,6 @@ class nsWindow final : public nsBaseWidget {
    */
   void UserActivity();
 
-  int32_t GetHeight(int32_t aProposedHeight);
-
   DWORD WindowStyle();
   DWORD WindowExStyle();
 
@@ -647,6 +642,9 @@ class nsWindow final : public nsBaseWidget {
 
   void UpdateOpaqueRegion(const LayoutDeviceIntRegion&) override;
   void UpdateOpaqueRegionInternal();
+  LayoutDeviceIntRegion GetOpaqueRegionForTesting() const override {
+    return mOpaqueRegion;
+  }
 
   void SetColorScheme(const mozilla::Maybe<mozilla::ColorScheme>&) override;
 
@@ -793,32 +791,41 @@ class nsWindow final : public nsBaseWidget {
   PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate = nullptr;
 
   LayoutDeviceIntMargin NonClientSizeMargin() const {
-    return NonClientSizeMargin(mNonClientOffset);
+    return NonClientSizeMargin(mCustomNonClientMetrics.mOffset);
   }
   LayoutDeviceIntMargin NonClientSizeMargin(
       const LayoutDeviceIntMargin& aNonClientOffset) const;
   LayoutDeviceIntMargin NormalWindowNonClientOffset() const;
 
-  // Non-client margin settings
-  // Pre-calculated outward offset applied to default frames
-  LayoutDeviceIntMargin mNonClientOffset;
-  // Margins set by the owner
-  LayoutDeviceIntMargin mNonClientMargins{-1, -1, -1, -1};
-  // Margins we'd like to set once chrome is reshown:
-  LayoutDeviceIntMargin mFutureMarginsOnceChromeShows;
-  // Indicates we need to apply margins once toggling chrome into showing:
-  bool mFutureMarginsToUse = false;
+  struct CustomNonClientMetrics {
+    // Width of the left and right portions of the resize region
+    mozilla::LayoutDeviceIntCoord mHorResizeMargin;
+    // Height of the top and bottom portions of the resize region
+    mozilla::LayoutDeviceIntCoord mVertResizeMargin;
+    // Height of the caption plus border
+    mozilla::LayoutDeviceIntCoord mCaptionHeight;
+    // Pre-calculated outward offset applied to the default frame
+    LayoutDeviceIntMargin mOffset;
 
-  // Indicates custom frames are enabled
+    LayoutDeviceIntMargin ResizeMargins() const {
+      return {mVertResizeMargin, mHorResizeMargin, mVertResizeMargin,
+              mHorResizeMargin};
+    }
+
+    LayoutDeviceIntMargin DefaultMargins() const {
+      auto margins = ResizeMargins();
+      margins.top += mCaptionHeight;
+      return margins;
+    }
+  } mCustomNonClientMetrics;
+
+  // Indicates the custom titlebar is enabled.
   bool mCustomNonClient = false;
-  // Indicates custom resize margins are in effect
-  bool mUseResizeMarginOverrides = false;
-  // Width of the left and right portions of the resize region
-  mozilla::LayoutDeviceIntCoord mHorResizeMargin;
-  // Height of the top and bottom portions of the resize region
-  mozilla::LayoutDeviceIntCoord mVertResizeMargin;
-  // Height of the caption plus border
-  mozilla::LayoutDeviceIntCoord mCaptionHeight;
+  // Whether we want to draw to the titlebar once the chrome shows. (Always
+  // Nothing if mHideChrome is false.)
+  mozilla::Maybe<bool> mCustomTitlebarOnceChromeShows;
+  // Custom extra resize margin width.
+  mozilla::LayoutDeviceIntCoord mCustomResizeMargin{0};
 
   // not yet set, will be calculated on first use
   double mDefaultScale = -1.0;
@@ -861,6 +868,9 @@ class nsWindow final : public nsBaseWidget {
 
   // Whether we were created as a child window (aka ChildWindow) or not.
   bool mIsChildWindow : 1;
+
+  // Whether we're a PIP window.
+  bool mPIPWindow : 1;
 
   int32_t mCachedHitTestResult = 0;
 
