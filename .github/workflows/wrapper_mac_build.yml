@@ -10,14 +10,11 @@ on:
       debug:
         type: boolean
         required: true
-      flat-chrome:
-        type: boolean
-        required: true
       pgo:
         type: boolean
         required: true
 
-run-name: Mac build
+run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Mac x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
 jobs:
   get-buildid:
     runs-on: ubuntu-latest
@@ -37,7 +34,6 @@ jobs:
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       profile-generate-mode: ${{ inputs.pgo }}
-      flat-chrome: ${{ inputs.flat-chrome }}
 
   part2:
     needs: [get-buildid, part1]
@@ -52,7 +48,6 @@ jobs:
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       build-with-profdata-and-jarlog: true
-      flat-chrome: ${{ inputs.flat-chrome }}
 
   part2_no_pgo:
     name: "Integration (No PGO)"

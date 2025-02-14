@@ -20,9 +20,6 @@ on:
       build-with-profdata-and-jarlog:
           type: boolean
           required: false
-      flat-chrome:
-        type: boolean
-        default: false
       MOZ_BUILD_DATE:
         type: string
         required: true
@@ -143,6 +140,9 @@ jobs:
         # Copy Noraneko Branding
         cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
+        # Set Flat Chrome
+        echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
+
         sudo apt install msitools -y
 
         # SCCACHE START
@@ -166,11 +166,10 @@ jobs:
           echo 'ac_add_options --with-pgo-jarlog=$(echo ~)/artifacts/en-US.log' >> mozconfig
         fi
 
-        # Chrome Format
-        if [[ $GHA_flatChrome == 'true' ]]; then
-          echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
-        fi
-        # Enable Flat Package
+        # Update Channel
+        echo "ac_add_options --enable-update-channel=alpha" >> mozconfig
+        echo "ac_add_options --with-version-file-path=noraneko/gecko/config" >> mozconfig
+        sed -i 's|https://@MOZ_APPUPDATE_HOST@/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml|https://github.com/nyanrus/noraneko/releases/download/%CHANNEL%/%BUILD_TARGET%.update.xml|g' ./build/application.ini.in
 
         ./mach --no-interactive bootstrap --application-choice browser
       env:
@@ -180,7 +179,6 @@ jobs:
         GHA_codecov: ${{inputs.code-coverage}}
         GHA_profgen: ${{ inputs.profile-generate-mode }}
         GHA_profdata_jarlog_artifact_name : ${{inputs.build-with-profdata-and-jarlog}}
-        GHA_flatChrome: ${{ inputs.flat-chrome }}
 
     - name: Mach Configure
       run: |

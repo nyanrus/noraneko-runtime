@@ -8,7 +8,7 @@ on:
         browser-artifact-name:
           description: 'Artifact to download'
           required: true
-          default: 'noraneko-win-amd64-profile-generate-mode'
+          default: 'noraneko-win-amd64-profile-generate-mode-package'
           type: string
 
 jobs:
