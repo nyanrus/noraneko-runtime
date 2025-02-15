@@ -4,6 +4,9 @@
 
 name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 6 * * *"
