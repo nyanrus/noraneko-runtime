@@ -15,6 +15,16 @@ on:
         default: false
         required: true
 
+  workflow_call:
+    inputs:
+      debug:
+        type: boolean
+        required: true
+      pgo:
+        type: boolean
+        default: false
+        required: true
+
 run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Linux x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
 jobs:
   run-main:

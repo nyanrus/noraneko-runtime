@@ -110,6 +110,8 @@ jobs:
 
     - name: Build 🔨
       run: |
+        Xvfb :2 -screen 0 1024x768x24 &
+        export DISPLAY=:2
         ./mach build
         ./mach package
         rm -rf ~/.cargo
@@ -118,6 +120,8 @@ jobs:
     - name: Extract Package 📦
       run: |
         mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-amd64-moz-artifact.tar.xz
+        # Create nora-build-id.txt
+        cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini
 
     - name: Publish Package Mozilla Artifact 🎁
       uses: actions/upload-artifact@v4

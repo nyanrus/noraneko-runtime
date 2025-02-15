@@ -1,0 +1,77 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+on:
+    workflow_call:
+        inputs:
+            platform:
+                description: 'Target platform (ubuntu only)'
+                type: string
+                default: ubuntu
+        outputs:
+            test_status:
+                description: 'Test execution status (success/failure)'
+                value: ${{ jobs.main.outputs.status }}
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.test-status.outputs.status }}
+    steps:
+        - uses: actions/setup-node@v4
+          with:
+            node-version: lts/*
+
+        - uses: pnpm/action-setup@v4
+          with:
+            version: 9
+            run_install: false
+
+        - uses: actions/checkout@v4
+          with:
+            repository: ${{ github.repository_owner }}/noraneko
+            ref: "main"
+
+        - name: Download artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: noraneko-linux-amd64-moz-artifact
+            path: /tmp/artifact
+
+        - name: Compress artifact
+          shell: bash
+          run: |
+            cd /tmp/artifact
+            mv noraneko-linux-amd64-moz-artifact.tar.xz $GITHUB_WORKSPACE/
+
+        - name: upload artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: noraneko-linux-amd64-moz-artifact-dev-patch-test
+            path: noraneko-linux-amd64-moz-artifact-dev.zip
+
+        - name: Running Test
+          id: test-unix
+          continue-on-error: true
+          shell: bash
+          run: |
+            Xvfb :2 -screen 0 1024x768x24 &
+            export DISPLAY=:2
+            pnpm i
+            pnpm dev &
+            sleep 100
+            if pgrep -f "noraneko" > /dev/null; then
+                echo "Test passed"
+                echo "status=success" >> $GITHUB_ENV
+            else
+                echo "Test failed"
+                echo "status=failure" >> $GITHUB_ENV
+            fi
+            pkill -f "node"
+
+        - name: Set test status
+          id: test-status
+          run: |
+            echo "status=$status" >> $GITHUB_OUTPUT
