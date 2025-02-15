@@ -14,6 +14,15 @@ on:
         type: boolean
         required: true
 
+  workflow_call:
+    inputs:
+      debug:
+        type: boolean
+        required: true
+      pgo:
+        type: boolean
+        required: true
+
 run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Mac x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
 jobs:
   get-buildid:

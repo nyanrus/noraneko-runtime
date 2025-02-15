@@ -140,6 +140,9 @@ jobs:
         # Copy Noraneko Branding
         cp -r ./noraneko/gecko/branding/* ./browser/branding/
 
+        # Set Branding
+        echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
+
         # Set Flat Chrome
         echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 

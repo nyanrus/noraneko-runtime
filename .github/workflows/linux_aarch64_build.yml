@@ -74,6 +74,10 @@ jobs:
         cp -r ./noraneko/gecko/branding/* ./browser/branding/
         sudo apt install msitools -y
 
+        # Set Flat Chrome
+        echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
+
+
         echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'" >> mozconfig
         echo "mk_add_options 'export CCACHE_CPP2=yes'" >> mozconfig
         echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache" >> mozconfig
@@ -97,23 +101,17 @@ jobs:
         ./mach build
         ./mach package
         rm -rf ~/.cargo
-  
+
     # Publish START
     - name: Extract Package 📦
       run: |
         cd obj-aarch64-unknown-linux-gnu/dist/
         mkdir ~/output
-        cp noraneko-*.tar.bz2 ~/output
+        tar -xvf noraneko-*.tar.xz -C ~/output
 
     - name: Publish Package Mozilla Artifact🎁
       uses: actions/upload-artifact@v4
       with:
-        name: noraneko-linux-amd64-moz-artifact
-        path: obj-aarch64-unknown-linux-gnu/dist/noraneko-*.tar.bz2
-
-    - name: Publish Package 🎁
-      uses: actions/upload-artifact@v4
-      with:
-        name: noraneko-linux-amd64-dev
+        name: noraneko-linux-aarch64-moz-artifact
         path: ~/output/
     # Publish END

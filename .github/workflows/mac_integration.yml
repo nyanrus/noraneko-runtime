@@ -57,7 +57,7 @@ jobs:
           shell: bash
           run: |
             if [[ $GHA_BETA == 'true' ]]; then
-              export APP_NAME=`echo "Noraneko"`
+              export APP_NAME=`echo "Noraneko Beta"`
               echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
             else
               export APP_NAME=`echo "Noraneko"`
