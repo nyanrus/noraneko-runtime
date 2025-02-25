@@ -119,6 +119,7 @@ FEDORA_DISTROS = (
     "nobara",
     "oracle",
     "fedora-asahi-remix",
+    "ultramarine",
 )
 
 ADD_GIT_CINNABAR_PATH = """
