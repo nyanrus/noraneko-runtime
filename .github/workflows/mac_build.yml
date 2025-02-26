@@ -197,7 +197,8 @@ jobs:
           export MOZ_BUILD_DATE=${{ inputs.MOZ_BUILD_DATE }}
         fi
 
-        ./mach build
+        export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
+        nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
         ./mach package
         rm -rf ~/.cargo
 
