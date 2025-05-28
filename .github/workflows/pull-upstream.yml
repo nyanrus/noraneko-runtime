@@ -5,6 +5,11 @@
 name: Pull Upstream
 on:
   workflow_dispatch:
+    inputs:
+      skip-patch:
+        description: "Skip patch for edit patch manually"
+        type: boolean
+        default: false
   workflow_call:
 permissions:
   contents: write
@@ -30,6 +35,7 @@ jobs:
           cp -r ./nyanrus_release/noraneko temp_release
           cp ./nyanrus_release/README.md temp_release
       - id: apply-git-patches
+        if: ${{ !inputs.skip-patch }}
         name: apply git patches
         continue-on-error: true
         run: |
