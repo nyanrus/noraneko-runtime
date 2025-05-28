@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusEvent
@@ -47,16 +48,16 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import mozilla.components.compose.base.Dropdown
+import mozilla.components.compose.base.button.PrimaryButton
 import mozilla.components.compose.base.button.TextButton
+import mozilla.components.compose.base.menu.MenuItem
+import mozilla.components.compose.base.modifier.thenConditional
+import mozilla.components.compose.base.text.Text.Resource
+import mozilla.components.compose.base.textfield.TextField
+import mozilla.components.compose.base.textfield.TextFieldColors
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.Dropdown
-import org.mozilla.fenix.compose.button.PrimaryButton
-import org.mozilla.fenix.compose.ext.thenConditional
-import org.mozilla.fenix.compose.menu.MenuItem
-import org.mozilla.fenix.compose.text.Text.Resource
-import org.mozilla.fenix.compose.textfield.TextField
-import org.mozilla.fenix.compose.textfield.TextFieldColors
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.brokenSiteReporterSendButton
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.chooseReasonErrorMessage
@@ -124,6 +125,7 @@ fun WebCompatReporter(
                 },
                 placeholder = "",
                 errorText = stringResource(id = R.string.webcompat_reporter_url_error_invalid),
+                modifier = Modifier.fillMaxWidth(),
                 label = stringResource(id = R.string.webcompat_reporter_label_url),
                 isError = state.hasUrlTextError,
                 singleLine = true,
@@ -187,42 +189,51 @@ fun WebCompatReporter(
                 ),
             )
 
-            Text(
-                text = stringResource(id = R.string.webcompat_reporter_send_more_info),
-                modifier = Modifier
-                    .clickable {
-                        store.dispatch(WebCompatReporterAction.SendMoreInfoClicked)
-                    }.padding(vertical = 16.dp),
-                style = FirefoxTheme.typography.body2,
-                color = FirefoxTheme.colors.textAccent,
-                textDecoration = TextDecoration.Underline,
-            )
-
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(
-                    text = stringResource(id = R.string.webcompat_reporter_cancel),
-                    onClick = {
-                        store.dispatch(WebCompatReporterAction.CancelClicked)
-                    },
-                    upperCaseText = false,
+                Text(
+                    text = stringResource(id = R.string.webcompat_reporter_send_more_info),
+                    modifier = Modifier
+                        .clickable {
+                            store.dispatch(WebCompatReporterAction.SendMoreInfoClicked)
+                        },
+                    style = FirefoxTheme.typography.body2,
+                    color = FirefoxTheme.colors.textAccent,
+                    textDecoration = TextDecoration.Underline,
                 )
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(24.dp))
 
-                PrimaryButton(
-                    text = stringResource(id = R.string.webcompat_reporter_send),
-                    modifier = Modifier
-                        .wrapContentSize()
-                        .semantics {
-                            testTagsAsResourceId = true
-                            testTag = brokenSiteReporterSendButton
-                        },
-                    enabled = state.isSubmitEnabled,
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    store.dispatch(WebCompatReporterAction.SendReportClicked)
+                    TextButton(
+                        text = stringResource(id = R.string.webcompat_reporter_cancel),
+                        onClick = {
+                            store.dispatch(WebCompatReporterAction.CancelClicked)
+                        },
+                        upperCaseText = false,
+                    )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    PrimaryButton(
+                        text = stringResource(id = R.string.webcompat_reporter_send),
+                        modifier = Modifier
+                            .wrapContentSize()
+                            .semantics {
+                                testTagsAsResourceId = true
+                                testTag = brokenSiteReporterSendButton
+                            },
+                        enabled = state.isSubmitEnabled,
+                    ) {
+                        store.dispatch(WebCompatReporterAction.SendReportClicked)
+                    }
                 }
             }
         }

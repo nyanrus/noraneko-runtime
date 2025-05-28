@@ -2789,8 +2789,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(const bool& aEnabled) {
     ProcessHangMonitor::MaybeStartPaintWhileInterruptingJS();
   }
 
-  bool splitViewIsEnabled = Preferences::GetBool("floorp.browser.splitView.working", false);
-  mRenderLayers = splitViewIsEnabled ? true : aEnabled;
+  mRenderLayers = aEnabled;
   const bool wasVisible = IsVisible();
 
   UpdateVisibility();
@@ -3567,8 +3566,7 @@ nsresult BrowserChild::CanCancelContentJS(
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIURI> currentURI = entry->GetURI();
-  if (!currentURI->SchemeIs("http") && !currentURI->SchemeIs("https") &&
-      !currentURI->SchemeIs("file")) {
+  if (!net::SchemeIsHttpOrHttps(currentURI) && !currentURI->SchemeIs("file")) {
     // Only cancel content JS for http(s) and file URIs. Other URIs are probably
     // internal and we should just let them run to completion.
     return NS_OK;

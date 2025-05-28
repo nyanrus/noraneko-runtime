@@ -87,6 +87,8 @@ support-files = [
 
 ["browser_firstPartyCookieRejectionHonoursAllowList.js"]
 
+["browser_fixed_ABA_partitionKey.js"]
+
 ["browser_hasStorageAccess.js"]
 
 ["browser_iframe_document_open.js"]
@@ -110,6 +112,12 @@ support-files = [
 ["browser_onBeforeRequestNotificationForTrackingResources.js"]
 
 ["browser_onModifyRequestNotificationForTrackingResources.js"]
+
+["browser_partitionKey_XSLT.js"]
+support-files= [
+  "file_xslt.xml",
+  "file_xslt.xsl",
+]
 
 ["browser_partitionedABA.js"]
 
@@ -160,12 +168,6 @@ support-files = [
 
 ["browser_partitionkey_bloburl.js"]
 
-["browser_partitionKey_XSLT.js"]
-support-files= [
-  "file_xslt.xml",
-  "file_xslt.xsl",
-]
-
 ["browser_permissionInNormalWindows.js"]
 
 ["browser_permissionInPrivateWindows.js"]
@@ -184,6 +186,8 @@ support-files = ["tracker.js"]
 ["browser_serviceWorkersWithStorageAccessGranted.js"]
 
 ["browser_siteSpecificWorkArounds.js"]
+
+["browser_siteSpecificWorkAroundsComplex.js"]
 
 ["browser_socialtracking.js"]
 
@@ -216,6 +220,9 @@ support-files = [
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.request.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.xhr.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.xhr.html",
+]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1775745
 ]
 
 ["browser_staticPartition_network.js"]

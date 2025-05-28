@@ -14,16 +14,18 @@
 #include "mozilla/RefPtr.h"
 
 #define GTEST_HAS_RTTI 0
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 #include "CodecConfig.h"
 #include "PeerConnectionImpl.h"
 #include "sdp/SdpMediaSection.h"
 #include "sdp/SipccSdpParser.h"
-#include "jsep/JsepCodecDescription.h"
 #include "jsep/JsepTrack.h"
 #include "jsep/JsepSession.h"
 #include "jsep/JsepSessionImpl.h"
+
+using testing::UnorderedElementsAre;
 
 namespace mozilla {
 MOZ_RUNINIT static std::string kAEqualsCandidate("a=candidate:");
@@ -66,8 +68,10 @@ class JsepSessionTest : public JsepSessionTestBase,
                             "never");
     Preferences::SetBool("media.peerconnection.video.use_rtx", true);
     Preferences::SetBool("media.navigator.video.use_transport_cc", true);
+    Preferences::SetBool("media.navigator.video.use_remb", true);
     Preferences::SetBool("media.navigator.video.disable_h264_baseline", false);
     Preferences::SetBool("media.webrtc.codec.video.av1.enabled", true);
+    Preferences::SetBool("media.navigator.audio.use_fec", false);
 
     mSessionOff =
         MakeUnique<JsepSessionImpl>("Offerer", MakeUnique<FakeUuidGenerator>());
@@ -4957,55 +4961,65 @@ TEST_F(JsepSessionTest, TestUniqueReceivePayloadTypes) {
 
   ASSERT_FALSE(IsNull(offerTransceivers[0].mRecvTrack));
   ASSERT_TRUE(offerTransceivers[0].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      offerTransceivers[0].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(offerTransceivers[0].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(offerTransceivers[0].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+              UnorderedElementsAre(0, 8, 9, 101, 109));
 
   ASSERT_FALSE(IsNull(offerTransceivers[1].mRecvTrack));
   ASSERT_TRUE(offerTransceivers[1].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      offerTransceivers[1].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(offerTransceivers[1].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(offerTransceivers[1].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+              UnorderedElementsAre(0, 8, 9, 101, 109));
 
-  // First video transceiver is the only one receiving, so gets unique pts.
   ASSERT_FALSE(IsNull(offerTransceivers[2].mRecvTrack));
   ASSERT_TRUE(offerTransceivers[2].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_NE(
-      0U,
-      offerTransceivers[2].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(offerTransceivers[2].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(offerTransceivers[2].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+              UnorderedElementsAre(97, 99, 103, 105, 120, 121, 122, 123, 126));
 
-  // First video transceiver is not receiving, so does not get unique pts.
   ASSERT_TRUE(IsNull(offerTransceivers[3].mRecvTrack));
   ASSERT_TRUE(offerTransceivers[3].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      offerTransceivers[3].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(offerTransceivers[3].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(offerTransceivers[3].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+              UnorderedElementsAre(97, 99, 103, 105, 120, 121, 122, 123, 126));
 
   ASSERT_FALSE(IsNull(answerTransceivers[0].mRecvTrack));
   ASSERT_TRUE(answerTransceivers[0].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      answerTransceivers[0].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(answerTransceivers[0].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(
+      answerTransceivers[0].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+      UnorderedElementsAre(0, 8, 9, 101, 109));
 
   ASSERT_FALSE(IsNull(answerTransceivers[1].mRecvTrack));
   ASSERT_TRUE(answerTransceivers[1].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      answerTransceivers[1].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(answerTransceivers[1].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(
+      answerTransceivers[1].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+      UnorderedElementsAre(0, 8, 9, 101, 109));
 
   // Answerer is receiving two video streams with the same payload types.
   // Neither recv track should have unique pts.
   ASSERT_FALSE(IsNull(answerTransceivers[2].mRecvTrack));
   ASSERT_TRUE(answerTransceivers[2].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      answerTransceivers[2].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(answerTransceivers[2].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(
+      answerTransceivers[2].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+      UnorderedElementsAre(97, 99, 103, 105, 120, 121, 122, 123, 126));
 
   ASSERT_FALSE(IsNull(answerTransceivers[3].mRecvTrack));
   ASSERT_TRUE(answerTransceivers[3].mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(
-      0U,
-      answerTransceivers[3].mRecvTrack.GetUniqueReceivePayloadTypes().size());
+  ASSERT_THAT(answerTransceivers[3].mRecvTrack.GetUniqueReceivePayloadTypes(),
+              UnorderedElementsAre());
+  ASSERT_THAT(
+      answerTransceivers[3].mRecvTrack.GetDuplicateReceivePayloadTypes(),
+      UnorderedElementsAre(97, 99, 103, 105, 120, 121, 122, 123, 126));
 }
 
 TEST_F(JsepSessionTest, UnknownFingerprintAlgorithm) {
@@ -6079,6 +6093,8 @@ TEST_F(JsepSessionTest, RtcpFbInOffer) {
   expected["nack"] = false;
   expected["nack pli"] = false;
   expected["ccm fir"] = false;
+  expected["goog-remb"] = false;
+  expected["transport-cc"] = false;
 
   size_t prev = 0;
   size_t found = 0;

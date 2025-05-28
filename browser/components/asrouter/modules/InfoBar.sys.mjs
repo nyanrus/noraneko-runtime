@@ -17,6 +17,12 @@ const TYPES = {
   GLOBAL: "global",
 };
 
+const FTL_FILES = [
+  "browser/newtab/asrouter.ftl",
+  "browser/defaultBrowserNotification.ftl",
+  "preview/termsOfUse.ftl",
+];
+
 class InfoBarNotification {
   constructor(message, dispatch) {
     this._dispatch = dispatch;
@@ -222,14 +228,13 @@ export const InfoBar = {
   },
 
   maybeInsertFTL(win) {
-    win.MozXULElement.insertFTLIfNeeded("browser/newtab/asrouter.ftl");
-    win.MozXULElement.insertFTLIfNeeded(
-      "browser/defaultBrowserNotification.ftl"
-    );
+    FTL_FILES.forEach(path => win.MozXULElement.insertFTLIfNeeded(path));
   },
 
   async showNotificationAllWindows(notification) {
     for (let win of Services.wm.getEnumerator(null)) {
+      this.maybeLoadCustomElement(win);
+      this.maybeInsertFTL(win);
       const browser = win.gBrowser.selectedBrowser;
       await notification.showNotification(browser);
     }
