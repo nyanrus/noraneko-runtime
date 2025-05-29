@@ -1,8 +1,8 @@
 diff --git a/toolkit/components/extensions/MatchPattern.cpp b/toolkit/components/extensions/MatchPattern.cpp
-index 6a627650d675f..14fbcb8d80209 100644
+index 2c028dd624..fed474a903 100644
 --- a/toolkit/components/extensions/MatchPattern.cpp
 +++ b/toolkit/components/extensions/MatchPattern.cpp
-@@ -80,7 +80,7 @@ bool AtomSet::Intersects(const AtomSet& aOther) const {
+@@ -82,7 +82,7 @@ bool AtomSet::Intersects(const AtomSet& aOther) const {
      return atomSet.forget();                         \
    }
  
