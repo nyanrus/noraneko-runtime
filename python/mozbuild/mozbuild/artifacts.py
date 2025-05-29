@@ -548,7 +548,7 @@ class AndroidArtifactJob(ArtifactJob):
 
 class LinuxArtifactJob(ArtifactJob):
     package_re = r"public/build/target\.tar\.(bz2|xz)$"
-    product = "noraneko"
+    product = "firefox"
 
     _package_artifact_patterns = {
         "{product}/crashhelper",
@@ -641,7 +641,7 @@ class ResignJarWriter(JarWriter):
 
 class MacArtifactJob(ArtifactJob):
     package_re = r"public/build/target\.dmg$"
-    product = "noraneko"
+    product = "firefox"
 
     # These get copied into dist/bin without the path, so "root/a/b/c" -> "dist/bin/c".
     _paths_no_keep_path = (
@@ -783,7 +783,7 @@ class MacArtifactJob(ArtifactJob):
 
 class WinArtifactJob(ArtifactJob):
     package_re = r"public/build/target\.(zip|tar\.gz)$"
-    product = "noraneko"
+    product = "firefox"
 
     _package_artifact_patterns = {
         "{product}/dependentlibs.list",
