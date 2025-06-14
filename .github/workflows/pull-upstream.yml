@@ -40,7 +40,7 @@ jobs:
         continue-on-error: true
         run: |
           cd temp_release
-          git apply --ignore-space-change  --reject --ignore-whitespace .github/patches/upstream/*.patch
+          git apply --ignore-space-change --reject --ignore-whitespace --whitespace=fix .github/patches/upstream/*.patch
           cp -f .github/assets/installer/setup.ico other-licenses/7zstub/firefox/setup.ico
           cp -f .github/assets/installer/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
           cp -f .github/assets/installer/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
