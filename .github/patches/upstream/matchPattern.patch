@@ -10,3 +10,4 @@ index 2c028dd624..fed474a903 100644
 +DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https, nsGkAtoms::about,
                         nsGkAtoms::ws, nsGkAtoms::wss, nsGkAtoms::file,
                         nsGkAtoms::ftp, nsGkAtoms::data);
+ 

@@ -2,7 +2,7 @@ diff --git a/browser/moz.configure b/browser/moz.configure
 index e605019172..782e1ca956 100644
 --- a/browser/moz.configure
 +++ b/browser/moz.configure
-@@ -13,7 +13,7 @@ imply_option("MOZ_NORMANDY", True)
+@@ -13,7 +13,8 @@ imply_option("MOZ_NORMANDY", True)
  imply_option("MOZ_PROFILE_MIGRATOR", True)
  
  
