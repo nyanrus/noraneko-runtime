@@ -111,6 +111,7 @@ jobs:
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
         cd noraneko
+        git fetch origin
         git switch alpha-2
         cd ..
 
