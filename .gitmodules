@@ -1,4 +1,4 @@
 [submodule "noraneko"]
 	path = noraneko
 	url = https://github.com/nyanrus/noraneko
-	branch = main
+	branch = alpha-2

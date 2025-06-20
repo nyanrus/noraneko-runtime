@@ -25,7 +25,7 @@ jobs:
         run: |
           git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
           rm -rf ./upstream_release/.git ./upstream_release/.github
-          mv ./upstream_release/README.txt ./upstream_release/MOZ_README.txt
+          mv ./upstream_release/README.md ./upstream_release/MOZ_README.md
       - name: copy upstream to this_repo
         run: |
           rsync -aq --progress upstream_release/ temp_release
