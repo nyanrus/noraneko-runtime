@@ -271,19 +271,6 @@
 #  include "DBusService.h"
 #endif
 
-/*
-* NORANEKO PATCH
-* [updater]
-* START
-*/
-#include "mozilla/Try.h"
-#include "mozilla/URLPreloader.h"
-/*
-* NORANEKO PATCH
-* [updater]
-* END
-*/
-
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char* ProgramName);
 
@@ -767,10 +754,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetLiveWin32kLockdownState() {
 
   mozilla::EnsureWin32kInitialized();
   gfxPlatform::GetPlatform();
-
-  if (gSafeMode) {
-    return nsIXULRuntime::ContentWin32kLockdownState::DisabledBySafeMode;
-  }
 
   if (EnvHasValue("MOZ_ENABLE_WIN32K")) {
     return nsIXULRuntime::ContentWin32kLockdownState::DisabledByEnvVar;
@@ -3557,48 +3540,6 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     return false;
   }
 
-  /*
-  * NORANEKO PATCH
-  * [updater]
-  * START
-  */
-  {
-    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) -> nsresult {
-        MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
-        return NS_OK;
-    };
-    nsCOMPtr<nsIFile> buildid2_profile;
-    aProfileDir->Clone(getter_AddRefs(buildid2_profile));
-    if (!buildid2_profile) return false;
-    buildid2_profile->AppendNative("buildid2"_ns);
-
-    nsCString buildid2_profile_string;
-    rv = _NRReadString(buildid2_profile,buildid2_profile_string);
-    if (NS_FAILED(rv)) {
-        return false;
-    }
-
-    nsCOMPtr<nsIFile> buildid2_appDir;
-    aAppDir->Clone(getter_AddRefs(buildid2_appDir));
-    if (!buildid2_appDir) return false;
-    buildid2_appDir->AppendNative("buildid2"_ns);
-
-    nsCString buildid2_appDir_string;
-    rv = _NRReadString(buildid2_appDir,buildid2_appDir_string);
-    if (NS_FAILED(rv)) {
-      return false;
-    }
-
-    if (!buildid2_profile_string.Equals(buildid2_appDir_string)) {
-      return false;
-    }
-  }
-  /*
-  * NORANEKO PATCH
-  * [updater]
-  * END
-  */
-
   // If we get here, the version matched, but there may still be other
   // differences between us and the build that the profile last ran under.
 
@@ -4562,6 +4503,12 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     *aExitFlag = true;
     return 0;
   }
+
+#  ifdef MOZ_WIDGET_GTK
+  if (XRE_IsParentProcess()) {
+    widget::RegisterHostApp();
+  }
+#  endif
 #endif
 
   rv = XRE_InitCommandLine(gArgc, gArgv);

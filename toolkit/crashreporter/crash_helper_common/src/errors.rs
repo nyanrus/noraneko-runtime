@@ -5,6 +5,7 @@
 use std::{
     array::TryFromSliceError,
     ffi::{FromBytesWithNulError, NulError},
+    num::TryFromIntError,
 };
 use thiserror::Error;
 
@@ -33,8 +34,12 @@ pub enum IPCError {
     ReceptionFailure(SystemError),
     #[error("Error while waiting for events, error: {0:?}")]
     WaitingFailure(Option<SystemError>),
+    #[error("Buffer length exceeds a 32-bit integer")]
+    InvalidSize(#[from] TryFromIntError),
     #[error("Error while parsing a file descriptor string")]
     ParseError,
+    #[error("Failed to duplicate clone handle")]
+    CloneHandleFailed(#[source] std::io::Error),
 }
 
 #[derive(Debug, Error)]
