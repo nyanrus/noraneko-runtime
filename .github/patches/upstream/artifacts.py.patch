@@ -1,11 +1,13 @@
 diff --git a/python/mozbuild/mozbuild/artifacts.py b/python/mozbuild/mozbuild/artifacts.py
-index c3181a471f..cc912deaf1 100644
+index 9fb1d6afb3..df9a2bafdd 100644
 --- a/python/mozbuild/mozbuild/artifacts.py
 +++ b/python/mozbuild/mozbuild/artifacts.py
-@@ -92,6 +92,6 @@ class GeckoJobConfiguration:
-    trust_domain = "gecko"
+@@ -91,7 +91,7 @@ UNFILTERED_PROJECT_PACKAGE_PROCESSED_SUFFIX = (
+ 
+ class GeckoJobConfiguration:
+     trust_domain = "gecko"
 -    product = "firefox"
 +    product = "noraneko"
-    default_candidate_trees = [
-        "releases/mozilla-release",
-    ]
+     default_candidate_trees = [
+         "releases/mozilla-release",
+     ]
