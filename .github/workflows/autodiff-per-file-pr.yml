@@ -54,7 +54,8 @@ jobs:
             done < autodiff_rm_list.txt
           fi
 
-      - name: Apply all patches (must apply cleanly)
+      - name: Try applying all patches, abort if any fail
+        id: patch_check
         run: |
           PATCH_DIR=".github/patches/upstream"
           if [ -d "$PATCH_DIR" ]; then
@@ -62,16 +63,16 @@ jobs:
               [ -e "$patch" ] || continue
               PATCH_NAME="$(basename "$patch")"
               if git apply --check "$patch"; then
-                git apply "$patch"
-                echo "Patch $PATCH_NAME applied."
+                echo "Patch $PATCH_NAME applies cleanly."
               else
-                echo "ERROR: Patch $PATCH_NAME failed to apply!"
+                echo "ERROR: Patch $PATCH_NAME failed to apply!" >&2
                 exit 1
               fi
             done
           fi
 
       - name: Remove all patches before regeneration (unstaged)
+        if: success() && steps.patch_check.conclusion == 'success'
         run: |
           PATCH_DIR=".github/patches/upstream"
           if [ -d "$PATCH_DIR" ]; then
@@ -79,6 +80,7 @@ jobs:
           fi
 
       - name: Generate per-file patches (excluding excluded paths)
+        if: success() && steps.patch_check.conclusion == 'success'
         run: |
           PATCH_DIR=".github/patches/upstream"
           mkdir -p "$PATCH_DIR"
@@ -95,6 +97,7 @@ jobs:
           done < changed_files.txt
 
       - name: Commit and push new patches if any
+        if: success() && steps.patch_check.conclusion == 'success'
         run: |
           git add .
           if git diff --cached --quiet; then
