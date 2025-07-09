@@ -1,0 +1,125 @@
+name: Autodiff Per File
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+jobs:
+  autodiff-per-file:
+    if: github.event.label.name == 'trigger-autodiff' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch PR base
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:base_branch
+
+      - name: Get list of autodiff rm patches from PR comments
+        id: list_rm_patches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          PATCH_DIR=".github/patches/upstream"
+          rm -f autodiff_rm_list.txt
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          gh pr view $PR_NUMBER --json comments -q ".comments[].body" | \
+            grep -oE 'autodiff rm [^ ]+\.patch' | \
+            awk '{print $3}' | sort | uniq > autodiff_rm_list.txt
+          cat autodiff_rm_list.txt
+
+      - name: Remove only patches listed in autodiff_rm_list.txt (unstaged)
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          if [ -d "$PATCH_DIR" ]; then
+            while read PATCH_NAME; do
+              PATCH_PATH="$PATCH_DIR/$PATCH_NAME"
+              if [ -f "$PATCH_PATH" ]; then
+                rm -f "$PATCH_PATH"
+                echo "Removed $PATCH_PATH"
+              else
+                echo "No such patch file to remove: $PATCH_PATH"
+              fi
+            done < autodiff_rm_list.txt
+          fi
+
+      - name: Try applying all patches, fail if any fail
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          HAS_FAILED=0
+          if [ -d "$PATCH_DIR" ]; then
+            for patch in "$PATCH_DIR"/*.patch; do
+              [ -e "$patch" ] || continue
+              PATCH_NAME="$(basename "$patch")"
+              if git apply --check "$patch"; then
+                echo "Patch $PATCH_NAME applies cleanly."
+              else
+                echo "ERROR: Patch $PATCH_NAME failed to apply!" >&2
+                HAS_FAILED=1
+              fi
+            done
+          fi
+          if [ "$HAS_FAILED" -ne 0 ]; then
+            echo "::error::Some patches failed to apply. Please check and update your PR."
+            exit 1
+          fi
+
+      - name: Remove all patches before regeneration (unstaged)
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          if [ -d "$PATCH_DIR" ]; then
+            rm -f "$PATCH_DIR"/*.patch
+          fi
+
+      - name: Generate per-file patches (excluding excluded paths)
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          mkdir -p "$PATCH_DIR"
+          BASE=base_branch
+          HEAD=${{ github.event.pull_request.head.ref }}
+          git diff --name-only $BASE...HEAD | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > changed_files.txt || true
+          while read file; do
+            [ -z "$file" ] && continue
+            patchfile="$PATCH_DIR/${file//\//-}.patch"
+            git diff $BASE...HEAD -- "$file" > "$patchfile"
+            if [ ! -s "$patchfile" ]; then
+              rm "$patchfile"
+            fi
+          done < changed_files.txt
+
+      - name: Commit and push new patches if any
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          if [ -n "$(ls $PATCH_DIR/*.patch 2>/dev/null)" ]; then
+            git add $PATCH_DIR/*.patch
+            git commit -m "chore: autodiff per file patches"
+            git push
+          fi
+
+      - name: Remove "trigger-autodiff" label from PR
+        if: github.event.label.name == 'trigger-autodiff'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              name: 'trigger-autodiff'
+            });
