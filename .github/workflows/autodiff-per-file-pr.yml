@@ -54,10 +54,11 @@ jobs:
             done < autodiff_rm_list.txt
           fi
 
-      - name: Try applying all patches, abort if any fail
+      - name: Check all patches apply cleanly (do not abort immediately)
         id: patch_check
         run: |
           PATCH_DIR=".github/patches/upstream"
+          HAS_FAILED=0
           if [ -d "$PATCH_DIR" ]; then
             for patch in "$PATCH_DIR"/*.patch; do
               [ -e "$patch" ] || continue
@@ -66,8 +67,25 @@ jobs:
                 echo "Patch $PATCH_NAME applies cleanly."
               else
                 echo "ERROR: Patch $PATCH_NAME failed to apply!" >&2
-                exit 1
+                HAS_FAILED=1
               fi
+            done
+          fi
+          if [ "$HAS_FAILED" -ne 0 ]; then
+            echo "One or more patches failed to apply cleanly. Aborting."
+            exit 1
+          fi
+
+      - name: Apply all patches (only if check succeeded)
+        if: success() && steps.patch_check.conclusion == 'success'
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          if [ -d "$PATCH_DIR" ]; then
+            for patch in "$PATCH_DIR"/*.patch; do
+              [ -e "$patch" ] || continue
+              PATCH_NAME="$(basename "$patch")"
+              git apply "$patch"
+              echo "Patch $PATCH_NAME applied."
             done
           fi
 
@@ -107,8 +125,22 @@ jobs:
             git push
           fi
 
-      - name: Remove "trigger-autodiff" label from PR
-        if: github.event.label.name == 'trigger-autodiff'
+      - name: Remove "trigger-autodiff" label from PR on success
+        if: success() && github.event.label.name == 'trigger-autodiff'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              name: 'trigger-autodiff'
+            });
+
+      - name: Remove "trigger-autodiff" label from PR on failure
+        if: failure() && github.event.label.name == 'trigger-autodiff'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
