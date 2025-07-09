@@ -1,8 +1,8 @@
 diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
-index b088f4abae..c620b56657 100644
+index 396efb7875..0c71ae44cf 100644
 --- a/toolkit/xre/nsAppRunner.cpp
 +++ b/toolkit/xre/nsAppRunner.cpp
-@@ -266,6 +266,19 @@
+@@ -271,6 +271,19 @@
  #  include "DBusService.h"
  #endif
  
@@ -22,7 +22,7 @@ index b088f4abae..c620b56657 100644
  extern uint32_t gRestartMode;
  extern void InstallSignalHandlers(const char* ProgramName);
  
-@@ -3426,6 +3439,48 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
+@@ -3540,6 +3553,48 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
      return false;
    }
  

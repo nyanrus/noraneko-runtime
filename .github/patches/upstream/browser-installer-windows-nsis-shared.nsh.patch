@@ -1,8 +1,8 @@
 diff --git a/browser/installer/windows/nsis/shared.nsh b/browser/installer/windows/nsis/shared.nsh
-index 32b4ff5586..203f61ed6d 100755
+index 17dfb2aece..7ef4ef633d 100755
 --- a/browser/installer/windows/nsis/shared.nsh
 +++ b/browser/installer/windows/nsis/shared.nsh
-@@ -869,7 +869,7 @@ ${RemoveDefaultBrowserAgentShortcut}
+@@ -878,7 +878,7 @@ ${RemoveDefaultBrowserAgentShortcut}
      ${WriteRegStr2} $1 "$0" "DisplayVersion" "${AppVersion}" 0
      ${WriteRegStr2} $1 "$0" "HelpLink" "${HelpLink}" 0
      ${WriteRegStr2} $1 "$0" "InstallLocation" "$8" 0
