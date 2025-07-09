@@ -108,9 +108,10 @@ jobs:
       - name: Commit and push new patches if any
         if: steps.patch_check.outputs.patch_failed != 'true'
         run: |
-          PATCH_DIR=".github/patches/upstream"
-          if [ -n "$(ls $PATCH_DIR/*.patch 2>/dev/null)" ]; then
-            git add $PATCH_DIR/*.patch
+          git add .
+          if git diff --cached --quiet; then
+            echo "No patch changes to commit."
+          else
             git commit -m "chore: autodiff per file patches"
             git push
           fi
