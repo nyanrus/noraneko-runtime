@@ -103,12 +103,11 @@ jobs:
           PATCH_DIR=".github/patches/upstream"
           mkdir -p "$PATCH_DIR"
           BASE=base_branch
-          HEAD=${{ github.event.pull_request.head.ref }}
-          git diff --name-only $BASE...HEAD | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > changed_files.txt || true
+          git diff --name-only $BASE | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > changed_files.txt || true
           while read file; do
             [ -z "$file" ] && continue
             patchfile="$PATCH_DIR/${file//\//-}.patch"
-            git diff $BASE...HEAD -- "$file" > "$patchfile"
+            git diff $BASE -- "$file" > "$patchfile"
             if [ ! -s "$patchfile" ]; then
               rm "$patchfile"
             fi
