@@ -106,6 +106,7 @@ jobs:
         cd $GITHUB_WORKSPACE
 
         # update noraneko to latest
+        git submodule init
         git submodule update --remote
 
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
