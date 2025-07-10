@@ -72,7 +72,9 @@ jobs:
     - name: Setup 🪛
       run: |
         cd $GITHUB_WORKSPACE
-        git submodule update --remote
+        cd noraneko
+        git pull
+        cd ..
 
         cp ./.github/workflows/mozconfigs/linux64.mozconfig mozconfig
         cp -r ./noraneko/gecko/branding/* ./browser/branding/
