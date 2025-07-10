@@ -1,5 +1,5 @@
 diff --git a/toolkit/mozapps/update/nsIUpdateService.idl b/toolkit/mozapps/update/nsIUpdateService.idl
-index 984542db48..f5b2b08671 100644
+index 61ec51abb3..d81403560d 100644
 --- a/toolkit/mozapps/update/nsIUpdateService.idl
 +++ b/toolkit/mozapps/update/nsIUpdateService.idl
 @@ -228,6 +228,26 @@ interface nsIUpdate : nsISupports
