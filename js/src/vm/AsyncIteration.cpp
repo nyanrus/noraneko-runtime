@@ -313,15 +313,15 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 // Stesp 10-13.
 [[nodiscard]] static bool AsyncGeneratorYield(
     JSContext* cx, Handle<AsyncGeneratorObject*> generator, HandleValue value) {
-  // Step 13.a.
-  generator->setSuspendedYield();
-
   // Step 10. Perform
   //          ! AsyncGeneratorCompleteStep(generator, completion, false,
   //                                       previousRealm).
   if (!AsyncGeneratorCompleteStepNormal(cx, generator, value, false)) {
     return false;
   }
+
+  // Step 13.a.
+  generator->setSuspendedYield();
 
   // Steps 11-13.
   return AsyncGeneratorDrainQueue(cx, generator);
@@ -996,7 +996,7 @@ static bool AsyncIteratorDispose(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1. Let O be the this value.
-  JS::Rooted<JS::Value> O(cx, args.thisv());
+  JS::Handle<JS::Value> O = args.thisv();
 
   // Step 2. Let promiseCapability be ! NewPromiseCapability(%Promise%).
   JS::Rooted<PromiseObject*> promise(cx,

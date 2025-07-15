@@ -158,13 +158,8 @@ Result<HVCCConfig, nsresult> HVCCConfig::Parse(
       const uint8_t* currentPtr =
           aExtraData->Elements() + reader.BitCount() / 8;
       H265NALU nalu(currentPtr, nalUnitLength);
-      // ReadBits can only read at most 32 bits at a time.
-      uint32_t nalSize = nalUnitLength * 8;
-      while (nalSize > 0) {
-        uint32_t readBits = nalSize > 32 ? 32 : nalSize;
-        reader.ReadBits(readBits);
-        nalSize -= readBits;
-      }
+      uint32_t nalBitsLength = nalUnitLength * 8;
+      Unused << reader.AdvanceBits(nalBitsLength);
       // Per ISO_IEC-14496-15-2022, 8.3.2.1.3 Semantics, NALU should only be
       // SPS/PPS/VPS or SEI, ignore all the other types of NALU.
       if (nalu.IsSPS() || nalu.IsPPS() || nalu.IsVPS() || nalu.IsSEI()) {
@@ -364,10 +359,12 @@ Result<H265SPS, nsresult> H265::DecodeSPSFromSPSNALU(const H265NALU& aSPSNALU) {
   sps.max_transform_hierarchy_depth_intra = reader.ReadUE();
   const auto scaling_list_enabled_flag = reader.ReadBit();
   if (scaling_list_enabled_flag) {
-    Unused << reader.ReadBit();  // sps_scaling_list_data_present_flag
-    if (auto rv = ParseAndIgnoreScalingListData(reader); rv.isErr()) {
-      LOG("Failed to parse scaling list data.");
-      return Err(NS_ERROR_FAILURE);
+    const auto sps_scaling_list_data_present_flag = reader.ReadBit();
+    if (sps_scaling_list_data_present_flag) {
+      if (auto rv = ParseAndIgnoreScalingListData(reader); rv.isErr()) {
+        LOG("Failed to parse scaling list data.");
+        return Err(NS_ERROR_FAILURE);
+      }
     }
   }
 

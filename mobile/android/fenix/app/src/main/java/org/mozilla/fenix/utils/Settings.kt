@@ -348,6 +348,12 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         false,
     )
 
+    var shouldShowMenuBanner by lazyFeatureFlagPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_show_menu_banner),
+        default = { FxNimbus.features.menuRedesign.value().menuBanner },
+        featureFlag = true,
+    )
+
     var defaultSearchEngineName by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_search_engine),
         default = "",
@@ -896,15 +902,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         get() = mr2022Sections[Mr2022Section.TCP_FEATURE] == true
 
     /**
-     * Indicates if the total cookie protection CRF should be shown.
-     */
-    var shouldShowEraseActionCFR by lazyFeatureFlagPreference(
-        appContext.getPreferenceKey(R.string.pref_key_should_show_erase_action_popup),
-        featureFlag = true,
-        default = { feltPrivateBrowsingEnabled },
-    )
-
-    /**
      * Indicates if the cookie banners CRF should be shown.
      */
     var shouldShowCookieBannersCFR by lazyFeatureFlagPreference(
@@ -1056,6 +1053,12 @@ class Settings(private val appContext: Context) : PreferencesHolder {
 
     var shouldUseBottomToolbar by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_toolbar_bottom),
+        default = false,
+        persistDefaultIfNotExists = true,
+    )
+
+    var shouldUseExpandedToolbar by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_expanded),
         default = false,
         persistDefaultIfNotExists = true,
     )
@@ -1676,15 +1679,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
-     * Indicates if home onboarding dialog should be shown.
-     */
-    var showHomeOnboardingDialog by lazyFeatureFlagPreference(
-        appContext.getPreferenceKey(R.string.pref_key_should_show_home_onboarding_dialog),
-        featureFlag = true,
-        default = { mr2022Sections[Mr2022Section.HOME_ONBOARDING_DIALOG_EXISTING_USERS] == true },
-    )
-
-    /**
      * Indicates if the recent tabs functionality should be visible.
      */
     var showRecentTabsFeature by lazyFeatureFlagPreference(
@@ -1730,11 +1724,11 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
-     * Indicates if the Pocket recommended stories homescreen section should be shown.
+     * Indicates if the stories homescreen section should be shown.
      */
     var showPocketRecommendationsFeature by lazyFeatureFlagPreference(
         appContext.getPreferenceKey(R.string.pref_key_pocket_homescreen_recommendations),
-        featureFlag = ContentRecommendationsFeatureHelper.isPocketRecommendationsFeatureEnabled(appContext),
+        featureFlag = ContentRecommendationsFeatureHelper.isContentRecommendationsFeatureEnabled(appContext),
         default = { homescreenSections[HomeScreenSection.POCKET] == true },
     )
 
@@ -1763,15 +1757,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     var hasPocketSponsoredStoriesProfileMigrated by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_pocket_sponsored_stories_profile_migrated),
         default = false,
-    )
-
-    /**
-     * Indicates if Merino content recommendations should be shown.
-     */
-    var showContentRecommendations by lazyFeatureFlagPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_pocket_content_recommendations),
-        default = { FxNimbus.features.merinoRecommendations.value().enabled },
-        featureFlag = ContentRecommendationsFeatureHelper.isContentRecommendationsFeatureEnabled(appContext),
     )
 
     /**
@@ -1870,18 +1855,19 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         default = true,
     )
 
-    val feltPrivateBrowsingEnabled by lazyFeatureFlagPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_should_enable_felt_privacy),
-        featureFlag = true,
-        default = {
-            FxNimbus.features.privateBrowsing.value().feltPrivacyEnabled
-        },
-    )
-
     var shouldUseComposableToolbar by lazyFeatureFlagPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_composable_toolbar),
         default = { FxNimbus.features.composableToolbar.value().enabled },
         featureFlag = true,
+    )
+
+    /**
+     * Indicates if the user have access to the toolbar redesign option in settings.
+     */
+    @VisibleForTesting
+    internal var toolbarRedesignEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_redesign),
+        default = { FxNimbus.features.toolbarRedesignOption.value().showOptions },
     )
 
     /**
@@ -1906,7 +1892,7 @@ class Settings(private val appContext: Context) : PreferencesHolder {
      */
     var shouldShowMenuCFR by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_menu_cfr),
-        default = true,
+        default = false,
     )
 
     /**
@@ -2473,5 +2459,13 @@ class Settings(private val appContext: Context) : PreferencesHolder {
                     canShowAddSearchWidgetPrompt(AppWidgetManager.getInstance(appContext))
         },
         featureFlag = true,
+    )
+
+    /**
+     * Distribution ID that represents if the app was installed via a distribution deal
+     */
+    var distributionId by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_distribution_id),
+        default = "",
     )
 }

@@ -228,14 +228,9 @@ enum class LimitsFlags {
 };
 
 enum class LimitsMask {
-#ifdef ENABLE_WASM_MEMORY64
   Table = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsI64),
   Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
            uint8_t(LimitsFlags::IsI64),
-#else
-  Table = uint8_t(LimitsFlags::HasMaximum),
-  Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared),
-#endif
 };
 
 enum class DataSegmentKind {
@@ -970,8 +965,8 @@ enum class BuiltinModuleFuncId {
 // emitted internally when compiling intrinsic modules and are rejected by wasm
 // validation.
 // See wasm/WasmBuiltinModule.yaml for the list.
-#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, entry, uses_memory, \
-                           inline_op, idx)                                   \
+#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, needs_thunk, entry, \
+                           uses_memory, inline_op, idx)                      \
   op = idx + 1,  // NOLINT
   FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
@@ -1186,7 +1181,7 @@ static_assert(uint64_t(MaxArrayPayloadBytes) <
 // These limits pertain to our WebAssembly implementation only.
 
 static const unsigned MaxTryTableCatches = 10000;
-static const unsigned MaxBrTableElems = 1000000;
+static const unsigned MaxBrTableElems = 65520;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 static const unsigned MaxBranchHintValue = 2;
 
