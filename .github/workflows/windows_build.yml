@@ -106,6 +106,7 @@ jobs:
         cd $GITHUB_WORKSPACE
 
         # update noraneko to latest
+        # https://github.com/orgs/community/discussions/26818
         git -C noraneko config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
         git submodule update --remote noraneko
 
@@ -114,7 +115,7 @@ jobs:
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
         # Copy Noraneko Branding
-        cp -r ./noraneko/gecko/branding/* ./browser/branding/
+        cp -r ./noraneko/static/gecko/branding/* ./browser/branding/
 
         sudo apt install msitools -y
 
@@ -149,7 +150,7 @@ jobs:
 
         # Update Channel
         echo "ac_add_options --enable-update-channel=alpha" >> mozconfig
-        echo "ac_add_options --with-version-file-path=noraneko/gecko/config" >> mozconfig
+        echo "ac_add_options --with-version-file-path=noraneko/static/gecko/config" >> mozconfig
         sed -i 's|https://@MOZ_APPUPDATE_HOST@/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml|https://github.com/nyanrus/noraneko/releases/download/%CHANNEL%/%BUILD_TARGET%.update.xml|g' ./build/application.ini.in
 
         ./mach --no-interactive bootstrap --application-choice browser
