@@ -106,9 +106,10 @@ jobs:
         cd $GITHUB_WORKSPACE
 
         # update noraneko to latest
-        cd noraneko
-        git pull
-        cd ..
+        git -C noraneko config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
+        git submodule update --remote noraneko
+
+        git -C noraneko checkout alpha-2
 
         cp ./.github/workflows/mozconfigs/win64.mozconfig mozconfig
 
