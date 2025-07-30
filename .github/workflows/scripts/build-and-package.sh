@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -e
+
+# Arguments:
+#   $1: platform (linux|mac|windows)
+#   $2: arch (optional, for mac: x86_64|aarch64)
+#   $3: profile-generate-mode (true|false)
+#   $4: MOZ_BUILD_DATE (optional)
+
+PLATFORM="$1"
+ARCH="$2"
+PROFGEN="$3"
+MOZ_BUILD_DATE="$4"
+
+if [[ -n "$MOZ_BUILD_DATE" ]]; then
+  export MOZ_BUILD_DATE="$MOZ_BUILD_DATE"
+fi
+
+if [[ "$PLATFORM" == "linux" ]]; then
+  Xvfb :2 -screen 0 1024x768x24 &
+  export DISPLAY=:2
+fi
+
+./mach configure
+
+export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
+nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
+./mach package
+rm -rf ~/.cargo
+
+# Artifact packaging
+mkdir -p ~/output
+if [[ "$PLATFORM" == "mac" ]]; then
+  if [[ "$ARCH" == "aarch64" ]]; then
+    arch="aarch64"
+  else
+    arch="x86_64"
+  fi
+  if [[ "$PROFGEN" == "true" ]]; then
+    tar zcvf ${arch}-apple-darwin-output.tar.xz ./obj-${arch}-apple-darwin/dist/*.dmg
+    mv ${arch}-apple-darwin-output.tar.xz ~/output/
+  else
+    tar -czf noraneko-${arch}-apple-darwin-with-pgo.tar.gz ./obj-${arch}-apple-darwin/dist/
+    mv noraneko-${arch}-apple-darwin-with-pgo.tar.gz ~/output/
+  fi
+elif [[ "$PLATFORM" == "windows" ]]; then
+  mkdir -p ~/artifact
+  unzip obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip -d ~/artifact
+  cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini
+elif [[ "$PLATFORM" == "linux" ]]; then
+  if [[ "$ARCH" == "aarch64" ]]; then
+    cd obj-aarch64-unknown-linux-gnu/dist/
+    mkdir -p ~/output
+    tar -xvf noraneko-*.tar.xz -C ~/output
+  else
+    mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-amd64-moz-artifact.tar.xz
+    cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini
+  fi
+fi

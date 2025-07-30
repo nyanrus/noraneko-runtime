@@ -1,0 +1,82 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: true
+      debug:
+        type: boolean
+        default: true
+      code-coverage:
+        type: boolean
+        default: false
+      profile-generate-mode:
+        type: boolean
+        default: false
+      build-with-profdata-and-jarlog:
+          type: boolean
+          required: false
+      MOZ_BUILD_DATE:
+        type: string
+        required: true
+        default: ""
+
+jobs:
+  mac-build:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        runs-on: ["ubuntu-latest"]
+        arch: [x86_64, aarch64]
+    steps:
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "latest"
+
+    - name: Clone 🧬
+      uses: actions/checkout@v4
+      with:
+        submodules: "recursive"
+
+    - name: Configure sccache
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: setup Rust (shared)
+      run: |
+        ./.github/workflows/scripts/setup-rust.sh mac ${{ matrix.arch }} ${{ inputs.build-with-profdata-and-jarlog }}
+
+    - name: Allocate swap
+      run: ./.github/workflows/scripts/allocate-swap.sh
+
+    - name: Download PGO Artifact if exists
+      if: inputs.build-with-profdata-and-jarlog
+      uses: actions/download-artifact@v4
+      with:
+        name: noraneko-${{ matrix.arch }}-apple-darwin-profdata-and-jarlog
+        path: ~/artifacts
+
+    - name: Setup noraneko (shared)
+      run: |
+        ./.github/workflows/scripts/setup-noraneko.sh mac ${{ matrix.arch }} ${{ inputs.debug }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+
+    - name: Build & Package (shared)
+      run: |
+        ./.github/workflows/scripts/build-and-package.sh mac ${{ matrix.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+
+    # Publish START
+    - name: Publish Package🎁
+      uses: actions/upload-artifact@v4
+      with:
+        name: noraneko-mac-${{ matrix.arch }}-${{fromJson('["package","build-with-profgen"]')[inputs.profile-generate-mode]}}
+        compression-level: 9
+        path: ~/output/
+    # Publish END
