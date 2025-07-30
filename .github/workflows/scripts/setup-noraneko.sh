@@ -41,7 +41,7 @@ elif [[ "$PLATFORM" == "linux" ]]; then
   fi
 fi
 
-cp -r ./noraneko/gecko/branding/* ./browser/branding/
+cp -r ./noraneko/static/gecko/branding/* ./browser/branding/
 
 # Set Branding/Flat Chrome
 if [[ "$PLATFORM" == "mac" ]]; then
