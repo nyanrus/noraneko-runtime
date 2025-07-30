@@ -38,7 +38,7 @@ jobs:
 
   part1:
     needs: [get-buildid]
-    uses: ./.github/workflows/mac_build.yml
+    uses: ./.github/workflows/build-mac.yml
     with:
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
@@ -52,7 +52,7 @@ jobs:
   part3:
     needs: [get-buildid, part1, part2]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/mac_build.yml
+    uses: ./.github/workflows/build-mac.yml
     with:
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
