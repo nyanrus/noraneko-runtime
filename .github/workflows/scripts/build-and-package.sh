@@ -36,12 +36,8 @@ if [[ "$PLATFORM" == "mac" ]]; then
   tar -cJf ~/output/${ARTIFACT_NAME}.tar.xz ./obj-${ARCH}-apple-darwin/dist/
   cp ./obj-${ARCH}-apple-darwin/dist/bin/application.ini ./nora-application.ini || true
 elif [[ "$PLATFORM" == "windows" ]]; then
-  mkdir -p ~/artifact
-  unzip obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip -d ~/artifact
+  mv obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip ~/output/${ARTIFACT_NAME}.zip
   cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini || true
-  cd ~/artifact
-  zip -r ../output/${ARTIFACT_NAME}.zip .
-  cd -
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
     mv obj-aarch64-unknown-linux-gnu/dist/noraneko-*.tar.xz ~/output/${ARTIFACT_NAME}.tar.xz
