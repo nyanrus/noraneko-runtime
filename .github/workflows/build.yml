@@ -130,13 +130,6 @@ jobs:
             dist-host
             application-ini
 
-      - name: extract moz-artifact
-        if: inputs.platform == 'windows'
-        run: |
-          mkdir ~/output
-          unzip obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip -d ~/output
-          cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini
-
       # Publish artifact (unified)
       - name: Publish Package Mozilla Artifact 🎁
         uses: actions/upload-artifact@v4
