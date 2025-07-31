@@ -50,6 +50,8 @@ fi
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
+# https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 brew install sccache
 
 # SCCACHE
