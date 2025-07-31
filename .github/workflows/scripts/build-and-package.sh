@@ -31,17 +31,12 @@ rm -rf ~/.cargo
 # Artifact packaging
 mkdir -p ~/output
 if [[ "$PLATFORM" == "mac" ]]; then
-  if [[ "$ARCH" == "aarch64" ]]; then
-    arch="aarch64"
-  else
-    arch="x86_64"
-  fi
   if [[ "$PROFGEN" == "true" ]]; then
-    tar zcvf ${arch}-apple-darwin-output.tar.xz ./obj-${arch}-apple-darwin/dist/*.dmg
-    mv ${arch}-apple-darwin-output.tar.xz ~/output/
+    tar zcvf ${$ARCH}-apple-darwin-output.tar.xz ./obj-${$ARCH}-apple-darwin/dist/*.dmg
+    mv ${$ARCH}-apple-darwin-output.tar.xz ~/output/
   else
-    tar -czf noraneko-${arch}-apple-darwin-with-pgo.tar.gz ./obj-${arch}-apple-darwin/dist/
-    mv noraneko-${arch}-apple-darwin-with-pgo.tar.gz ~/output/
+    tar -czf noraneko-${$ARCH}-apple-darwin-with-pgo.tar.gz ./obj-${$ARCH}-apple-darwin/dist/
+    mv noraneko-${$ARCH}-apple-darwin-with-pgo.tar.gz ~/output/
   fi
 elif [[ "$PLATFORM" == "windows" ]]; then
   mkdir -p ~/artifact
