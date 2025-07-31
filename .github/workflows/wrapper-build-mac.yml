@@ -40,7 +40,7 @@ jobs:
     needs: [get-buildid]
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest
+      platform: mac
       arch: x86_64
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
@@ -56,7 +56,7 @@ jobs:
     if: ${{ inputs.pgo }}
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest
+      platform: mac
       arch: x86_64
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}

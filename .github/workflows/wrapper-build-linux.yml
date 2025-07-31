@@ -29,9 +29,9 @@ run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Linux x64 build${{t
 jobs:
   run-main:
     name: Linux-x64
-    uses: ./.github/workflows/build-linux.yml
+    uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest
+      platform: linux
       arch: x86_64
       debug: ${{inputs.debug}}
       pgo: ${{inputs.pgo}}
