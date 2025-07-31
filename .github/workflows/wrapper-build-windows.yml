@@ -29,7 +29,7 @@ run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Windows x64 build${
 jobs:
   part-1:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/build-windows.yml
     with:
       os: ubuntu-latest
       arch: x86_64
@@ -50,7 +50,7 @@ jobs:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
     if: inputs.pgo
     needs: part-2
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/build-windows.yml
     with:
       os: ubuntu-latest
       arch: x86_64

@@ -3,7 +3,7 @@ set -e
 
 # Arguments:
 #   $1: platform (linux|mac|windows)
-#   $2: arch (optional, for mac: x86_64|aarch64)
+#   $2: arch (x86_64|aarch64)
 #   $3: profile-generate-mode (true|false)
 #   $4: MOZ_BUILD_DATE (optional)
 
@@ -30,24 +30,24 @@ rm -rf ~/.cargo
 
 # Artifact packaging
 mkdir -p ~/output
+
+ARTIFACT_NAME="noraneko-${PLATFORM}-${ARCH}-moz-artifact"
 if [[ "$PLATFORM" == "mac" ]]; then
-  if [[ "$PROFGEN" == "true" ]]; then
-    tar zcvf ${$ARCH}-apple-darwin-output.tar.xz ./obj-${$ARCH}-apple-darwin/dist/*.dmg
-    mv ${$ARCH}-apple-darwin-output.tar.xz ~/output/
-  else
-    tar -czf noraneko-${$ARCH}-apple-darwin-with-pgo.tar.gz ./obj-${$ARCH}-apple-darwin/dist/
-    mv noraneko-${$ARCH}-apple-darwin-with-pgo.tar.gz ~/output/
-  fi
+  tar -cJf ~/output/${ARTIFACT_NAME}.tar.xz ./obj-${ARCH}-apple-darwin/dist/
+  cp ./obj-${ARCH}-apple-darwin/dist/bin/application.ini ./nora-application.ini || true
 elif [[ "$PLATFORM" == "windows" ]]; then
   mkdir -p ~/artifact
   unzip obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip -d ~/artifact
-  cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini
+  cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini || true
+  cd ~/artifact
+  zip -r ../output/${ARTIFACT_NAME}.zip .
+  cd -
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
-    mv obj-aarch64-unknown-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-aarch64-moz-artifact.tar.xz
-    cp ./obj-aarch64-unknown-linux-gnu/dist/bin/application.ini ./nora-application.ini
+    mv obj-aarch64-unknown-linux-gnu/dist/noraneko-*.tar.xz ~/output/${ARTIFACT_NAME}.tar.xz
+    cp ./obj-aarch64-unknown-linux-gnu/dist/bin/application.ini ./nora-application.ini || true
   else
-    mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-x86_64-moz-artifact.tar.xz
-    cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini
+    mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ~/output/${ARTIFACT_NAME}.tar.xz
+    cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini || true
   fi
 fi
