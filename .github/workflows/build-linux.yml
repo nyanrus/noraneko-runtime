@@ -39,10 +39,6 @@ jobs:
     - name: Setup Rust (shared)
       run: ./.github/workflows/scripts/setup-rust.sh linux ${{ matrix.arch }}
 
-    - name: Set up Homebrew
-      id: set-up-homebrew
-      uses: Homebrew/actions/setup-homebrew@main
-
     - name: Allocate swap
       run: ./.github/workflows/scripts/allocate-swap.sh ${{ matrix.arch }}
 
