@@ -50,12 +50,13 @@ fi
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
+brew install sccache
 
 # SCCACHE
 {
-  echo "mk_add_options 'export RUSTC_WRAPPER=/home/runner/.mozbuild/sccache/sccache'"
+  echo "mk_add_options 'export RUSTC_WRAPPER=/home/linuxbrew/.linuxbrew/bin/sccache'"
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
-  echo "ac_add_options --with-ccache=/home/runner/.mozbuild/sccache/sccache"
+  echo "ac_add_options --with-ccache=/home/linuxbrew/.linuxbrew/bin/sccache"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
 } >> mozconfig
 
