@@ -5,6 +5,12 @@
 on:
   workflow_call:
     inputs:
+      platform:
+        type: string
+        required: true
+      arch:
+        type: string
+        required: true
       debug:
         type: boolean
         default: true
@@ -33,26 +39,7 @@ on:
 
 jobs:
   build:
-    # Only valid platform/arch combinations
-    strategy:
-      matrix:
-        include:
-          - platform: linux
-            arch: x86_64
-            runs-on: ubuntu-latest
-          - platform: linux
-            arch: aarch64
-            runs-on: ubuntu-latest
-          - platform: mac
-            arch: x86_64
-            runs-on: ubuntu-latest
-          - platform: mac
-            arch: aarch64
-            runs-on: ubuntu-latest
-          - platform: windows
-            arch: x86_64
-            runs-on: ubuntu-latest
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ${{ inputs.platform == 'windows' && 'ubuntu-latest' || inputs.platform == 'mac' && 'ubuntu-latest' || 'ubuntu-latest' }}
 
     steps:
       # Shared: Node.js, checkout, sccache
@@ -64,7 +51,7 @@ jobs:
       - name: Clone 🧬
         uses: actions/checkout@v4
         with:
-          submodules: ${{ matrix.platform == 'mac' && 'recursive' || 'true' }}
+          submodules: ${{ inputs.platform == 'mac' && 'recursive' || 'true' }}
 
       - name: Configure sccache
         uses: actions/github-script@v7
@@ -75,29 +62,29 @@ jobs:
 
       # Platform-specific: Setup Rust
       - name: Setup Rust (linux/mac)
-        if: matrix.platform == 'linux' || matrix.platform == 'mac'
-        run: ./.github/workflows/scripts/setup-rust.sh ${{ matrix.platform }} ${{ matrix.arch }} ${{ inputs.build-with-profdata-and-jarlog || '' }}
+        if: inputs.platform == 'linux' || inputs.platform == 'mac'
+        run: ./.github/workflows/scripts/setup-rust.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.build-with-profdata-and-jarlog || '' }}
 
       - name: Setup Rust (windows)
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         run: ./.github/workflows/scripts/setup-rust.sh windows x86_64 ${{ inputs.pgo_artifact_name || '' }}
         env:
           GHA_pgo_artifact_name: ${{ inputs.pgo_artifact_name }}
 
       # Shared: Allocate swap
       - name: Allocate swap
-        run: ./.github/workflows/scripts/allocate-swap.sh ${{ matrix.arch }}
+        run: ./.github/workflows/scripts/allocate-swap.sh ${{ inputs.arch }}
 
       # Platform-specific: Download PGO Artifact
       - name: Download PGO Artifact if exists (mac)
-        if: matrix.platform == 'mac' && inputs.build-with-profdata-and-jarlog
+        if: inputs.platform == 'mac' && inputs.build-with-profdata-and-jarlog
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-${{ matrix.arch }}-apple-darwin-profdata-and-jarlog
+          name: noraneko-${{ inputs.arch }}-apple-darwin-profdata-and-jarlog
           path: ~/artifacts
 
       - name: Download PGO Artifact if exists (windows)
-        if: matrix.platform == 'windows' && inputs.pgo_artifact_name
+        if: inputs.platform == 'windows' && inputs.pgo_artifact_name
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.pgo_artifact_name }}
@@ -105,15 +92,15 @@ jobs:
 
       # Platform-specific: Setup noraneko
       - name: Setup noraneko (linux)
-        if: matrix.platform == 'linux'
-        run: ./.github/workflows/scripts/setup-noraneko.sh linux ${{ matrix.arch }} ${{ inputs.debug }} ${{ inputs.pgo }}
+        if: inputs.platform == 'linux'
+        run: ./.github/workflows/scripts/setup-noraneko.sh linux ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.pgo }}
 
       - name: Setup noraneko (mac)
-        if: matrix.platform == 'mac'
-        run: ./.github/workflows/scripts/setup-noraneko.sh mac ${{ matrix.arch }} ${{ inputs.debug }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+        if: inputs.platform == 'mac'
+        run: ./.github/workflows/scripts/setup-noraneko.sh mac ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
 
       - name: Setup noraneko (windows)
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         run: ./.github/workflows/scripts/setup-noraneko.sh windows x86_64 ${{ inputs.debug }} ${{ inputs.profile-generate-mode }}
         env:
           GHA_debug: ${{ inputs.debug }}
@@ -122,20 +109,20 @@ jobs:
 
       # Platform-specific: Build & Package
       - name: Build & Package (linux)
-        if: matrix.platform == 'linux'
-        run: ./.github/workflows/scripts/build-and-package.sh linux ${{ matrix.arch }} ${{ inputs.pgo }}
+        if: inputs.platform == 'linux'
+        run: ./.github/workflows/scripts/build-and-package.sh linux ${{ inputs.arch }} ${{ inputs.pgo }}
 
       - name: Build & Package (mac)
-        if: matrix.platform == 'mac'
-        run: ./.github/workflows/scripts/build-and-package.sh mac ${{ matrix.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+        if: inputs.platform == 'mac'
+        run: ./.github/workflows/scripts/build-and-package.sh mac ${{ inputs.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
 
       - name: Build & Package (windows)
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         run: ./.github/workflows/scripts/build-and-package.sh windows x86_64 ${{ inputs.profile-generate-mode }}
 
       # Windows-specific artifact extraction
       - name: Remove same name uploaded artifacts
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         uses: geekyeggo/delete-artifact@v5
         with:
           name: |
@@ -144,7 +131,7 @@ jobs:
             application-ini
 
       - name: extract moz-artifact
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         run: |
           mkdir ~/output
           unzip obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip -d ~/output
@@ -154,34 +141,34 @@ jobs:
       - name: Publish Package Mozilla Artifact 🎁
         uses: actions/upload-artifact@v4
         with:
-          name: noraneko-${{ matrix.platform }}-${{ matrix.arch }}-moz-artifact
-          path: ${{ matrix.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', matrix.platform, matrix.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', matrix.platform, matrix.arch) }}
+          name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
+          path: ${{ inputs.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', inputs.platform, inputs.arch) }}
 
       - name: Publish dist/host for MAR (linux)
-        if: matrix.platform == 'linux'
+        if: inputs.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch }}-dist-host
-          path: obj-${{ matrix.arch }}-*-linux-gnu/dist/host/
+          name: linux-${{ inputs.arch }}-dist-host
+          path: obj-${{ inputs.arch }}-*-linux-gnu/dist/host/
           overwrite: true
 
       - name: Publish nora-application.ini for MAR (linux)
-        if: matrix.platform == 'linux'
+        if: inputs.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch }}-application-ini
+          name: linux-${{ inputs.arch }}-application-ini
           path: ./nora-application.ini
           overwrite: true
 
       - name: Publish dist/* for generate profile (windows)
-        if: matrix.platform == 'windows' && inputs.profile-generate-mode
+        if: inputs.platform == 'windows' && inputs.profile-generate-mode
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-win-x86_64-profile-generate-mode-package
           path: obj-x86_64-pc-windows-msvc/dist/
 
       - name: Publish dist/host for MAR (windows)
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: win-x86_64-dist-host
@@ -189,7 +176,7 @@ jobs:
           overwrite: true
 
       - name: Publish nora-application.ini for MAR (windows)
-        if: matrix.platform == 'windows'
+        if: inputs.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: win-x86_64-application-ini
