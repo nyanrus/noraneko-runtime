@@ -38,8 +38,10 @@ jobs:
 
   part1:
     needs: [get-buildid]
-    uses: ./.github/workflows/build-mac.yml
+    uses: ./.github/workflows/build.yml
     with:
+      os: ubuntu-latest
+      arch: x86_64
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       profile-generate-mode: ${{ inputs.pgo }}
@@ -47,13 +49,15 @@ jobs:
   part2:
     needs: [get-buildid, part1]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/mac_pgo.yml
+    uses: ./.github/workflows/pgo-mac.yml
 
   part3:
     needs: [get-buildid, part1, part2]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/build-mac.yml
+    uses: ./.github/workflows/build.yml
     with:
+      os: ubuntu-latest
+      arch: x86_64
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       build-with-profdata-and-jarlog: true

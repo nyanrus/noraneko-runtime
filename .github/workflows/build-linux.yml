@@ -53,19 +53,19 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: noraneko-linux-${{ matrix.arch }}-moz-artifact
-        path: ./noraneko-linux-amd64-moz-artifact.tar.xz
+        path: ./noraneko-linux-${{ matrix.arch }}-moz-artifact.tar.xz
 
     - name: Publish dist/host for MAR
       uses: actions/upload-artifact@v4
       with:
-        name: linux-amd64-dist-host
-        path: obj-x86_64-pc-linux-gnu/dist/host/
+        name: linux-${{ matrix.arch }}-dist-host
+        path: obj-${{ matrix.arch }}-*-linux-gnu/dist/host/
         overwrite: true
 
     - name: Publish nora-application.ini for MAR
       uses: actions/upload-artifact@v4
       with:
-        name: linux-amd64-application-ini
+        name: linux-${{ matrix.arch }}-application-ini
         path: ./nora-application.ini
         overwrite: true
     # Publish END

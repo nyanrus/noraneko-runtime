@@ -28,7 +28,7 @@ jobs:
   windows-amd64:
     name: Windows amd x64 build
     needs: part-1
-    uses: ./.github/workflows/wrapper_windows_build.yml
+    uses: ./.github/workflows/wrapper-build-windows.yml
     secrets: inherit
     with:
       debug: false
@@ -37,7 +37,7 @@ jobs:
   linux-amd64:
     name: Linux amd x64 build
     needs: part-1
-    uses: ./.github/workflows/wrapper_linux_build.yml
+    uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
       debug: false
@@ -46,7 +46,7 @@ jobs:
   mac-amd64:
     name: Mac amd x64 build
     needs: part-1
-    uses: ./.github/workflows/wrapper_mac_build.yml
+    uses: ./.github/workflows/wrapper-build-mac.yml
     secrets: inherit
     with:
       debug: false

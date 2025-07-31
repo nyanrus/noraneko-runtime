@@ -72,6 +72,9 @@ jobs:
           dist-host
           application-ini
 
+    - name: Remove existing artifact directory
+      run: |
+        if [ -d ~/artifact ]; then rm -rf ~/artifact; fi
     - name: extract moz-artifact
       run: |
         mkdir ~/artifact

@@ -1,0 +1,83 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+name: "(A) ⚒ Unified Build"
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        type: string
+        required: true
+      arch:
+        type: string
+        required: true
+      debug:
+        type: boolean
+        default: true
+      pgo:
+        type: boolean
+        default: false
+      profile-generate-mode:
+        type: boolean
+        default: false
+      pgo_artifact_name:
+        type: string
+        required: false
+      MOZ_BUILD_DATE:
+        type: string
+        required: false
+      build-with-profdata-and-jarlog:
+        type: boolean
+        required: false
+      code-coverage:
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "latest"
+      - name: Clone
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+      - name: Configure sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Setup Rust (shared)
+        run: |
+          ./.github/workflows/scripts/setup-rust.sh ${{ inputs.os }} ${{ inputs.arch }} ${{ inputs.pgo_artifact_name || inputs.build-with-profdata-and-jarlog }}
+        env:
+          GHA_pgo_artifact_name: ${{inputs.pgo_artifact_name}}
+      - name: Allocate swap
+        run: ./.github/workflows/scripts/allocate-swap.sh ${{ inputs.arch }}
+      - name: Download PGO Artifact if exists
+        if: inputs.pgo_artifact_name || inputs.build-with-profdata-and-jarlog
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{inputs.pgo_artifact_name || format('noraneko-${{ inputs.arch }}-apple-darwin-profdata-and-jarlog')}}
+          path: ~/artifacts
+      - name: Setup noraneko (shared)
+        run: |
+          ./.github/workflows/scripts/setup-noraneko.sh ${{ inputs.os }} ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+        env:
+          GHA_debug: ${{inputs.debug}}
+          GHA_profgen: ${{inputs.profile-generate-mode}}
+          GHA_pgo_artifact_name: ${{inputs.pgo_artifact_name}}
+      - name: Build & Package (shared)
+        run: |
+          ./.github/workflows/scripts/build-and-package.sh ${{ inputs.os }} ${{ inputs.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+      - name: Publish Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-${{ inputs.os }}-${{ inputs.arch }}-artifact
+          path: ~/output/

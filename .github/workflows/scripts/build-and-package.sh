@@ -49,11 +49,10 @@ elif [[ "$PLATFORM" == "windows" ]]; then
   cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
-    cd obj-aarch64-unknown-linux-gnu/dist/
-    mkdir -p ~/output
-    tar -xvf noraneko-*.tar.xz -C ~/output
+    mv obj-aarch64-unknown-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-aarch64-moz-artifact.tar.xz
+    cp ./obj-aarch64-unknown-linux-gnu/dist/bin/application.ini ./nora-application.ini
   else
-    mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-amd64-moz-artifact.tar.xz
+    mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ./noraneko-linux-x86_64-moz-artifact.tar.xz
     cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini
   fi
 fi
