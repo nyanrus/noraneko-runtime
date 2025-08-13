@@ -5,69 +5,68 @@
 name: Pull Upstream
 on:
   workflow_dispatch:
-    inputs:
-      skip-patch:
-        description: "Skip patch for edit patch manually"
-        type: boolean
-        default: false
   workflow_call:
 permissions:
   contents: write
+
 jobs:
-  main:
+  pull-upstream:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant:
+          - name: patched
+            skip-patch: false
+            push-branch: main
+          - name: non-patched
+            skip-patch: true
+            push-branch: the-tailed-one
     steps:
       - uses: actions/checkout@v4
         with:
-          path: "nyanrus_release"
+          path: nyanrus_release
           fetch-depth: 0
-      - name: clone upstream
+
+      - name: Clone upstream
         run: |
           git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
           rm -rf ./upstream_release/.git ./upstream_release/.github
           mv ./upstream_release/README.md ./upstream_release/MOZ_README.md
-      - name: copy upstream to this_repo
+
+      - name: Copy upstream to working dir
         run: |
           rsync -aq --progress upstream_release/ temp_release
           cp -r ./nyanrus_release/.git temp_release
           cp -r ./nyanrus_release/.github temp_release
           cp ./nyanrus_release/.gitmodules temp_release
-          cp -r ./nyanrus_release/noraneko temp_release
+          cp -r ./nyanrus_release/noraneko temp_release || true
           cp ./nyanrus_release/README.md temp_release
+
       - id: normalize-patch-files
-        if: ${{ !inputs.skip-patch }}
-        name: normalize patch files for cross-platform compatibility
+        if: ${{ matrix.variant.skip-patch == false }}
+        name: Normalize patch files for cross-platform compatibility
         run: |
           echo "Normalizing patch files..."
-          # Convert CRLF to LF for compatibility between Windows and Linux
           find .github/patches/upstream -name "*.patch" -exec dos2unix {} \; 2>/dev/null || true
-          
-          # Fix patch file format issues (missing final newlines, etc.)
           for patch_file in .github/patches/upstream/*.patch; do
-            # Ensure patch files end with a newline
             if [ -s "$patch_file" ] && [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
               echo "" >> "$patch_file"
             fi
-            
-            # Validate patch format
             if ! git apply --check "$patch_file" >/dev/null 2>&1; then
               echo "Warning: $patch_file may have format issues"
             fi
           done
-          
+
       - id: apply-git-patches
-        if: ${{ !inputs.skip-patch }}
-        name: apply git patches
+        if: ${{ matrix.variant.skip-patch == false }}
+        name: Apply git patches
         continue-on-error: true
         run: |
           cd temp_release
           echo "Applying patches one by one..."
-          
-          # Apply patches individually to isolate failures
           for patch_file in .github/patches/upstream/*.patch; do
             patch_name=$(basename "$patch_file")
             echo "Applying: $patch_name"
-            
             if ! git apply --ignore-space-change --ignore-whitespace --whitespace=fix "$patch_file"; then
               echo "Failed to apply: $patch_name"
               echo "Trying with 3-way merge..."
@@ -77,16 +76,17 @@ jobs:
               fi
             fi
           done
-          
           cp -f .github/assets/installer/setup.ico other-licenses/7zstub/firefox/setup.ico
           cp -f .github/assets/installer/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
           cp -f .github/assets/installer/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
-      - name: detect patch error
+
+      - name: Detect patch error
         if: ${{ steps.apply-git-patches.outcome == 'failure' }}
         run: |
           echo "Patch Error!"
           exit 1
-      - name: push
+
+      - name: Push changes
         run: |
           cd temp_release
           export FF_VERSION=$(cat browser/config/version.txt)
@@ -94,4 +94,4 @@ jobs:
           git config user.email github-actions@github.com
           git add .
           git commit -m "sync upstream gecko-dev $FF_VERSION" || echo "No changes to commit."
-          git push
+          git push origin HEAD:${{ matrix.variant.push-branch }}
