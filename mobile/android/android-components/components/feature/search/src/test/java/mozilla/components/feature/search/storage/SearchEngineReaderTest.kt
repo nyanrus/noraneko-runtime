@@ -197,6 +197,7 @@ class SearchEngineReaderTest {
                 ),
             ),
             searchTermParamName = "test2",
+            displayName = null,
         )
 
         searchEngineDefinition.urls.trending = SearchEngineUrl(
@@ -211,11 +212,17 @@ class SearchEngineReaderTest {
                 ),
             ),
             searchTermParamName = "test3",
+            displayName = null,
         )
 
         val searchEngine = reader.loadStreamAPI(searchEngineDefinition, emptyByteArray, validMimeType, mock())
+        val identifier = if (searchEngineDefinition.telemetrySuffix.isNotEmpty()) {
+            "${searchEngineDefinition.identifier}-${searchEngineDefinition.telemetrySuffix}"
+        } else {
+            searchEngineDefinition.identifier
+        }
 
-        assertEquals(searchEngineDefinition.identifier, searchEngine.id)
+        assertEquals(identifier, searchEngine.id)
         assertEquals(searchEngineDefinition.name, searchEngine.name)
         assertEquals(searchEngineDefinition.charset, searchEngine.inputEncoding)
 
@@ -327,6 +334,7 @@ class SearchEngineReaderTest {
             charset = "UTF-8",
             classification = SearchEngineClassification.GENERAL,
             identifier = "google",
+            isNewUntil = null,
             name = "Google",
             optional = false,
             partnerCode = "firefox-b-m",
@@ -337,10 +345,12 @@ class SearchEngineReaderTest {
                     method = "GET",
                     params = emptyList(),
                     searchTermParamName = null,
+                    displayName = null,
                 ),
                 suggestions = null,
                 trending = null,
                 searchForm = null,
+                visualSearch = null,
             ),
             orderHint = null,
             clickUrl = null,

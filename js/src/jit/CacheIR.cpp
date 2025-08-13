@@ -3158,7 +3158,8 @@ AttachDecision GetPropIRGenerator::tryAttachDenseElement(
   } else {
     TestMatchingNativeReceiver(writer, nobj, objId);
   }
-  writer.loadDenseElementResult(objId, indexId);
+  bool expectPackedElements = nobj->denseElementsArePacked();
+  writer.loadDenseElementResult(objId, indexId, expectPackedElements);
   writer.returnFromIC();
 
   trackAttached("GetProp.DenseElement");
@@ -5002,7 +5003,8 @@ AttachDecision SetPropIRGenerator::tryAttachSetDenseElement(
 
   TestMatchingNativeReceiver(writer, nobj, objId);
 
-  writer.storeDenseElement(objId, indexId, rhsId);
+  bool expectPackedElements = nobj->denseElementsArePacked();
+  writer.storeDenseElement(objId, indexId, rhsId, expectPackedElements);
   writer.returnFromIC();
 
   trackAttached("SetProp.DenseElement");
@@ -5024,8 +5026,7 @@ static bool CanAttachAddElement(NativeObject* obj, bool isInit,
     const JSClass* clasp = obj->getClass();
     if (clasp != &ArrayObject::class_ &&
         (clasp->getAddProperty() || clasp->getResolve() ||
-         clasp->getOpsLookupProperty() || clasp->getOpsSetProperty() ||
-         obj->hasUnpreservedWrapper())) {
+         clasp->getOpsLookupProperty() || clasp->getOpsSetProperty())) {
       return false;
     }
 
@@ -5803,10 +5804,7 @@ AttachDecision SetPropIRGenerator::tryAttachAddSlotStub(
   DebugOnly<uint32_t> index;
   MOZ_ASSERT_IF(obj->is<ArrayObject>(), !IdIsIndex(id, &index));
   bool mustCallAddPropertyHook =
-      !obj->is<ArrayObject>() &&
-      (obj->getClass()->getAddProperty() ||
-       (obj->getClass()->preservesWrapper() &&
-        !oldShape->hasObjectFlag(ObjectFlag::HasPreservedWrapper)));
+      obj->getClass()->getAddProperty() && !obj->is<ArrayObject>();
 
   if (mustCallAddPropertyHook) {
     writer.addSlotAndCallAddPropHook(objId, rhsValId, newShape);
