@@ -38,7 +38,7 @@ jobs:
 
   part1:
     needs: [get-buildid]
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: mac
       arch: x86_64
@@ -46,21 +46,43 @@ jobs:
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       profile-generate-mode: ${{ inputs.pgo }}
 
-  part2:
+  part2-macos13:
     needs: [get-buildid, part1]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/pgo-mac.yml
+    uses: ./.github/workflows/pgo-build.yml
+    secrets: inherit
+    with:
+      browser-artifact-name: noraneko-mac-x86_64-build-with-profgen
+      artifact-path: ~/downloads/artifacts
+      runner: macos-13
+      target-arch: x86_64
+      profile-mode: generate
+      upload-artifact-name: noraneko-x86_64-apple-darwin-profdata-and-jarlog
+
+  part2-macos14:
+    needs: [get-buildid, part1]
+    if: ${{ inputs.pgo }}
+    uses: ./.github/workflows/pgo-build.yml
+    secrets: inherit
+    with:
+      browser-artifact-name: noraneko-mac-aarch64-build-with-profgen
+      artifact-path: ~/downloads/artifacts
+      runner: macos-14
+      target-arch: aarch64
+      profile-mode: generate
+      upload-artifact-name: noraneko-aarch64-apple-darwin-profdata-and-jarlog
 
   part3:
-    needs: [get-buildid, part1, part2]
+    needs: [get-buildid, part1, part2-macos13, part2-macos14]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: mac
       arch: x86_64
       debug: ${{ inputs.debug }}
       MOZ_BUILD_DATE: ${{ needs.get-buildid.outputs.buildids }}
       build-with-profdata-and-jarlog: true
+      pgo_artifact_name: noraneko-x86_64-apple-darwin-profdata-and-jarlog,noraneko-aarch64-apple-darwin-profdata-and-jarlog
 
   part2_no_pgo:
     name: "Integration (No PGO)"
@@ -75,7 +97,7 @@ jobs:
 
   part4_pgo:
     name: "Integration (With PGO)"
-    needs: [get-buildid, part1, part2, part3]
+    needs: [get-buildid, part1, part2-macos13, part2-macos14, part3]
     if: ${{ inputs.pgo }}
     uses: ./.github/workflows/mac_integration.yml
     secrets: inherit

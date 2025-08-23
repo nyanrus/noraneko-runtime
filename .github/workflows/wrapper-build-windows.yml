@@ -29,7 +29,7 @@ run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Windows x64 build${
 jobs:
   part-1:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64
@@ -40,16 +40,21 @@ jobs:
     name: Windows x64 Generate Profile for Guided Optimization
     if: inputs.pgo
     needs: part-1
-    uses: ./.github/workflows/pgo-windows.yml
+    uses: ./.github/workflows/pgo-build.yml
     secrets: inherit
     with:
       browser-artifact-name: noraneko-win-amd64-profile-generate-mode-package
+      artifact-path: C:\artifact
+      runner: windows-latest
+      target-arch: x86_64
+      profile-mode: generate
+      upload-artifact-name: noraneko-win-amd64-profile-generate-output
 
   part-3:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
     if: inputs.pgo
     needs: part-2
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64

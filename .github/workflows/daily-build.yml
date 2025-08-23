@@ -22,7 +22,7 @@ run-name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 jobs:
   part-1:
     name: Pull Upstream from Mozilla-Central
-    uses: ./.github/workflows/pull-upstream.yml
+    uses: ./.github/workflows/misc-pull-upstream.yml
     secrets: inherit
 
   windows-amd64:
