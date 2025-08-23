@@ -88,7 +88,7 @@ jobs:
     name: "Integration (No PGO)"
     needs: [get-buildid, part1]
     if: ${{ !inputs.pgo }}
-    uses: ./.github/workflows/mac_integration.yml
+    uses: ./.github/workflows/integration-mac.yml
     secrets: inherit
     with:
       x86_64_artifact_name: noraneko-mac-x86_64-package
@@ -99,7 +99,7 @@ jobs:
     name: "Integration (With PGO)"
     needs: [get-buildid, part1, part2-macos13, part2-macos14, part3]
     if: ${{ inputs.pgo }}
-    uses: ./.github/workflows/mac_integration.yml
+    uses: ./.github/workflows/integration-mac.yml
     secrets: inherit
     with:
       x86_64_artifact_name: noraneko-mac-x86_64-package
