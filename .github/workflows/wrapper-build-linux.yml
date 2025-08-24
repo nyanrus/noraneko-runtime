@@ -34,4 +34,4 @@ jobs:
       platform: linux
       arch: x86_64
       debug: ${{inputs.debug}}
-      pgo: ${{inputs.pgo}}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}

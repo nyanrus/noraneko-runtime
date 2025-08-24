@@ -32,7 +32,7 @@ jobs:
     secrets: inherit
     with:
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   linux-amd64:
     name: Linux amd x64 build
@@ -41,7 +41,7 @@ jobs:
     secrets: inherit
     with:
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   mac-amd64:
     name: Mac amd x64 build
@@ -50,7 +50,7 @@ jobs:
     secrets: inherit
     with:
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   platform-tests:
     name: Platform Tests
