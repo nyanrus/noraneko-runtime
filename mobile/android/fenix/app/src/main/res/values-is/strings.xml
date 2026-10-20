@@ -1286,8 +1286,6 @@
   <string name="preference_simple_toolbar">Einfalt</string>
   <!-- Preference for using expanded toolbar -->
   <string name="preference_expanded_toolbar">Dregið sundur</string>
-  <!-- Preference description indicating the toolbar location preference is disabled when the tab strip is enabled -->
-  <string name="preference_toolbar_pref_disabled_explanation">Vistfangastikan verður að vera efst þegar flipastikan er birt.</string>
   <!-- New tab shortcut in toolbar customization -->
   <string name="toolbar_customize_shortcut_new_tab">Opna nýjan flipa</string>
   <!-- Share shortcut in toolbar customization -->
@@ -1369,6 +1367,8 @@
   <string name="library_desktop_bookmarks_unfiled">Önnur bókamerki</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Ferill</string>
+  <!-- Content description (not visible, for screen readers etc.) for the check mark that replaces a site's icon in History and Recently closed tabs when the item is selected -->
+  <string name="library_item_selected_content_description">Valið</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Stillingar</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1421,8 +1421,6 @@
   <string name="preferences_tabs">Flipar</string>
   <!-- Title of preference that allows a user to specify the tab layout -->
   <string name="preferences_tab_layout">Framsetning flipa</string>
-  <!-- Title of preference that allows a user to specify the tab view -->
-  <string name="preferences_tab_view">Flipasýn</string>
   <!-- Option for a list tab view -->
   <string name="tab_view_list">Listi</string>
   <!-- Option for a grid tab view -->
@@ -1477,20 +1475,12 @@
   <string name="preferences_tab_organization">Skipulag flipa</string>
   <!-- Title of the preference that allows a user to enable or disable the inactive tabs feature -->
   <string name="preferences_inactive_tabs_toggle_title">Óvirkir flipar</string>
-  <!--
-    Inactive tabs
-
-    Category header of a preference that allows a user to enable or disable the inactive tabs feature
-  -->
-  <string name="preferences_inactive_tabs">Færa gamla flipa í óvirka</string>
   <!-- Summary of the preference that allows a user to enable or disable the inactive tabs feature. -->
   <string name="preferences_inactive_tabs_title">Flipar sem þú hefur ekki skoðað í tvær vikur verða færðir í óvirka hlutann.</string>
   <!-- Title of the preference that allows a user to enable or disable the tab groups feature -->
   <string name="preferences_tab_groups_title">Flipahópar</string>
   <!-- Summary of the preference that allows a user to enable or disable the tab groups feature -->
   <string name="preferences_tab_groups_description">Settu flipana þína í hópa sem þú getur nefnt og vistað.</string>
-  <!-- Title for the preference to enable or disable the tab groups feature -->
-  <string name="preferences_tab_groups_feature">Virkja flipahópa</string>
   <!--
     Privacy report
 
@@ -1706,6 +1696,11 @@
   <string name="close_tab_and_delete_group_confirmation_dialog_cancel">Hætta við</string>
   <!-- Content description for the three dot button next to a tab group" -->
   <string name="tab_group_three_dot_button_content_description">Fleiri valkostir</string>
+  <!--
+    Content description for the Expand button on the contracted menu for a tab group:
+    when tapped, tabs are displayed in an expanded grid or list view, taking up the full screen.
+  -->
+  <string name="tab_groups_strip_expand_group_content_description">Stækka til að birta flipa í fullri skjástærð</string>
   <!-- Text shown on the edit button for a tab group on the three dot menu -->
   <string name="tab_group_three_dot_menu_edit">Breyta</string>
   <!-- Text shown on the ungroup button for a tab group on the three dot menu -->
@@ -2439,6 +2434,8 @@
   <string name="sync_send_tab_empty_state_title">Engin tæki tengd</string>
   <!-- Send tab to synced devices: Empty state message - Displayed when the user has no synced devices -->
   <string name="sync_send_tab_empty_state_description" tools:ignore="BrandUsage">Skráðu þig inn á Firefox í að minnsta kosti einu öðru tæki til að senda flipa.</string>
+  <!-- Send tab to synced devices: Empty state link - Displayed when the user has no synced devices -->
+  <string name="sync_send_tab_empty_state_link">Lærðu hvernig á að tengja tæki</string>
   <!-- Send tab to synced devices: Connectivity Error title -->
   <string name="sync_send_tab_error_connection_title">Athugaðu internettenginguna þína</string>
   <!-- Send tab to synced devices: Connectivity Error message - Suggested user action after internet connection has been established -->
@@ -3477,7 +3474,7 @@
   <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
   <string name="homepage_shortcuts_add_website">Bæta við vefsvæði</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
-  <string name="homepage_shortcuts_add_website_title">Sláðu inn slóð á vef</string>
+  <string name="homepage_shortcuts_add_website_title">Settu inn slóð á vef</string>
   <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
   <string name="homepage_shortcuts_popular_sites">Vinsæl vefsvæði</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
@@ -3509,7 +3506,7 @@
   <!-- Button caption to confirm the edit of the top site. -->
   <string name="top_sites_edit_dialog_save">Vista</string>
   <!-- Error message when the user entered an invalid URL -->
-  <string name="top_sites_edit_dialog_url_error">Sláðu inn gilda vefslóð</string>
+  <string name="top_sites_edit_dialog_url_error">Settu inn gilda vefslóð</string>
   <!-- Label for the URL edit field in the edit top site dialog. -->
   <string name="top_sites_edit_dialog_url_title">Vefslóð</string>
   <!--
@@ -4520,6 +4517,16 @@
   <string name="lens_camera_mode_qr">QR-skanni</string>
   <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
   <string name="lens_camera_qr_no_code_found">Enginn QR-kóði fannst í myndinni</string>
+  <!-- Status shown under an image picked from the gallery while it is being sent to Google Lens for a visual search -->
+  <string name="lens_camera_loading_status">Er að skoða þetta</string>
+  <!-- Button shown under an image picked from the gallery while it is being sent to Google Lens. Tapping it stops the search and returns to the camera. -->
+  <string name="lens_camera_loading_cancel_button">Hætta við</string>
+  <!-- Snackbar message shown when an image picked from the gallery could not be opened or read, so it was never sent to Google Lens. Shown after returning to the camera. -->
+  <string name="lens_camera_image_load_failed">Gat ekki hlaðið inn þessari mynd. Prófaðu aðra.</string>
+  <!-- Snackbar message shown when an image picked from the gallery could not be searched because of a network problem or an error from Google Lens. Shown after returning to the camera, next to the lens_camera_upload_failed_retry_button action. -->
+  <string name="lens_camera_upload_failed">Tókst ekki að fá niðurstöður úr Google Lens</string>
+  <!-- Action in the snackbar shown when an image picked from the gallery could not be searched with Google Lens. Tapping it searches the same image again. -->
+  <string name="lens_camera_upload_failed_retry_button">Reyna aftur</string>
   <!-- Title of the bottom sheet shown the first time the user opens the Google Lens camera screen -->
   <string name="lens_opt_out_title">Finndu það með Google Lens</string>
   <!-- Description of the bottom sheet shown the first time the user opens the Google Lens camera screen -->
